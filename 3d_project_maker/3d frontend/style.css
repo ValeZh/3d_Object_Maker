@@ -1,0 +1,191 @@
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  background-color: #111;
+  color: #ddd;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1a1a1a;
+  padding: 10px 20px;
+  border-bottom: 1px solid #333;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.logo img {
+  width: 28px;
+  height: 28px;
+}
+
+.controls button {
+  background-color: #2a2a2a;
+  color: #ccc;
+  border: none;
+  padding: 8px 14px;
+  margin-left: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.controls button:hover {
+  background-color: #383838;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  padding: 30px;
+  gap: 30px;
+}
+
+.params {
+  flex: 0 0 280px;
+  background-color: #1e1e1e;
+  padding: 25px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.params h2 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  color: #eee;
+}
+
+label {
+  margin-top: 10px;
+  font-size: 14px;
+  color: #aaa;
+}
+
+select {
+  background-color: #2a2a2a;
+  color: #fff;
+  border: none;
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.export {
+  background: linear-gradient(90deg, #4b00e0, #8e2de2);
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  color: white;
+  margin-top: 20px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.export:hover {
+  opacity: 0.9;
+}
+
+.preview {
+  flex: 1;
+  background-color: #1a1a1a;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  perspective: 800px;
+}
+
+#object {
+  width: 180px;
+  height: 180px;
+  transform-style: preserve-3d;
+  animation: spin 10s infinite linear;
+  transition: transform 0.5s ease;
+}
+
+#object:hover {
+  transform: rotateX(25deg) rotateY(45deg) scale(1.05);
+}
+
+/* КУБ */
+.cube {
+  position: relative;
+}
+
+.cube .face {
+  position: absolute;
+  width: 180px;
+  height: 180px;
+  background: linear-gradient(135deg, #6952BE, #5AD1E7);
+  opacity: 0.95;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.cube .front  { transform: translateZ(90px); }
+.cube .back   { transform: rotateY(180deg) translateZ(90px); }
+.cube .left   { transform: rotateY(-90deg) translateZ(90px); }
+.cube .right  { transform: rotateY(90deg) translateZ(90px); }
+.cube .top    { transform: rotateX(90deg) translateZ(90px); }
+.cube .bottom { transform: rotateX(-90deg) translateZ(90px); }
+
+/* ПИРАМИДА */
+.pyramid {
+  width: 0;
+  height: 0;
+  border-left: 90px solid transparent;
+  border-right: 90px solid transparent;
+  border-bottom: 180px solid #6952BE;
+}
+
+/* ПРИЗМА */
+.prism {
+  width: 120px;
+  height: 180px;
+  background: linear-gradient(135deg, #6952BE, #5AD1E7);
+  clip-path: polygon(
+    25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%
+  );
+}
+
+/* СФЕРА */
+.sphere {
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle at 30% 30%, #6952BE, #5AD1E7);
+  border-radius: 50%;
+}
+
+@keyframes spin {
+  from { transform: rotateX(0) rotateY(0); }
+  to   { transform: rotateX(360deg) rotateY(360deg); }
+}
+
+.ortho {
+  position: absolute;
+  bottom: 30px;
+  background: linear-gradient(90deg, #4b00e0, #8e2de2);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.ortho:hover {
+  opacity: 0.9;
+}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Объект Maker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top-bar">
+      <div class="logo">
+        <img src="C:\Users\tanya\Downloads\photo_2025-10-05_16-46-30.jpg" alt="icon">
+        <span>3D Объект Maker</span>
+      </div>
+      <div class="controls">
+        <button id="reset">Сбросить</button>
+        <button>Сохранить</button>
+        <button>Открыть</button>
+        <button>Настройки</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="params">
+        <h2>Параметры 3D объекта</h2>
+
+        <label>Основная форма:</label>
+        <select id="shape">
+          <option>Куб</option>
+          <option>Сфера</option>
+          <option>Пирамида</option>
+          <option>Призма</option>
+        </select>
+
+        <label>Цвет:</label>
+        <select id="color">
+          <option value="#6952BE">#6952BE</option>
+          <option value="#6C63FF">#6C63FF</option>
+          <option value="#8A70D6">#8A70D6</option>
+          <option value="#00C9A7">#00C9A7</option>
+          <option value="#FF7B7B">#FF7B7B</option>
+        </select>
+
+        <label>Текстура:</label>
+        <select id="texture">
+          <option value="plastic">Пластик</option>
+          <option value="metal">Металл</option>
+          <option value="wood">Дерево</option>
+        </select>
+
+        <label>Формат объекта:</label>
+        <select id="format">
+          <option>OBJ</option>
+          <option>FBX</option>
+          <option>STL</option>
+        </select>
+
+        <button class="export">Экспорт объекта</button>
+      </section>
+
+      <section class="preview">
+        <div id="object" class="cube"></div>
+        <button class="ortho">Показать орто-проекцию</button>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
