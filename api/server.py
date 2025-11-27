@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
-from generator.ai.gan_mesh_factory import create_shape
 
 # ======================
 # Пути проекта
