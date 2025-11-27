@@ -2,11 +2,11 @@
 import torch
 import numpy as np
 import open3d as o3d
-from gan_object_factory import create_gan_object
+
+# Импортируем из ai
+from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
 from config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
-from reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
-
 
 # ===============================
 # Функция генерации точек + фиттинг
@@ -16,7 +16,7 @@ def generate_mesh_from_points(shape_name: str):
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
     """
-
+    from .reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
     # ищем id класса
     class_id = None
     for k, n in CLASSES.items():
@@ -55,7 +55,7 @@ def create_shape(shape: str, color: str | list, texture: str | None):
     color: строка из COLOR_MAP или RGB [0..1]
     texture: имя текстуры в папке textures, либо None
     """
-    from config.paths import OUTPUT_DIR, TEXTURES_DIR
+    from generator.ai.gan_object_factory import create_gan_object
 
     # Генерация и сохранение obj/mtl
     result = create_gan_object(
@@ -67,4 +67,5 @@ def create_shape(shape: str, color: str | list, texture: str | None):
     )
     return result
 
-generate_mesh_from_points("cube")
+if __name__ == "__main__":
+    generate_mesh_from_points("cube")
