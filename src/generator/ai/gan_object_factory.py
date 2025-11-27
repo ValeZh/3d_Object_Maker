@@ -4,6 +4,8 @@ from pathlib import Path
 
 from gan_mesh_factory import generate_mesh_from_points
 from materials import apply_material
+from config.paths import ROOT, DATA_DIR, OUTPUT_DIR, TEXTURES_DIR
+
 
 COLOR_MAP = {
     "red":     [1, 0, 0],

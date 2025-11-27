@@ -150,6 +150,35 @@ async function loadTextureZip(url, desiredTextureKey){
 }
 
 /* ============
+   Применить текстуру к уже существующему объекту
+   ============ */
+async function applyTextureToExistingMesh(mesh, textureKey, zipUrl){
+  if(!mesh) return;
+
+  const mat = await loadTextureZip(zipUrl, textureKey);
+  if(!mat){
+    console.warn('Texture material not loaded');
+    return;
+  }
+
+  // сохраняем текущий цвет
+  const currentColor = mesh.material?.color || new THREE.Color('#ffffff');
+  mat.color = new THREE.Color(currentColor);
+
+  mesh.traverse(child=>{
+    if(child.isMesh){
+      if(mat.aoMap && !child.geometry.attributes.uv2){
+        child.geometry.setAttribute(
+          'uv2',
+          new THREE.BufferAttribute(child.geometry.attributes.uv.array, 2)
+        );
+      }
+      child.material = mat;
+    }
+  });
+}
+
+/* ============
    Создание/обновление меша
    ============ */
 async function createMesh(shape, colorHex, textureKey, zipUrl){
@@ -317,55 +346,6 @@ async function sendParamsToBackend(params){
     console.warn('sendParamsToBackend error:', err);
     return null;
   }
-}
-
-/* ============
-   Экспорт OBJ + MTL + texture в ZIP
-   ============ */
-async function exportCurrentObjectAsZip(){
-  if(!currentMesh) { alert('Generate object first'); return; }
-  const exporter = new THREE.OBJExporter();
-  const objText = exporter.parse(currentMesh);
-
-  const col = currentMesh.material && currentMesh.material.color ? currentMesh.material.color : new THREE.Color('#ffffff');
-  const r = col.r.toFixed(4), g = col.g.toFixed(4), b = col.b.toFixed(4);
-  const mtlText = `
-newmtl material_0
-Ka 0.0000 0.0000 0.0000
-Kd ${r} ${g} ${b}
-Ks 0.0000 0.0000 0.0000
-Ns 10.0
-illum 2
-`;
-
-  const zip = new JSZip();
-  zip.file('model.obj', objText);
-  zip.file('material.mtl', mtlText);
-
-  // Попытка включить текстуру
-  try{
-    let diffuseUrl = null;
-    currentMesh.traverse(child=>{
-      if(child.isMesh && child.material && child.material.map && child.material.map.image){
-        if(child.material.map.image.currentSrc) diffuseUrl = child.material.map.image.currentSrc;
-      }
-    });
-    if(diffuseUrl){
-      const resp = await fetch(diffuseUrl);
-      if(resp.ok){
-        const blob = await resp.blob();
-        zip.file('texture.png', blob);
-      }
-    }
-  }catch(e){ }
-
-  const content = await zip.generateAsync({ type: 'blob' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(content);
-  link.download = 'object_export.zip';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 }
 
 /* ============
