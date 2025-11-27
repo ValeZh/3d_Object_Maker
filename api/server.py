@@ -1,46 +1,29 @@
-import sys
 from pathlib import Path
+import sys
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-# ======================
-# Пути проекта
-# ======================
-ROOT = Path(__file__).resolve().parents[1]   # 3d_Object_Maker/
+# Пути
+ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 sys.path.append(str(SRC))
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
-
-# Импорт функции генерации 3D объекта
-from generator.ai.gan_mesh_factory import create_shape
-
-# Опции
-from api.options import (
-    get_available_shapes,
-    get_available_textures,
-    get_available_colors
-)
-
-# Генерация 3D
-from generator.ai.gan_object_factory import create_gan_object
-
-# ZIP
-from zipper.zipper import make_zip
-
-# Пути
-from config.paths import (
-    ROOT as PROJECT_ROOT,
-    DATA_DIR,
-    OUTPUT_DIR,
-    TEXTURES_DIR
-)
-
+# === FastAPI app ===
 app = FastAPI()
 
+# === Импорт после app ===
+from generator.ai.gan_mesh_factory import create_shape
+from generator.ai.gan_object_factory import create_gan_object
+from zipper.zipper import make_zip
+from api.options import get_available_shapes, get_available_textures, get_available_colors
+from config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
 
-# ============================================
-# OPTIONS ENDPOINT — фронтенд забирает формы, цвета, текстуры
-# ============================================
+def hex_to_rgb(hex_color: str):
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i+2], 16)/255.0 for i in (0, 2, 4)]
+
+# === API маршруты ===
 @app.get("/api/options")
 async def api_options():
     return {
@@ -49,62 +32,15 @@ async def api_options():
         "colors": get_available_colors()
     }
 
-
-# ============================================
-# TEXT → SHAPE/COLOR/TEXTURE
-# ============================================
-@app.post("/api/generate-from-text")
-async def generate_from_text(payload: dict):
-
-    text = payload.get("text", "").lower()
-
-    # shape
-    shape = next((s for s in get_available_shapes() if s.lower() in text), "cube")
-
-    # color
-    color = next((c for c in get_available_colors() if c.lower() in text), "white")
-
-    # texture
-    texture = next((t for t in get_available_textures() if t.lower() in text), None)
-
-    # генерируем объект
-    result = create_shape(shape, color, texture)
-
-
-    obj_path = Path(result["obj_path"])
-    mtl_path = Path(result["mtl_path"])
-
-    # текстуры, если есть
-    tex_paths = []
-    for ext in ["jpg", "png"]:
-        p = obj_path.parent / f"{texture}.{ext}"
-        if p.exists():
-            tex_paths.append(p)
-
-    # ZIP
-    zip_path = obj_path.parent / f"{shape}_{color}.zip"
-    make_zip(obj_path, mtl_path, tex_paths, zip_path)
-
-    return JSONResponse({
-        "shape": shape,
-        "color": color,
-        "texture": texture,
-        "zip_url": f"/files/{zip_path.relative_to(PROJECT_ROOT)}",
-        "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
-        "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
-        "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]
-    })
-
-
-# ============================================
-# GENERATE OBJECT из параметров shape+color+texture
-# ============================================
 @app.post("/api/generate-object")
 async def generate_object(payload: dict):
-
     shape = payload.get("shape")
     color = payload.get("color")
     texture = payload.get("texture")
+
+    # --- Конвертируем HEX в RGB, если нужно ---
+    if isinstance(color, str) and color.startswith("#"):
+        color = hex_to_rgb(color)
 
     result = create_gan_object(
         shape=shape,
@@ -133,11 +69,11 @@ async def generate_object(payload: dict):
         "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]
     })
 
-
-# ============================================
-# FILE SERVER
-# ============================================
 @app.get("/files/{file_path:path}")
 async def serve_file(file_path: str):
     file_location = PROJECT_ROOT / file_path
     return FileResponse(file_location)
+
+# === Статика фронтенда в самом конце ===
+FRONTEND_DIR = ROOT / "3d frontend"
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

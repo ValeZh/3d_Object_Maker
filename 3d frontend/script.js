@@ -12,6 +12,7 @@ const container = document.getElementById('objectPreview');
 
 /* ============ Three.js setup ============ */
 let scene, camera, renderer, currentMesh = null;
+
 function initThree() {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 1000);
@@ -29,62 +30,52 @@ function initThree() {
   scene.add(dir);
 }
 
-/* ============ Geometry helper ============ */
-function createGeometryByShape(shape) {
-  switch (shape) {
-    case 'Cube': return new THREE.BoxGeometry(2, 2, 2);
-    case 'Sphere': return new THREE.SphereGeometry(1.2, 64, 64);
-    case 'Pyramid': return new THREE.ConeGeometry(1.2, 2.2, 4);
-    case 'Prism': return new THREE.CylinderGeometry(1.0, 1.0, 2.0, 6);
-    case 'Cylinder': return new THREE.CylinderGeometry(1.0, 1.0, 2.0, 32);
-    case 'Cone': return new THREE.ConeGeometry(1.0, 2.0, 32);
-    case 'Torus': return new THREE.TorusGeometry(1.0, 0.35, 30, 200);
-    default: return new THREE.BoxGeometry(2, 2, 2);
-  }
-}
-
-/* ============ Create / update mesh ============ */
+/* ============ Load / Update mesh ============ */
 async function createMeshFromBackend(shape, colorHex, texture) {
-  try {
-    const payload = { shape, color: colorHex, texture };
-    const res = await fetch('/api/generate-object', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
+    try {
+        const payload = { shape, color: colorHex, texture };
+        const res = await fetch('/api/generate-object', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
 
-    // Загружаем OBJ через OBJLoader
-    const objText = await (await fetch(data.obj_url)).text();
-    const loader = new THREE.OBJLoader();
-    const obj = loader.parse(objText);
+        // Загружаем MTL
+        const mtlLoader = new THREE.MTLLoader();
+        const mtl = await new Promise((resolve, reject) => {
+            mtlLoader.load(data.mtl_url, resolve, undefined, reject);
+        });
+        mtl.preload();
 
-    // Применяем текстуру, если есть
-    if (data.textures.length > 0) {
-      const texUrl = data.textures[0];
-      const tmap = new THREE.TextureLoader().load(texUrl);
-      obj.traverse(c => {
-        if (c.isMesh) c.material = new THREE.MeshStandardMaterial({ map: tmap, color: colorHex });
-      });
-    } else {
-      obj.traverse(c => {
-        if (c.isMesh) c.material = new THREE.MeshStandardMaterial({ color: colorHex });
-      });
+        // Загружаем OBJ с материалами
+        const objLoader = new THREE.OBJLoader();
+        objLoader.setMaterials(mtl);
+        const obj = await new Promise((resolve, reject) => {
+            objLoader.load(data.obj_url, resolve, undefined, reject);
+        });
+
+        // Центрирование и масштабирование
+        obj.position.set(0, 0, 0);
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        const maxDim = Math.max(size.x, size.y, size.z);
+        obj.scale.setScalar(2 / maxDim);
+
+        return obj;
+    } catch (err) {
+        console.warn('Error creating mesh from backend:', err);
+        return null;
     }
-
-    return obj;
-  } catch (err) {
-    console.warn('Error creating mesh from backend:', err);
-    return null;
-  }
 }
 
-async function updateObject(shape, colorHex, texture) {
+async function updateObject(shape, colorHex, texture, textDescription = null) {
   if (currentMesh) {
     scene.remove(currentMesh);
     currentMesh.traverse(child => child.geometry?.dispose?.());
   }
-  currentMesh = await createMeshFromBackend(shape, colorHex, texture);
+  currentMesh = await createMeshFromBackend(shape, colorHex, texture, textDescription);
   if (currentMesh) scene.add(currentMesh);
 }
 
@@ -128,34 +119,41 @@ window.addEventListener('click', () => document.querySelectorAll('.dropdown').fo
 /* ============ Load UI from backend ============ */
 let selectedShape = 'Cube';
 let selectedTexture = 'stone';
-function loadUI() {
+
+async function loadUI() {
   colorInput.value = '#6952BE';
-  (async () => {
-    try {
-      const res = await fetch('/api/options');
-      if (res.ok) {
-        const data = await res.json();
-        const shapes = data.shapes.map(s => ({ label: s, value: s }));
-        const textures = data.textures.map(t => ({ label: t, value: t }));
-        setupDropdown(shapeDropdown, shapeOptionsDiv, shapes, (val, label) => {
-          selectedShape = val;
-          shapeDropdown.querySelector('.dropbtn').textContent = label;
-          updateObject(selectedShape, colorInput.value, selectedTexture);
-        });
-        setupDropdown(textureDropdown, textureOptionsDiv, textures, (val, label) => {
-          selectedTexture = val;
-          textureDropdown.querySelector('.dropbtn').textContent = label;
-          updateObject(selectedShape, colorInput.value, selectedTexture);
-        });
-        return;
-      }
-    } catch (e) { console.warn(e); }
-  })();
+  try {
+    const res = await fetch('/api/options');
+    if (!res.ok) throw new Error('Cannot load options');
+    const data = await res.json();
+
+    const shapes = data.shapes.map(s => ({ label: s, value: s }));
+    const textures = data.textures.map(t => ({ label: t, value: t }));
+
+    setupDropdown(shapeDropdown, shapeOptionsDiv, shapes, (val, label) => {
+      selectedShape = val;
+      shapeDropdown.querySelector('.dropbtn').textContent = label;
+      updateObject(selectedShape, colorInput.value, selectedTexture);
+    });
+
+    setupDropdown(textureDropdown, textureOptionsDiv, textures, (val, label) => {
+      selectedTexture = val;
+      textureDropdown.querySelector('.dropbtn').textContent = label;
+      updateObject(selectedShape, colorInput.value, selectedTexture);
+    });
+  } catch (err) {
+    console.warn(err);
+  }
 }
 
 /* ============ Buttons ============ */
 generateButton.addEventListener('click', async () => {
-  await updateObject(selectedShape, colorInput.value, selectedTexture);
+  const desc = descriptionInput.value.trim();
+  if (desc.length > 0) {
+    await updateObject(null, colorInput.value, null, desc);
+  } else {
+    await updateObject(selectedShape, colorInput.value, selectedTexture);
+  }
 });
 
 resetButton.addEventListener('click', () => {

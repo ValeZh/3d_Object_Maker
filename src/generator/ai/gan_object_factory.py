@@ -1,6 +1,13 @@
-import os
+import sys
 from pathlib import Path
-from materials import apply_material
+ROOT = Path(__file__).resolve().parents[3]
+# SRC — папка src, чтобы Python видел модули generator.ai, config и т.д.
+SRC = ROOT / "src"
+sys.path.append(str(SRC))
+
+import os
+from config.paths import OUTPUT_DIR, TEXTURES_DIR
+from generator.ai.materials import apply_material
 from config.paths import ROOT, DATA_DIR, OUTPUT_DIR, TEXTURES_DIR
 from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
 
@@ -86,15 +93,13 @@ def create_gan_object(shape, color, texture, output_dir, textures_dir):
         "mtl_bin": mtl_bin,
     }
 
-ROOT = Path(__file__).resolve().parents[3]
 
-textures_dir = ROOT / "data" / "textures"
-output_dir = ROOT / "output"
-data = create_gan_object(
-    shape="cube",
-    color="cyan",
-    texture="metallic",
-    output_dir= output_dir,
-    textures_dir=textures_dir
-)
+if __name__ == "__main__":
+    data = create_gan_object(
+        shape="cube",
+        color="cyan",
+        texture="metallic",
+        output_dir=output_dir,
+        textures_dir=textures_dir
+    )
 

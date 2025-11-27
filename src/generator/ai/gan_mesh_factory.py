@@ -4,7 +4,6 @@ import numpy as np
 import open3d as o3d
 
 # Импортируем из ai
-from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
 from config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
 
@@ -12,11 +11,13 @@ from pathlib import Path
 # Функция генерации точек + фиттинг
 # ===============================
 def generate_mesh_from_points(shape_name: str):
+    shape_name = shape_name.lower()
+
     """
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
     """
-    from .reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+    from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
     # ищем id класса
     class_id = None
     for k, n in CLASSES.items():
