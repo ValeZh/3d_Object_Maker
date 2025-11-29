@@ -4,7 +4,7 @@ import numpy as np
 import open3d as o3d
 
 # Импортируем из ai
-from config.paths import OUTPUT_DIR, TEXTURES_DIR
+from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
 
 # ===============================
@@ -17,7 +17,7 @@ def generate_mesh_from_points(shape_name: str):
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
     """
-    from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+    from src.generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
     # ищем id класса
     class_id = None
     for k, n in CLASSES.items():
@@ -56,7 +56,7 @@ def create_shape(shape: str, color: str | list, texture: str | None):
     color: строка из COLOR_MAP или RGB [0..1]
     texture: имя текстуры в папке textures, либо None
     """
-    from generator.ai.gan_object_factory import create_gan_object
+    from src.generator.ai.gan_object_factory import create_gan_object
 
     # Генерация и сохранение obj/mtl
     result = create_gan_object(
