@@ -3,6 +3,9 @@ import sys
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+import logging
+
+logger = logging.getLogger("uvicorn.info")
 
 # Пути
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,9 +41,13 @@ async def generate_object(payload: dict):
     color = payload.get("color")
     texture = payload.get("texture")
 
-    # --- Конвертируем HEX в RGB, если нужно ---
     if isinstance(color, str) and color.startswith("#"):
         color = hex_to_rgb(color)
+
+    logger.info(f"Generate button pressed")
+    logger.info(f"Shape changed to: {shape}")
+    logger.info(f"Texture changed to: {texture}")
+    logger.info(f"Color changed to: {color}")
 
     result = create_gan_object(
         shape=shape,
@@ -62,8 +69,84 @@ async def generate_object(payload: dict):
     zip_path = obj_path.parent / f"{shape}_{color}.zip"
     make_zip(obj_path, mtl_path, tex_paths, zip_path)
 
+    logger.info(f"Object generated: {shape} + {texture} + {color}")
+
     return JSONResponse({
         "zip_url": f"/files/{zip_path.relative_to(PROJECT_ROOT)}",
+        "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
+        "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
+        "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]
+    })
+
+@app.post("/api/log-color")
+async def log_color(payload: dict):
+    color = payload.get("color")
+    logger.info(f"Color changed to: {color}")
+    return {"status": "ok"}
+
+@app.post("/api/generate-from-text")
+async def generate_from_text(payload: dict):
+    text = payload.get("text")
+    if not text:
+        return JSONResponse({"error": "Empty text"}, status_code=400)
+
+    print(f"📝 AI text input: {text}")
+
+    # здесь вызываем твой NLP/AI → получаем параметры
+    # пока сделаем заглушку:
+
+    shape = "cube"
+    texture = "stone"
+    color = "#ffffff"
+
+    print(f"🔍 Interpreted as shape={shape}, texture={texture}, color={color}")
+
+    result = create_gan_object(
+        shape=shape,
+        color=color,
+        texture=texture,
+        output_dir=OUTPUT_DIR,
+        textures_dir=TEXTURES_DIR
+    )
+
+    obj_path = Path(result["obj_path"])
+    mtl_path = Path(result["mtl_path"])
+
+    return JSONResponse({
+        "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
+        "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
+        "textures": []
+    })
+
+
+@app.post("/api/generate-from-text")
+async def generate_from_text(payload: dict):
+    text = payload.get("text", "").strip()
+
+    logger.info(f"Generate button pressed (TEXT MODE)")
+    logger.info(f"Text description received: \"{text}\"")
+
+    result = create_gan_object(
+        shape=None,
+        color=None,
+        texture=None,
+        text_description=text,
+        output_dir=OUTPUT_DIR,
+        textures_dir=TEXTURES_DIR
+    )
+
+    obj_path = Path(result["obj_path"])
+    mtl_path = Path(result["mtl_path"])
+
+    tex_paths = []
+    for ext in ["jpg", "png"]:
+        p = obj_path.parent / f"{result['texture']}.{ext}"
+        if p.exists():
+            tex_paths.append(p)
+
+    logger.info(f"Object generated from text: {text}")
+
+    return JSONResponse({
         "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
         "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
         "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]

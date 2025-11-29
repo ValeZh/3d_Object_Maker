@@ -7,12 +7,15 @@ import open3d as o3d
 from config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
 
+
 # ===============================
 # Функция генерации точек + фиттинг
 # ===============================
 def generate_mesh_from_points(shape_name: str):
-    shape_name = shape_name.lower()
 
+    if not shape_name:
+        raise ValueError("[GAN] shape_name = None (ошибка вызова API)")
+    shape_name = shape_name.lower()
     """
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh

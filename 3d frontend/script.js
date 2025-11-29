@@ -169,6 +169,12 @@ colorInput.addEventListener('input', () => {
   if (currentMesh) {
     currentMesh.traverse(child => { if (child.isMesh && child.material && child.material.color) child.material.color.set(colorInput.value); });
   }
+  fetch("/api/log-color", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ color: colorInput.value })
+});
+
 });
 
 /* ============ Init ============ */
