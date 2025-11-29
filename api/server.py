@@ -1,5 +1,4 @@
 from pathlib import Path
-import sys
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,20 +6,15 @@ import logging
 
 logger = logging.getLogger("uvicorn.info")
 
-# Пути
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-sys.path.append(str(SRC))
-
 # === FastAPI app ===
 app = FastAPI()
 
 # === Импорт после app ===
-from generator.ai.gan_mesh_factory import create_shape
-from generator.ai.gan_object_factory import create_gan_object
+from src.generator.ai.gan_mesh_factory import create_shape
+from src.generator.ai.gan_object_factory import create_gan_object
 from zipper.zipper import make_zip
 from api.options import get_available_shapes, get_available_textures, get_available_colors
-from config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
+from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
 
 def hex_to_rgb(hex_color: str):
     hex_color = hex_color.lstrip('#')
@@ -156,7 +150,12 @@ async def generate_from_text(payload: dict):
 async def serve_file(file_path: str):
     file_location = PROJECT_ROOT / file_path
     return FileResponse(file_location)
+# Пути
+ROOT = Path(__file__).resolve().parents[1]
+#SRC = ROOT / "src"
+#sys.path.append(str(SRC))
 
 # === Статика фронтенда в самом конце ===
 FRONTEND_DIR = ROOT / "3d frontend"
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+print("server works")
