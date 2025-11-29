@@ -1,71 +1,62 @@
-<!DOCTYPE html>
-<html lang="ru">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>3D Объект Maker</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D Object Maker</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="app">
     <header class="top-bar">
       <div class="logo">
-        <img src="C:\Users\tanya\Downloads\photo_2025-10-05_16-46-30.jpg" alt="icon">
-        <span>3D Объект Maker</span>
+        <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
+        <span>3D Object Maker</span>
       </div>
       <div class="controls">
-        <button id="reset">Сбросить</button>
-        <button>Сохранить</button>
-        <button>Открыть</button>
-        <button>Настройки</button>
+        <button id="reset" class="control-btn">Reset</button>
       </div>
     </header>
 
     <main class="content">
-      <section class="params">
-        <h2>Параметры 3D объекта</h2>
+      <aside class="params">
+        <h2>3D Object Parameters</h2>
 
-        <label>Основная форма:</label>
-        <select id="shape">
-          <option>Куб</option>
-          <option>Сфера</option>
-          <option>Пирамида</option>
-          <option>Призма</option>
-        </select>
+        <label class="field-label">Shape:</label>
+        <div class="dropdown" id="shapeDropdown">
+          <button class="dropbtn">Select Shape</button>
+          <div class="dropdown-content" id="shapeOptions"></div>
+        </div>
 
-        <label>Цвет:</label>
-        <select id="color">
-          <option value="#6952BE">#6952BE</option>
-          <option value="#6C63FF">#6C63FF</option>
-          <option value="#8A70D6">#8A70D6</option>
-          <option value="#00C9A7">#00C9A7</option>
-          <option value="#FF7B7B">#FF7B7B</option>
-        </select>
+        <label class="field-label">Color:</label>
+        <input id="color" type="color" />
 
-        <label>Текстура:</label>
-        <select id="texture">
-          <option value="plastic">Пластик</option>
-          <option value="metal">Металл</option>
-          <option value="wood">Дерево</option>
-        </select>
+        <label class="field-label">Texture:</label>
+        <div class="dropdown" id="textureDropdown">
+          <button class="dropbtn">Select Texture</button>
+          <div class="dropdown-content" id="textureOptions"></div>
+        </div>
 
-        <label>Формат объекта:</label>
-        <select id="format">
-          <option>OBJ</option>
-          <option>FBX</option>
-          <option>STL</option>
-        </select>
-
-        <button class="export">Экспорт объекта</button>
-      </section>
+        <label class="field-label">AI Description:</label>
+        <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
+        <button id="generate" class="export">Generate</button>
+        <button id="export" class="export">Export OBJ</button>
+      </aside>
 
       <section class="preview">
-        <div id="object" class="cube"></div>
-        <button class="ortho">Показать орто-проекцию</button>
+        <div id="objectPreview"></div>
       </section>
     </main>
   </div>
 
+  <!-- Three.js и загрузчики -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/exporters/OBJExporter.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/MTLLoader.js"></script>
+
+  <!-- Наш JS -->
   <script src="script.js"></script>
 </body>
 </html>
