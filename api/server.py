@@ -14,9 +14,12 @@ app = FastAPI()
 from src.generator.ai.gan_mesh_factory import create_shape
 from src.generator.ai.gan_object_factory import create_gan_object
 from zipper.zipper import make_zip
-from api.options import get_available_shapes, get_available_textures, get_available_colors
+# from api.options import get_available_shapes, get_available_textures, get_available_colors
 from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
 from generator.dataset.ai_text import extract_attributes
+from fastapi.responses import JSONResponse
+from src.generator.dataset.db_editing import get_shapes, get_textures
+
 
 def hex_to_rgb(hex_color: str):
     hex_color = hex_color.lstrip('#')
@@ -27,12 +30,31 @@ def hex_to_rgb(hex_color: str):
 @app.get("/api/options")
 async def api_options():
     logger.info("Options requested")
-    return {
-        "shapes": get_available_shapes(),
-        "textures": get_available_textures(),
-        "colors": get_available_colors()
-    }
+    shapes = get_shapes()      # список форм из БД
+    textures = get_textures()  # список текстур из БД
 
+    # Цвета можно оставить статичными или добавить отдельную таблицу в БД, если нужно
+    colors = ["red", "green", "blue", "yellow", "black", "white", "brown", "cyan"]
+
+    return JSONResponse({
+        "shapes": shapes,
+        "textures": textures,
+        "colors": colors
+    })
+
+
+@app.get("/api/available-options")
+async def available_options():
+    """
+    Возвращает список доступных форм и текстур из базы данных
+    """
+    shapes = get_shapes()
+    textures = get_textures()
+
+    return JSONResponse({
+        "shapes": shapes,
+        "textures": textures
+    })
 
 @app.post("/api/generate-object")
 async def generate_object(payload: dict):
