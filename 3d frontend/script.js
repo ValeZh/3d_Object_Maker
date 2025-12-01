@@ -174,7 +174,6 @@ function selectTexture(value, label){
 /* ======== Local geometry preview ======== */
 function createGeometryByShape(shape){
   switch (shape) {
-    case 'cube': return new THREE.BoxGeometry(2,2,2);
     case 'sphere': return new THREE.SphereGeometry(1.2,64,64);
     case 'pyramid': return new THREE.ConeGeometry(1.2,2.2,4);
     case 'prism': return new THREE.CylinderGeometry(1,1,2,6);
