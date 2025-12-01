@@ -1,195 +1,159 @@
-from pathlib import Path
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+# api/server.py — Финальная версия (декабрь 2025)
 import logging
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
-# Настройка логов
-logger = logging.getLogger("uvicorn.info")
+# Логи, чтобы видеть всё в консоли
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# === FastAPI app ===
 app = FastAPI()
 
-# === Импорт после app ===
-from src.generator.ai.gan_mesh_factory import create_shape
-from src.generator.ai.gan_object_factory import create_gan_object
-from zipper.zipper import make_zip
-# from api.options import get_available_shapes, get_available_textures, get_available_colors
-from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
-from generator.dataset.ai_text import extract_attributes
-from fastapi.responses import JSONResponse
-from src.generator.dataset.db_editing import get_shapes, get_textures
+# CORS — чтобы фронтенд мог стучаться
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# ======================= ПУТИ =======================
+from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
+
+# Убедимся, что папки существуют
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ======================= ОПЦИИ ИЗ БД ИЛИ ФОЛБЭК =======================
+try:
+    from src.generator.dataset.db_editing import get_shapes, get_textures
+    DB_WORKS = True
+    logger.info("База данных подключена успешно")
+except Exception as e:
+    logger.warning(f"БД не подключилась ({e}), будут использованы fallback-опции")
+    DB_WORKS = False
+
+FALLBACK_SHAPES = ["cube", "sphere", "cylinder", "cone", "torus", "pyramid"]
+FALLBACK_TEXTURES = ["wood", "stone", "metallic", "none"]
+
+@app.get("/api/options")
+async def get_options():
+    if DB_WORKS:
+        try:
+            shapes = [str(s) for s in get_shapes()]
+            textures = [str(t) for t in get_textures()]
+            if shapes and textures:
+                return {"shapes": shapes, "textures": textures}
+        except Exception as e:
+            logger.error(f"Ошибка чтения БД: {e}")
+
+    logger.info("Возвращаем fallback-опции")
+    return {"shapes": FALLBACK_SHAPES, "textures": FALLBACK_TEXTURES}
+
+# ======================= ЛОГИ (по желанию) =======================
+@app.post("/api/log-shape")
+async def log_shape(request: Request): return JSONResponse({"status": "ok"})
+
+@app.post("/api/log-texture")
+async def log_texture(request: Request): return JSONResponse({"status": "ok"})
+
+@app.post("/api/log-color")
+async def log_color(request: Request): return JSONResponse({"status": "ok"})
+
+# ======================= ГЕНЕРАЦИЯ =======================
+from src.generator.ai.gan_object_factory import create_gan_object
+from src.zipper.zipper import make_zip
 
 def hex_to_rgb(hex_color: str):
     hex_color = hex_color.lstrip('#')
     return [int(hex_color[i:i+2], 16)/255.0 for i in (0, 2, 4)]
 
-
-# === API маршруты ===
-@app.get("/api/options")
-async def api_options():
-    logger.info("Options requested")
-    shapes = get_shapes()      # список форм из БД
-    textures = get_textures()  # список текстур из БД
-
-    # Цвета можно оставить статичными или добавить отдельную таблицу в БД, если нужно
-    colors = ["red", "green", "blue", "yellow", "black", "white", "brown", "cyan"]
-
-    return JSONResponse({
-        "shapes": shapes,
-        "textures": textures,
-        "colors": colors
-    })
-
-
-@app.get("/api/available-options")
-async def available_options():
-    """
-    Возвращает список доступных форм и текстур из базы данных
-    """
-    shapes = get_shapes()
-    textures = get_textures()
-
-    return JSONResponse({
-        "shapes": shapes,
-        "textures": textures
-    })
-
 @app.post("/api/generate-object")
-async def generate_object(payload: dict):
-    shape = payload.get("shape")
-    color = payload.get("color")
-    texture = payload.get("texture")
+async def generate_object(request: Request):
+    payload = await request.json()
+    shape = payload.get("shape", "cube")
+    texture = payload.get("texture", "wood")
+    color = payload.get("color", "#6952BE")
+    color_rgb = hex_to_rgb(color) if color.startswith("#") else [0.4, 0.3, 0.7]
 
-    if isinstance(color, str) and color.startswith("#"):
-        color_rgb = hex_to_rgb(color)
-    else:
-        color_rgb = color
+    logger.info(f"Генерация: {shape=}, {texture=}, {color=}")
 
-    logger.info(f"Generate button pressed")
-    logger.info(f"Shape selected: {shape}")
-    logger.info(f"Texture selected: {texture}")
-    logger.info(f"Color selected: {color}")
-
-    # Генерация объекта через GAN
     result = create_gan_object(
         shape=shape,
         color=color_rgb,
         texture=texture,
         output_dir=OUTPUT_DIR,
-        textures_dir=TEXTURES_DIR
+        textures_dir=TEXTURES_DIR  # ← КРИТИЧЕСКИ ВАЖНО!
     )
 
     obj_path = Path(result["obj_path"])
     mtl_path = Path(result["mtl_path"])
 
-    # Ищем текстуры
+    # Собираем все текстуры с нужным именем
     tex_paths = []
-    for ext in ["jpg", "png"]:
+    for ext in ["jpg", "jpeg", "png"]:
         p = obj_path.parent / f"{texture}.{ext}"
         if p.exists():
             tex_paths.append(p)
 
-    # Создаем ZIP
-    zip_path = obj_path.parent / f"{shape}_{texture}_{color.lstrip('#')}.zip"
+    # Имя ZIP-файла
+    zip_name = f"{shape}_{texture}_{color.lstrip('#')}.zip"
+    zip_path = obj_path.parent / zip_name
     make_zip(obj_path, mtl_path, tex_paths, zip_path)
 
-    logger.info(f"Object generated and zipped: {zip_path.name}")
+    # ← ВОТ ГДЕ БЫЛА ОШИБКА НА WINDOWS! Используем .as_posix()
+    rel_path = zip_path.relative_to(OUTPUT_DIR).as_posix()
 
-    return JSONResponse({
-        "zip_url": f"/files/{zip_path.relative_to(PROJECT_ROOT)}",
-        "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
-        "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
-        "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]
-    })
+    logger.info(f"Готово! ZIP: {rel_path}")
+    return {"zip_url": f"/files/{rel_path}"}
 
 
 @app.post("/api/generate-from-text")
-async def generate_from_text(payload: dict):
+async def generate_from_text(request: Request):
+    payload = await request.json()
     text = payload.get("text", "").strip()
     if not text:
-        return JSONResponse({"error": "Empty text"}, status_code=400)
+        return JSONResponse({"error": "Пустой текст"}, status_code=400)
 
-    logger.info(f"Generate button pressed (TEXT MODE)")
-    logger.info(f"Text description received: \"{text}\"")
-
-    # --- Извлекаем shape, color, texture ---
+    from src.generator.dataset.ai_text import extract_attributes
     attrs = extract_attributes(text)
-    logger.info(f"Extracted attributes from text: {attrs}")
 
-    shape = attrs.get("shape")
-    color = attrs.get("color")
-    texture = attrs.get("texture")
+    shape = attrs.get("shape") or "sphere"
+    texture = attrs.get("texture") or "metallic"
+    color = attrs.get("color") or "#ff00ff"
+    color_rgb = hex_to_rgb(color) if isinstance(color, str) and color.startswith("#") else [1, 0, 1]
 
-    if not shape and not color and not texture:
-        return JSONResponse(
-            {"error": "Could not extract any attributes from text"},
-            status_code=400
-        )
+    logger.info(f"Генерация из текста: '{text}' → {shape=}, {texture=}, {color=}")
 
-    # --- Генерируем объект ---
     result = create_gan_object(
-        shape=shape,
-        color=color,
-        texture=texture,
-        output_dir=OUTPUT_DIR,
-        textures_dir=TEXTURES_DIR
+        shape=shape, color=color_rgb, texture=texture,
+        output_dir=OUTPUT_DIR, textures_dir=TEXTURES_DIR
     )
 
     obj_path = Path(result["obj_path"])
     mtl_path = Path(result["mtl_path"])
 
-    # Ищем текстуры
     tex_paths = []
-    texture_name = result.get("texture")
-    if texture_name:
-        for ext in ["jpg", "png"]:
-            p = obj_path.parent / f"{texture_name}.{ext}"
-            if p.exists():
-                tex_paths.append(p)
+    for ext in ["jpg", "jpeg", "png"]:
+        p = obj_path.parent / f"{texture}.{ext}"
+        if p.exists():
+            tex_paths.append(p)
 
-    # Создаем ZIP
-    zip_path = obj_path.parent / f"text_{obj_path.stem}.zip"
+    zip_name = f"text_{obj_path.stem}.zip"
+    zip_path = obj_path.parent / zip_name
     make_zip(obj_path, mtl_path, tex_paths, zip_path)
 
-    logger.info(f"Object generated from text and zipped: {zip_path.name}")
-
-    return JSONResponse({
-        "zip_url": f"/files/{zip_path.relative_to(PROJECT_ROOT)}",
-        "obj_url": f"/files/{obj_path.relative_to(PROJECT_ROOT)}",
-        "mtl_url": f"/files/{mtl_path.relative_to(PROJECT_ROOT)}",
-        "textures": [f"/files/{p.relative_to(PROJECT_ROOT)}" for p in tex_paths]
-    })
+    rel_path = zip_path.relative_to(OUTPUT_DIR).as_posix()
+    return {"zip_url": f"/files/{rel_path}"}
 
 
-@app.get("/files/{file_path:path}")
-async def serve_file(file_path: str):
-    file_location = PROJECT_ROOT / file_path
-    return FileResponse(file_location)
+# ======================= СТАТИКА =======================
+app.mount("/files", StaticFiles(directory=OUTPUT_DIR), name="files")
 
-@app.post("/api/log-shape")
-async def log_shape(payload: dict):
-    shape = payload.get("shape")
-    logger.info(f"Shape selected: {shape}")
-    return {"status": "ok"}
-
-@app.post("/api/log-texture")
-async def log_texture(payload: dict):
-    texture = payload.get("texture")
-    logger.info(f"Texture selected: {texture}")
-    return {"status": "ok"}
-
-@app.post("/api/log-color")
-async def log_color(payload: dict):
-    color = payload.get("color")
-    logger.info(f"Color selected: {color}")
-    return {"status": "ok"}
-
-
-# === Статика фронтенда ===
-ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_DIR = ROOT / "3d frontend"
+FRONTEND_DIR = PROJECT_ROOT / "3d frontend"
 app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
-logger.info("Server started and serving frontend")
+logger.info("API сервер запущен → http://127.0.0.1:8000")
