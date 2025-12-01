@@ -126,8 +126,8 @@ async function loadOptionsFromServer(){
 
   } catch (err) {
     console.warn('loadOptionsFromServer error:', err);
-    const fallbackShapes = ["Cube","Sphere","Pyramid","Prism","Cylinder","Cone","Torus"];
-    const fallbackTextures = ["stone","metal","wood"];
+    const fallbackShapes = ["cube","sphere" ,"pyramid","Prism","cylinder","cone","torus"];
+    const fallbackTextures = ["stone","metal","wood", "none"];
     populateShapeOptions(fallbackShapes);
     populateTextureOptions(fallbackTextures);
     selectShape(fallbackShapes[0]);
@@ -174,13 +174,13 @@ function selectTexture(value, label){
 /* ======== Local geometry preview ======== */
 function createGeometryByShape(shape){
   switch (shape) {
-    case 'Cube': return new THREE.BoxGeometry(2,2,2);
-    case 'Sphere': return new THREE.SphereGeometry(1.2,64,64);
-    case 'Pyramid': return new THREE.ConeGeometry(1.2,2.2,4);
-    case 'Prism': return new THREE.CylinderGeometry(1,1,2,6);
-    case 'Cylinder': return new THREE.CylinderGeometry(1,1,2,32);
-    case 'Cone': return new THREE.ConeGeometry(1,2,32);
-    case 'Torus': return new THREE.TorusGeometry(1,0.35,30,200);
+    case 'cube': return new THREE.BoxGeometry(2,2,2);
+    case 'sphere': return new THREE.SphereGeometry(1.2,64,64);
+    case 'pyramid': return new THREE.ConeGeometry(1.2,2.2,4);
+    case 'prism': return new THREE.CylinderGeometry(1,1,2,6);
+    case 'cylinder': return new THREE.CylinderGeometry(1,1,2,32);
+    case 'cone': return new THREE.ConeGeometry(1,2,32);
+    case 'torus': return new THREE.TorusGeometry(1,0.35,30,200);
     default: return new THREE.BoxGeometry(2,2,2);
   }
 }

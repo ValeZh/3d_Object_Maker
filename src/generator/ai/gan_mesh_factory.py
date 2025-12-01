@@ -7,12 +7,15 @@ import open3d as o3d
 from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
 
+
 # ===============================
 # Функция генерации точек + фиттинг
 # ===============================
 def generate_mesh_from_points(shape_name: str):
-    shape_name = shape_name.lower()
 
+    if not shape_name:
+        raise ValueError("[GAN] shape_name = None (ошибка вызова API)")
+    shape_name = shape_name.lower()
     """
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
@@ -34,7 +37,7 @@ def generate_mesh_from_points(shape_name: str):
     generator.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
     generator.eval()
 
-    # 1️⃣ генерируем точки
+    # 1 генерируем точки
     z = torch.randn(1, LATENT_DIM, device=DEVICE)
     label = torch.tensor([class_id], dtype=torch.long, device=DEVICE)
 
@@ -44,7 +47,7 @@ def generate_mesh_from_points(shape_name: str):
     if pts.size == 0 or np.isnan(pts).any():
         raise RuntimeError("[GAN] Пустое облако точек!")
 
-    # 2️⃣ фиттинг → меш
+    # 2 фиттинг → меш
     mesh = FITTERS[shape_name](pts)
     mesh.compute_vertex_normals()
 
