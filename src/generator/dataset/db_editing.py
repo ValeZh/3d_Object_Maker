@@ -80,10 +80,18 @@ def shape_exists(name: str) -> bool:
 def add_texture(name: str) -> bool:
     """
     Добавляет новую текстуру.
+    Всегда добавляет текстуру "none" (без текстуры) один раз.
     Возвращает:
         True — если добавлено,
         False — если уже есть.
     """
+    # --- Сначала добавляем "none" если ещё нет ---
+    if not texture_exists("none"):
+        _execute(
+            "INSERT INTO textures (name) VALUES (?)",
+            ("none",)
+        )
+
     name = name.strip().lower()
 
     existing = _execute(
@@ -100,7 +108,6 @@ def add_texture(name: str) -> bool:
         (name,)
     )
     return True
-
 
 def get_textures() -> List[str]:
     """ Возвращает список всех текстур """

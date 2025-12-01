@@ -16,7 +16,7 @@ from src.generator.ai.gan_object_factory import create_gan_object
 from zipper.zipper import make_zip
 from api.options import get_available_shapes, get_available_textures, get_available_colors
 from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
-
+from generator.dataset.ai_text import extract_attributes
 
 def hex_to_rgb(hex_color: str):
     hex_color = hex_color.lstrip('#')
@@ -92,11 +92,25 @@ async def generate_from_text(payload: dict):
     logger.info(f"Generate button pressed (TEXT MODE)")
     logger.info(f"Text description received: \"{text}\"")
 
+    # --- Извлекаем shape, color, texture ---
+    attrs = extract_attributes(text)
+    logger.info(f"Extracted attributes from text: {attrs}")
+
+    shape = attrs.get("shape")
+    color = attrs.get("color")
+    texture = attrs.get("texture")
+
+    if not shape and not color and not texture:
+        return JSONResponse(
+            {"error": "Could not extract any attributes from text"},
+            status_code=400
+        )
+
+    # --- Генерируем объект ---
     result = create_gan_object(
-        shape=None,
-        color=None,
-        texture=None,
-        text_description=text,
+        shape=shape,
+        color=color,
+        texture=texture,
         output_dir=OUTPUT_DIR,
         textures_dir=TEXTURES_DIR
     )
