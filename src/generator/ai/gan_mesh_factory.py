@@ -4,20 +4,23 @@ import numpy as np
 import open3d as o3d
 
 # Импортируем из ai
-from config.paths import OUTPUT_DIR, TEXTURES_DIR
+from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
 from pathlib import Path
+
 
 # ===============================
 # Функция генерации точек + фиттинг
 # ===============================
 def generate_mesh_from_points(shape_name: str):
-    shape_name = shape_name.lower()
 
+    if not shape_name:
+        raise ValueError("[GAN] shape_name = None (ошибка вызова API)")
+    shape_name = shape_name.lower()
     """
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
     """
-    from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+    from src.generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
     # ищем id класса
     class_id = None
     for k, n in CLASSES.items():
@@ -34,7 +37,7 @@ def generate_mesh_from_points(shape_name: str):
     generator.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
     generator.eval()
 
-    # 1️⃣ генерируем точки
+    # 1 генерируем точки
     z = torch.randn(1, LATENT_DIM, device=DEVICE)
     label = torch.tensor([class_id], dtype=torch.long, device=DEVICE)
 
@@ -44,7 +47,7 @@ def generate_mesh_from_points(shape_name: str):
     if pts.size == 0 or np.isnan(pts).any():
         raise RuntimeError("[GAN] Пустое облако точек!")
 
-    # 2️⃣ фиттинг → меш
+    # 2 фиттинг → меш
     mesh = FITTERS[shape_name](pts)
     mesh.compute_vertex_normals()
 
@@ -56,7 +59,7 @@ def create_shape(shape: str, color: str | list, texture: str | None):
     color: строка из COLOR_MAP или RGB [0..1]
     texture: имя текстуры в папке textures, либо None
     """
-    from generator.ai.gan_object_factory import create_gan_object
+    from src.generator.ai.gan_object_factory import create_gan_object
 
     # Генерация и сохранение obj/mtl
     result = create_gan_object(
