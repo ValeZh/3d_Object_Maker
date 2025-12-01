@@ -37,7 +37,7 @@ def generate_mesh_from_points(shape_name: str):
     generator.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
     generator.eval()
 
-    # 1️⃣ генерируем точки
+    # 1 генерируем точки
     z = torch.randn(1, LATENT_DIM, device=DEVICE)
     label = torch.tensor([class_id], dtype=torch.long, device=DEVICE)
 
@@ -47,7 +47,7 @@ def generate_mesh_from_points(shape_name: str):
     if pts.size == 0 or np.isnan(pts).any():
         raise RuntimeError("[GAN] Пустое облако точек!")
 
-    # 2️⃣ фиттинг → меш
+    # 2 фиттинг → меш
     mesh = FITTERS[shape_name](pts)
     mesh.compute_vertex_normals()
 
