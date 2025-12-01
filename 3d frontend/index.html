@@ -39,7 +39,6 @@
 
         <label class="field-label">AI Description:</label>
         <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
-
         <button id="generate" class="export">Generate</button>
         <button id="export" class="export">Export OBJ</button>
       </aside>
@@ -50,10 +49,14 @@
     </main>
   </div>
 
-  <!-- Libraries -->
+  <!-- Three.js и загрузчики -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/OBJLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/exporters/OBJExporter.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/MTLLoader.js"></script>
+
+  <!-- Наш JS -->
   <script src="script.js"></script>
 </body>
 </html>
