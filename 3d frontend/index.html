@@ -1,13 +1,14 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>3D Object Maker</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-  <div class="app">
+
+    <div class="app">
     <header class="top-bar">
       <div class="logo">
         <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
@@ -49,14 +50,34 @@
     </main>
   </div>
 
-  <!-- Three.js и загрузчики -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/OBJLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/exporters/OBJExporter.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/MTLLoader.js"></script>
+  <!-- Three.js ES Modules + экспорт в window -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+    }
+  }
+  </script>
 
-  <!-- Наш JS -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+
+    // Делаем THREE расширяемым и экспортируем loaders
+    window.THREE = Object.assign({}, THREE);
+    window.THREE.OrbitControls = OrbitControls;
+    window.THREE.OBJLoader = OBJLoader;
+    window.THREE.MTLLoader = MTLLoader;
+    window.THREE.OBJExporter = OBJExporter;
+
+    console.log("Three.js + loaders загружены");
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
