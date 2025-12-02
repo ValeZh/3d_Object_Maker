@@ -5,11 +5,9 @@ ROOT = Path(__file__).resolve().parents[3]
 SRC = ROOT / "src"
 sys.path.append(str(SRC))
 
-import os
-from config.paths import OUTPUT_DIR, TEXTURES_DIR
-from generator.ai.materials import apply_material
-from config.paths import ROOT, DATA_DIR, OUTPUT_DIR, TEXTURES_DIR
-from generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+from src.generator.ai.materials import apply_material
+from src.config.paths import  OUTPUT_DIR, TEXTURES_DIR
+
 
 
 COLOR_MAP = {
@@ -32,7 +30,7 @@ def create_gan_object(shape, color, texture, output_dir, textures_dir):
         'red' | 'cyan' | ...
         или [0.2,0.7,1.0]
     """
-    from generator.ai.gan_mesh_factory import generate_mesh_from_points
+    from src.generator.ai.gan_mesh_factory import generate_mesh_from_points
     # === Определяем имя и RGB ===
     color_name = None
     color_rgb  = None
@@ -98,8 +96,8 @@ if __name__ == "__main__":
     data = create_gan_object(
         shape="cube",
         color="cyan",
-        texture="metallic",
-        output_dir=output_dir,
-        textures_dir=textures_dir
+        texture="wood",
+        output_dir=OUTPUT_DIR,
+        textures_dir=TEXTURES_DIR
     )
 
