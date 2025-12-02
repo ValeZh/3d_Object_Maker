@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -10,32 +10,36 @@
 
     <div class="app">
     <header class="top-bar">
-      <div class="logo"><span>3D Object Maker</span></div>
-      <button id="reset" class="control-btn">Reset</button>
+      <div class="logo">
+        <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
+        <span>3D Object Maker</span>
+      </div>
+      <div class="controls">
+        <button id="reset" class="control-btn">Reset</button>
+      </div>
     </header>
 
     <main class="content">
       <aside class="params">
-        <h2>Параметры объекта</h2>
+        <h2>3D Object Parameters</h2>
 
-        <label>Форма:</label>
+        <label class="field-label">Shape:</label>
         <div class="dropdown" id="shapeDropdown">
-          <button class="dropbtn">Выберите форму</button>
+          <button class="dropbtn">Select Shape</button>
           <div class="dropdown-content" id="shapeOptions"></div>
         </div>
 
-        <label>Цвет:</label>
-        <input id="color" type="color" value="#6952BE"/>
+        <label class="field-label">Color:</label>
+        <input id="color" type="color" />
 
-        <label>Текстура:</label>
+        <label class="field-label">Texture:</label>
         <div class="dropdown" id="textureDropdown">
-          <button class="dropbtn">Выберите текстуру</button>
+          <button class="dropbtn">Select Texture</button>
           <div class="dropdown-content" id="textureOptions"></div>
         </div>
 
-        <label>AI-описание:</label>
-        <textarea id="description" placeholder="Например: красный металлический куб с золотыми деталями"></textarea>
-
+        <label class="field-label">AI Description:</label>
+        <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
         <button id="generate" class="export">Generate</button>
         <button id="export" class="export">Export OBJ</button>
       </aside>
