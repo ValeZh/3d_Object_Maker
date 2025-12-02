@@ -10,36 +10,32 @@
 
     <div class="app">
     <header class="top-bar">
-      <div class="logo">
-        <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
-        <span>3D Object Maker</span>
-      </div>
-      <div class="controls">
-        <button id="reset" class="control-btn">Reset</button>
-      </div>
+      <div class="logo"><span>3D Object Maker</span></div>
+      <button id="reset" class="control-btn">Reset</button>
     </header>
 
     <main class="content">
       <aside class="params">
-        <h2>3D Object Parameters</h2>
+        <h2>Параметры объекта</h2>
 
-        <label class="field-label">Shape:</label>
+        <label>Форма:</label>
         <div class="dropdown" id="shapeDropdown">
-          <button class="dropbtn">Select Shape</button>
+          <button class="dropbtn">Выберите форму</button>
           <div class="dropdown-content" id="shapeOptions"></div>
         </div>
 
-        <label class="field-label">Color:</label>
-        <input id="color" type="color" />
+        <label>Цвет:</label>
+        <input id="color" type="color" value="#6952BE"/>
 
-        <label class="field-label">Texture:</label>
+        <label>Текстура:</label>
         <div class="dropdown" id="textureDropdown">
-          <button class="dropbtn">Select Texture</button>
+          <button class="dropbtn">Выберите текстуру</button>
           <div class="dropdown-content" id="textureOptions"></div>
         </div>
 
-        <label class="field-label">AI Description:</label>
-        <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
+        <label>AI-описание:</label>
+        <textarea id="description" placeholder="Например: красный металлический куб с золотыми деталями"></textarea>
+
         <button id="generate" class="export">Generate</button>
         <button id="export" class="export">Export OBJ</button>
       </aside>

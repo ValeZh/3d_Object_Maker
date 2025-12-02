@@ -1,5 +1,4 @@
-import re
-import dataset_maker  # подключаем второй скрипт
+from . import dataset_maker
 
 SHAPES = ["cube", "sphere", "pyramid", "cylinder", "cone"]
 COLORS = ["green", "bluish", "blue", "red", "yellow", "black", "white", "brown"]
@@ -24,16 +23,3 @@ def extract_attributes(text):
 
     return result
 
-
-# === Основной запуск ===
-if __name__ == "__main__":
-    dataset_maker.init_db()  # инициируем БД
-
-    user_input = input("Enter object description: ")
-    attrs = extract_attributes(user_input)
-
-    if not attrs:
-        print("No valid attributes found.")
-    else:
-        print("Attributes:", attrs)
-        dataset_maker.create_single_object(attrs)  # создаём один объект
