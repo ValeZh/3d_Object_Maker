@@ -108,7 +108,7 @@ generateBtn.onclick = async () => {
   };
 
   generateBtn.disabled = true;
-  generateBtn.textContent = 'Генерация...';
+  generateBtn.textContent = 'Generating...';
 
   try {
     const endpoint = text ? '/api/generate-from-text' : '/api/generate-object';
@@ -175,7 +175,7 @@ async function loadZip(url) {
 }
 
 exportBtn.onclick = () => {
-  if (!currentMesh) return alert("Сначала сгенерируйте объект");
+  if (!currentMesh) return alert("First, generate the object");
   const exporter = new THREE.OBJExporter();
   const obj = exporter.parse(currentMesh);
   const blob = new Blob([obj], { type: 'text/plain' });
