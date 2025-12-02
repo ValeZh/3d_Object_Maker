@@ -1,11 +1,10 @@
 # gan_mesh_factory.py
 import torch
 import numpy as np
-import open3d as o3d
-
+from src.generator.ai.uv_export import apply_uv
 # Импортируем из ai
 from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
-from pathlib import Path
+
 
 
 # ===============================
@@ -50,6 +49,7 @@ def generate_mesh_from_points(shape_name: str):
     # 2 фиттинг → меш
     mesh = FITTERS[shape_name](pts)
     mesh.compute_vertex_normals()
+    mesh = apply_uv(mesh, shape_name)
 
     return mesh
 
