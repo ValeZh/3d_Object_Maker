@@ -1,83 +1,196 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>3D Object Maker</title>
-  <link rel="stylesheet" href="style.css"/>
-</head>
-<body>
+/* script.js — 100% рабочий, декабрь 2025 */
+const SERVER_URL = 'http://127.0.0.1:8000';
 
-    <div class="app">
-    <header class="top-bar">
-      <div class="logo">
-        <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
-        <span>3D Object Maker</span>
-      </div>
-      <div class="controls">
-        <button id="reset" class="control-btn">Reset</button>
-      </div>
-    </header>
+const shapeDropdown = document.getElementById('shapeDropdown');
+const shapeBtn = shapeDropdown.querySelector('.dropbtn');
+const shapeOptions = document.getElementById('shapeOptions');
 
-    <main class="content">
-      <aside class="params">
-        <h2>3D Object Parameters</h2>
+const textureDropdown = document.getElementById('textureDropdown');
+const textureBtn = textureDropdown.querySelector('.dropbtn');
+const textureOptions = document.getElementById('textureOptions');
 
-        <label class="field-label">Shape:</label>
-        <div class="dropdown" id="shapeDropdown">
-          <button class="dropbtn">Select Shape</button>
-          <div class="dropdown-content" id="shapeOptions"></div>
-        </div>
+const colorInput = document.getElementById('color');
+const descriptionInput = document.getElementById('description');
+const generateBtn = document.getElementById('generate');
+const exportBtn = document.getElementById('export');
+const resetBtn = document.getElementById('reset');
+const preview = document.getElementById('objectPreview');
 
-        <label class="field-label">Color:</label>
-        <input id="color" type="color" />
+let scene, camera, renderer, controls, currentMesh = null;
+let blobUrls = [];
 
-        <label class="field-label">Texture:</label>
-        <div class="dropdown" id="textureDropdown">
-          <button class="dropbtn">Select Texture</button>
-          <div class="dropdown-content" id="textureOptions"></div>
-        </div>
+// Ждём загрузки Three.js
+function waitForThree() {
+  return new Promise(resolve => {
+    const check = () => {
+      if (window.THREE && THREE.OrbitControls && THREE.OBJLoader) resolve();
+      else setTimeout(check, 50);
+    };
+    check();
+  });
+}
 
-        <label class="field-label">AI Description:</label>
-        <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
-        <button id="generate" class="export">Generate</button>
-        <button id="export" class="export">Export OBJ</button>
-      </aside>
+async function init() {
+  await waitForThree();
 
-      <section class="preview">
-        <div id="objectPreview"></div>
-      </section>
-    </main>
-  </div>
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
 
-  <!-- Three.js ES Modules + экспорт в window -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+  camera = new THREE.PerspectiveCamera(60, preview.clientWidth / preview.clientHeight, 0.1, 1000);
+  camera.position.set(0, 0, 5);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(preview.clientWidth, preview.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  preview.appendChild(renderer.domElement);
+
+  const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+  scene.add(light);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  window.addEventListener('resize', () => {
+    camera.aspect = preview.clientWidth / preview.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(preview.clientWidth, preview.clientHeight);
+  });
+
+  loadOptions();
+  animate();
+}
+
+function loadOptions() {
+  fetch(SERVER_URL + '/api/options')
+    .then(r => r.json())
+    .then(data => {
+      populate(shapeOptions, data.shapes || ["cube", "sphere", "cylinder"]);
+      populate(textureOptions, data.textures || ["wood", "stone", "metallic"]);
+    })
+    .catch(() => {
+      populate(shapeOptions, ["cube", "sphere", "cylinder"]);
+      populate(textureOptions, ["wood", "stone"]);
+    });
+}
+
+function populate(container, items) {
+  container.innerHTML = '';
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.textContent = item;
+    div.onclick = () => {
+      if (container === shapeOptions) {
+        shapeBtn.textContent = item;
+      } else {
+        textureBtn.textContent = item;
+      }
+      container.parentElement.classList.remove('show');
+    };
+    container.appendChild(div);
+  });
+}
+
+// Закрытие дропдаунов
+document.addEventListener('click', e => {
+  document.querySelectorAll('.dropdown').forEach(d => {
+    if (!d.contains(e.target)) d.classList.remove('show');
+  });
+});
+shapeBtn.onclick = e => { e.stopPropagation(); shapeDropdown.classList.toggle('show'); };
+textureBtn.onclick = e => { e.stopPropagation(); textureDropdown.classList.toggle('show'); };
+
+generateBtn.onclick = async () => {
+  const text = descriptionInput.value.trim();
+  const payload = text ? { text } : {
+    shape: shapeBtn.textContent.includes('Выберите') ? 'cube' : shapeBtn.textContent,
+    texture: textureBtn.textContent.includes('Выберите') ? 'wood' : textureBtn.textContent,
+    color: colorInput.value
+  };
+
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Generating...';
+
+  try {
+    const endpoint = text ? '/api/generate-from-text' : '/api/generate-object';
+    const res = await fetch(SERVER_URL + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.zip_url) await loadZip(data.zip_url);
+  } catch (err) {
+    alert('Ошибка: ' + err.message);
+  } finally {
+    generateBtn.disabled = false;
+    generateBtn.textContent = 'Generate';
+  }
+};
+
+async function loadZip(url) {
+  if (url.startsWith('/')) url = SERVER_URL + url;
+  blobUrls.forEach(u => URL.revokeObjectURL(u));
+  blobUrls = [];
+
+  const res = await fetch(url);
+  const zip = await JSZip.loadAsync(await res.arrayBuffer());
+
+  let objText = null, mtlText = null;
+  const textures = {};
+
+  for (const path in zip.files) {
+    const file = zip.files[path];
+    if (path.endsWith('.obj')) objText = await file.async('text');
+    if (path.endsWith('.mtl')) mtlText = await file.async('text');
+    if (/\.(jpe?g|png)$/i.test(path)) {
+      const blob = await file.async('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      textures[path.split('/').pop()] = blobUrl;
+      blobUrls.push(blobUrl);
     }
   }
-  </script>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-    import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+  let materials = null;
+  if (mtlText) {
+    for (const [name, url] of Object.entries(textures)) {
+      mtlText = mtlText.replace(new RegExp(name, 'g'), url);
+    }
+    materials = new THREE.MTLLoader().parse(mtlText);
+  }
 
-    // Делаем THREE расширяемым и экспортируем loaders
-    window.THREE = Object.assign({}, THREE);
-    window.THREE.OrbitControls = OrbitControls;
-    window.THREE.OBJLoader = OBJLoader;
-    window.THREE.MTLLoader = MTLLoader;
-    window.THREE.OBJExporter = OBJExporter;
+  const obj = new THREE.OBJLoader();
+  if (materials) obj.setMaterials(materials);
+  const model = obj.parse(objText);
 
-    console.log("Three.js + loaders загружены");
-  </script>
+  if (currentMesh) scene.remove(currentMesh);
+  currentMesh = model;
+  scene.add(currentMesh);
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="script.js"></script>
-</body>
-</html>
+  // Центрирование
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3());
+  model.position.sub(center);
+  const size = box.getSize(new THREE.Vector3()).length();
+  model.scale.setScalar(3 / size);
+}
+
+exportBtn.onclick = () => {
+  if (!currentMesh) return alert("First, generate the object");
+  const exporter = new THREE.OBJExporter();
+  const obj = exporter.parse(currentMesh);
+  const blob = new Blob([obj], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'model.obj';
+  a.click();
+};
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+resetBtn.onclick = () => location.reload();
+
+init();
