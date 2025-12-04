@@ -154,6 +154,9 @@ async def generate_from_text(request: Request):
 app.mount("/files", StaticFiles(directory=OUTPUT_DIR), name="files")
 
 FRONTEND_DIR = PROJECT_ROOT / "3d frontend"
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
-logger.info("API сервер запущен → http://127.0.0.1:8000")
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="3d frontend")
+    logger.info(f"[OK] Frontend подключён → {FRONTEND_DIR}")
+else:
+    logger.warning(f"[NO FRONTEND] Папка не найдена → {FRONTEND_DIR}")
