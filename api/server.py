@@ -1,11 +1,16 @@
 # api/server.py — Финальная версия (декабрь 2025)
 import logging
+import json
+import requests
+
+OLLAMA_URL = "http://127.0.0.1:11434/v1/completions"  # на сервере Ollama слушает локально
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-
+from src.ai_parser.parser import send_text_to_ollama
 # Логи, чтобы видеть всё в консоли
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +28,33 @@ app.add_middleware(
 
 # ======================= ПУТИ =======================
 from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
+logger = logging.getLogger(__name__)
 
+
+def extract_attributes_with_ollama(text: str) -> dict:
+    prompt = f"""
+    Извлеки цвет, форму и дополнительные детали из текста в формате JSON.
+    Текст: "{text}"
+    Вывод должен быть в виде:
+    {{ "color": "Red", "shape": "Cube", "additional": "Red top" }}
+    """
+
+    data = {
+        "model": "llama2",  # или ваша модель
+        "prompt": prompt,
+        "max_tokens": 50
+    }
+
+    try:
+        response = requests.post(OLLAMA_URL, json=data)
+        response.raise_for_status()
+        completion_text = response.json().get("completion", "")
+        attrs = json.loads(completion_text)
+        return attrs
+    except Exception as e:
+        logger.error(f"Ollama request failed: {e}")
+        # Возврат fallback
+        return {"color": None, "shape": None, "additional": None}
 # Убедимся, что папки существуют
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +93,26 @@ async def log_texture(request: Request): return JSONResponse({"status": "ok"})
 
 @app.post("/api/log-color")
 async def log_color(request: Request): return JSONResponse({"status": "ok"})
+
+# ======================== ЕНДПОИНТ ДЛЯ СЕРВЕРА ====================
+@app.post("/api/analyze-text")
+async def analyze_text(request: Request):
+    payload = await request.json()
+    text = payload.get("text", "").strip()
+    if not text:
+        return JSONResponse({"error": "Пустой текст"}, status_code=400)
+
+    # Используем ИИ для извлечения атрибутов
+    attrs = send_text_to_ollama(text)
+    if not attrs:
+        # fallback
+        logger.warning(f"Ollama вернул None для текста: '{text}'")
+        attrs = {"shape": "sphere", "color": "#ff00ff", "additional_features": "", "texture": "metallic"}
+
+    # Логируем для дебага
+    logger.info(f"AI JSON: {attrs}")
+
+    return attrs  # JSON возвращается напрямую фронтенду
 
 # ======================= ГЕНЕРАЦИЯ =======================
 from src.generator.ai.gan_object_factory import create_gan_object
@@ -115,39 +166,23 @@ async def generate_object(request: Request):
 async def generate_from_text(request: Request):
     payload = await request.json()
     text = payload.get("text", "").strip()
+
     if not text:
+        logger.warning("Пустой текст получен от фронтенда")
         return JSONResponse({"error": "Пустой текст"}, status_code=400)
 
-    from src.generator.dataset.ai_text import extract_attributes
-    attrs = extract_attributes(text)
+    logger.info(f"Получен текст с фронтенда: '{text}'")
 
-    shape = attrs.get("shape") or "sphere"
-    texture = attrs.get("texture") or "metallic"
-    color = attrs.get("color") or "#ff00ff"
-    color_rgb = hex_to_rgb(color) if isinstance(color, str) and color.startswith("#") else [1, 0, 1]
+    # Отправка в Ollama
+    attrs = send_text_to_ollama(text)
+    if not attrs:
+        logger.warning(f"Ollama вернул None для текста: '{text}'")
+        attrs = {"shape": "sphere", "color": "#ff00ff", "additional_features": "", "texture": "metallic"}
 
-    logger.info(f"Генерация из текста: '{text}' → {shape=}, {texture=}, {color=}")
+    logger.info(f"JSON, полученный от Ollama: {attrs}")
+    logger.info("Теперь фронтенд может использовать этот JSON для локальной генерации 3D объекта")
 
-    result = create_gan_object(
-        shape=shape, color=color_rgb, texture=texture,
-        output_dir=OUTPUT_DIR, textures_dir=TEXTURES_DIR
-    )
-
-    obj_path = Path(result["obj_path"])
-    mtl_path = Path(result["mtl_path"])
-
-    tex_paths = []
-    for ext in ["jpg", "jpeg", "png"]:
-        p = obj_path.parent / f"{texture}.{ext}"
-        if p.exists():
-            tex_paths.append(p)
-
-    zip_name = f"text_{obj_path.stem}.zip"
-    zip_path = obj_path.parent / zip_name
-    make_zip(obj_path, mtl_path, tex_paths, zip_path)
-
-    rel_path = zip_path.relative_to(OUTPUT_DIR).as_posix()
-    return {"zip_url": f"/files/{rel_path}"}
+    return attrs  # JSON возвращается напрямую фронтенду
 
 
 # ======================= СТАТИКА =======================
