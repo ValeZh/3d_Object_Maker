@@ -1,11 +1,16 @@
 # api/server.py — Финальная версия (декабрь 2025)
 import logging
+import json
+import requests
+
+OLLAMA_URL = "http://127.0.0.1:11434/v1/completions"  # на сервере Ollama слушает локально
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-
+from src.ai_parser.parser import send_text_to_ollama
 # Логи, чтобы видеть всё в консоли
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +28,33 @@ app.add_middleware(
 
 # ======================= ПУТИ =======================
 from src.config.paths import ROOT as PROJECT_ROOT, OUTPUT_DIR, TEXTURES_DIR
+logger = logging.getLogger(__name__)
 
+
+def extract_attributes_with_ollama(text: str) -> dict:
+    prompt = f"""
+    Извлеки цвет, форму и дополнительные детали из текста в формате JSON.
+    Текст: "{text}"
+    Вывод должен быть в виде:
+    {{ "color": "Red", "shape": "Cube", "additional": "Red top" }}
+    """
+
+    data = {
+        "model": "llama2",  # или ваша модель
+        "prompt": prompt,
+        "max_tokens": 50
+    }
+
+    try:
+        response = requests.post(OLLAMA_URL, json=data)
+        response.raise_for_status()
+        completion_text = response.json().get("completion", "")
+        attrs = json.loads(completion_text)
+        return attrs
+    except Exception as e:
+        logger.error(f"Ollama request failed: {e}")
+        # Возврат fallback
+        return {"color": None, "shape": None, "additional": None}
 # Убедимся, что папки существуют
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -118,8 +149,12 @@ async def generate_from_text(request: Request):
     if not text:
         return JSONResponse({"error": "Пустой текст"}, status_code=400)
 
-    from src.generator.dataset.ai_text import extract_attributes
-    attrs = extract_attributes(text)
+    # Используем ИИ вместо фильтра
+    attrs = send_text_to_ollama(text)
+    if not attrs:
+        # fallback, если ИИ вернул None
+        logger.warning(f"Ollama вернул None для текста: '{text}'")
+        attrs = {"shape": "sphere", "color": "#ff00ff", "additional_features": ""}
 
     shape = attrs.get("shape") or "sphere"
     texture = attrs.get("texture") or "metallic"
