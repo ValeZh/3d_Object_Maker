@@ -171,7 +171,16 @@ async def generate_from_text(request: Request):
         logger.warning("Пустой текст получен от фронтенда")
         return JSONResponse({"error": "Пустой текст"}, status_code=400)
 
+<<<<<<< HEAD
     logger.info(f"Получен текст с фронтенда: '{text}'")
+=======
+    # Используем ИИ вместо фильтра
+    attrs = send_text_to_ollama(text)
+    if not attrs:
+        # fallback, если ИИ вернул None
+        logger.warning(f"Ollama вернул None для текста: '{text}'")
+        attrs = {"shape": "sphere", "color": "#ff00ff", "additional_features": ""}
+>>>>>>> 009e04c885cbda4de00eddb00df7661bd8013708
 
     # Отправка в Ollama
     attrs = send_text_to_ollama(text)
