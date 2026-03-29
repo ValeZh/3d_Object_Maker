@@ -1,0 +1,75 @@
+# gan_mesh_factory.py
+import torch
+import numpy as np
+from src.generator.ai.uv_export import apply_uv
+# Импортируем из ai
+from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
+
+
+
+# ===============================
+# Функция генерации точек + фиттинг
+# ===============================
+def generate_mesh_from_points(shape_name: str):
+
+    if not shape_name:
+        raise ValueError("[GAN] shape_name = None (ошибка вызова API)")
+    shape_name = shape_name.lower()
+    """
+    shape_name: 'cube', 'sphere', 'torus' и т.д.
+    Возвращает: open3d.geometry.TriangleMesh
+    """
+    from src.generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+    # ищем id класса
+    class_id = None
+    for k, n in CLASSES.items():
+        if n == shape_name:
+            class_id = k
+            break
+
+    if class_id is None:
+        raise ValueError(f"[GAN] Нет класса: {shape_name}")
+
+    # загружаем модель
+    generator = Generator(LATENT_DIM, COND_DIM, NUM_POINTS, len(CLASSES)).to(DEVICE)
+    ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
+    generator.load_state_dict(ckpt["G"] if "G" in ckpt else ckpt)
+    generator.eval()
+
+    # 1 генерируем точки
+    z = torch.randn(1, LATENT_DIM, device=DEVICE)
+    label = torch.tensor([class_id], dtype=torch.long, device=DEVICE)
+
+    with torch.no_grad():
+        pts = generator(z, label).cpu().numpy()[0]
+
+    if pts.size == 0 or np.isnan(pts).any():
+        raise RuntimeError("[GAN] Пустое облако точек!")
+
+    # 2 фиттинг → меш
+    mesh = FITTERS[shape_name](pts)
+    mesh.compute_vertex_normals()
+    mesh = apply_uv(mesh, shape_name)
+
+    return mesh
+
+def create_shape(shape: str, color: str | list, texture: str | None):
+    """
+    shape: 'cube', 'sphere', ...
+    color: строка из COLOR_MAP или RGB [0..1]
+    texture: имя текстуры в папке textures, либо None
+    """
+    from src.generator.ai.gan_object_factory import create_gan_object
+
+    # Генерация и сохранение obj/mtl
+    result = create_gan_object(
+        shape=shape,
+        color=color,
+        texture=texture,
+        output_dir=OUTPUT_DIR,
+        textures_dir=TEXTURES_DIR
+    )
+    return result
+
+if __name__ == "__main__":
+    generate_mesh_from_points("cube")
