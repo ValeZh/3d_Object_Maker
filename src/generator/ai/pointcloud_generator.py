@@ -1,16 +1,22 @@
+#!/usr/bin/env python3
 # pointcloud_generator.py
+# Генерация 3D-хмар точок з Conditional GAN
 
 import torch
 import sqlite3
 import numpy as np
 from pathlib import Path
+import matplotlib.pyplot as plt
 
+# --- Импорт моделей и констант из тренера ---
 from pointcloud_cgan import (
     Generator,
     LATENT_DIM,
     COND_DIM,
     NUM_POINTS,
     DEVICE,
+    save_pointcloud_ply,   # если нужен экспорт
+    save_pc_image,         # визуализация в PNG
 )
 
 # ==============================
@@ -30,13 +36,12 @@ if not MODEL_PATH.exists():
 def load_classes():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # сортируем по id — это важно
+
     rows = c.execute(
         "SELECT id, name FROM shapes ORDER BY id ASC"
     ).fetchall()
     conn.close()
 
-    # Превращаем в 0-based индексы
     classes = {i: row[1] for i, row in enumerate(rows)}
     inv = {v: k for k, v in classes.items()}
     return classes, inv
@@ -44,6 +49,7 @@ def load_classes():
 
 CLASSES, INV_CLASSES = load_classes()
 print("✔ Классы из БД:", CLASSES)
+
 
 # ==============================
 # 3. Загружаем GAN
@@ -56,8 +62,6 @@ generator = Generator(
 ).to(DEVICE)
 
 ckpt = torch.load(MODEL_PATH, map_location=DEVICE)
-
-# старые/новые форматы
 state = ckpt["G"] if "G" in ckpt else ckpt
 generator.load_state_dict(state)
 generator.eval()
@@ -90,18 +94,27 @@ def generate_pointcloud(shape_name: str) -> np.ndarray:
 
 
 # ==============================
-# 5. Демо визуализации (по желанию)
+# 5. Показ как в оригинале
 # ==============================
 def show_all_classes():
-    import matplotlib.pyplot as plt
-
+    """
+    Визуализация всех классов одной фигурой (2x3 или 3xX)
+    Каждая хмара точек — scatter plot
+    """
     fig = plt.figure(figsize=(15, 10))
 
     for i, (cid, name) in enumerate(CLASSES.items()):
         pts = generate_pointcloud(name)
 
-        ax = fig.add_subplot(2, 3, i + 1, projection='3d')
-        ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], s=4, c=pts[:, 2], cmap="viridis")
+        ax = fig.add_subplot(2, 3, i + 1, projection="3d")
+        ax.scatter(
+            pts[:, 0],
+            pts[:, 1],
+            pts[:, 2],
+            s=3,
+            c=pts[:, 2],
+            cmap="viridis"
+        )
         ax.set_title(name)
         ax.axis("off")
 
@@ -109,5 +122,8 @@ def show_all_classes():
     plt.show()
 
 
+# ==============================
+# 6. CLI демо
+# ==============================
 if __name__ == "__main__":
     show_all_classes()

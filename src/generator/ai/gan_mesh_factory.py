@@ -4,7 +4,7 @@ import numpy as np
 from src.generator.ai.uv_export import apply_uv
 # Импортируем из ai
 from src.config.paths import OUTPUT_DIR, TEXTURES_DIR
-
+from src.generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
 
 
 # ===============================
@@ -19,7 +19,7 @@ def generate_mesh_from_points(shape_name: str):
     shape_name: 'cube', 'sphere', 'torus' и т.д.
     Возвращает: open3d.geometry.TriangleMesh
     """
-    from src.generator.ai.reconstruct_meshes import Generator, FITTERS, LATENT_DIM, COND_DIM, NUM_POINTS, DEVICE, CLASSES, MODEL_PATH
+
     # ищем id класса
     class_id = None
     for k, n in CLASSES.items():
