@@ -22,6 +22,7 @@ const preview = document.getElementById('objectPreview');
 
 let scene, camera, renderer, controls, currentMesh = null;
 let blobUrls = [];
+let originalZipBlob = null;   // <-- СЮДА СКЛАДЫВАЕМ ИСХОДНЫЙ ZIP
 
 // ================= THREE =================
 
@@ -147,7 +148,12 @@ async function loadZip(url) {
   blobUrls = [];
 
   const res = await fetch(url);
-  const zip = await JSZip.loadAsync(await res.arrayBuffer());
+
+  // <-- Сохраняем исходный ZIP сюда
+  const arrayBuf = await res.arrayBuffer();
+  originalZipBlob = new Blob([arrayBuf], { type: "application/zip" });
+
+  const zip = await JSZip.loadAsync(arrayBuf);
 
   let objText = null;
   let mtlText = null;
@@ -165,7 +171,6 @@ async function loadZip(url) {
     }
   }
 
-  // корректная подмена пути к текстуре
   if (mtlText) {
     for (const texName in textureMap) {
       mtlText = mtlText.replace(
@@ -194,18 +199,14 @@ async function loadZip(url) {
   scene.add(model);
 }
 
-// ================= EXPORT =================
+// ================= EXPORT ZIP =================
 
 exportBtn.onclick = () => {
-  if (!currentMesh) return alert("Generate first!");
+  if (!originalZipBlob) return alert("Generate first!");
 
-  const exporter = new THREE.OBJExporter();
-  const text = exporter.parse(currentMesh);
-
-  const blob = new Blob([text], { type: 'text/plain' });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "model.obj";
+  a.href = URL.createObjectURL(originalZipBlob);
+  a.download = "model.zip";
   a.click();
 };
 

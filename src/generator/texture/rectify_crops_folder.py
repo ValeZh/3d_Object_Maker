@@ -9,19 +9,19 @@ from PIL import Image
 # --------- НАСТРОЙКИ ПОД ТВОЙ ПРОЕКТ ---------
 
 # Папка с исходными картинками домов
-SOURCE_DIR = Path(r"D:\4course_1sem\semestr_project\3d_Object_Maker\data\zip2_h")
+SOURCE_DIR = Path(r"D:\4course_1sem\semestr_project\3d_Object_Maker\panels")
 
 # Папка, куда сохранить выровненные версии
-OUT_DIR = Path(r"D:\4course_1sem\semestr_project\3d_Object_Maker\data\zip2_h_rectified")
+OUT_DIR = Path(r"D:\4course_1sem\semestr_project\3d_Object_Maker\panels_rectified")
 
 # Рекурсивно обходить подпапки?
 RECURSIVE = True
 
 # Минимальный |угол|, при котором есть смысл что‑то крутить (в градусах)
-MIN_DEG = 0.5
+MIN_DEG = 0.0
 
-# Максимальный |угол|, чтобы не ломать перспективу (в градусах)
-MAX_DEG = 20.0
+# Максимальный |угол| коррекции — иначе считаем оценку ненадёжной (в градусах)
+MAX_DEG = 175.0
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
