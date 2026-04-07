@@ -107,30 +107,57 @@ textureBtn.onclick = e => { e.stopPropagation(); textureDropdown.classList.toggl
 
 generateBtn.onclick = async () => {
   const desc = descriptionInput.value.trim();
-  const payload = desc
-    ? { text: desc }
-    : {
-        shape: shapeBtn.textContent || "cube",
-        texture: textureBtn.textContent || "wood",
-        color: colorInput.value,
-      };
 
   generateBtn.disabled = true;
   generateBtn.textContent = "Generating...";
 
   try {
-    const api = desc ? `/api/generate-from-text` : `/api/generate-object`;
-    const r = await fetch(`${SERVER_URL}${api}`, {
-      method: "POST",
+    let payload;
+
+    // ===================== ЕСЛИ ЕСТЬ ТЕКСТ =====================
+    if (desc) {
+      console.log("➡️ Отправка текста в AI:", desc);
+
+      // 1. Получаем JSON от AI
+      const aiRes = await fetch(`${SERVER_URL}/api/process-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: desc, generate: true })
+      });
+
+      const aiData = await aiRes.json();
+      console.log("🧠 Ответ AI:", aiData);
+
+      payload = aiData;
+    }
+
+    // ===================== ЕСЛИ БЕЗ ТЕКСТА =====================
+    else {
+      payload = {
+        shape: shapeBtn.textContent || "cube",
+        texture: textureBtn.textContent || "wood",
+        color: colorInput.value,
+      };
+    }
+
+    // ===================== ГЕНЕРАЦИЯ =====================
+    console.log("🎯 Отправка в генератор:", payload);
+
+    const genRes = await fetch(`${SERVER_URL}/api/generate-object`, {
+      method: "POST"
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
 
-    const data = await r.json();
+    const data = await genRes.json();
+    console.log("📦 Ответ генератора:", data);
+
     if (!data.zip_url) throw Error("No zip returned");
 
     await loadZip(data.zip_url);
+
   } catch (err) {
+    console.error(err);
     alert("Generation failed: " + err.message);
   }
 
