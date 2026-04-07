@@ -1,0 +1,21 @@
+import potrace
+from PIL import Image
+import numpy as np
+
+# 1. Завантаження растрового зображення
+image_path = "input.png"  # <-- шлях до вашого файлу
+image = Image.open(image_path).convert("L")  # Конвертуємо в градації сірого
+
+# 2. Конвертація в двійкове зображення
+bw = image.point(lambda x: 0 if x < 128 else 1, '1')
+bitmap = np.array(bw, dtype=np.uint32)
+
+# 3. Створення векторних контурів
+bmp = potrace.Bitmap(bitmap)
+path = bmp.trace()
+
+# 4. Збереження векторного зображення у форматі SVG
+with open("output.svg", "w") as f:
+    f.write(path.to_svg())
+
+print("Трасування завершено. Файл output.svg збережено.")

@@ -1,78 +1,209 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>3D Object Maker</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-
-<div class="app">
-  <header class="top-bar">
-    <div class="logo">
-      <img src="photo_2025-11-18_14-06-36.jpg" alt="logo"/>
-      <span>3D Object Maker</span>
-    </div>
-    <div class="controls">
-      <button id="reset" class="control-btn">Reset</button>
-    </div>
-  </header>
-
-  <main class="content">
-    <aside class="params">
-      <h2>3D Object Parameters</h2>
-
-      <label class="field-label">Shape:</label>
-      <div class="dropdown" id="shapeDropdown">
-        <button class="dropbtn">cube</button>
-        <div class="dropdown-content" id="shapeOptions"></div>
+  <div class="app">
+    <header class="top-bar">
+      <div class="logo">
+        <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
+        <span>3D Object Maker</span>
       </div>
-
-      <label class="field-label">Color:</label>
-      <input id="color" type="color" value="#6952BE"/>
-
-      <label class="field-label">Texture:</label>
-      <div class="dropdown" id="textureDropdown">
-        <button class="dropbtn">metallic</button>
-        <div class="dropdown-content" id="textureOptions"></div>
+      <div class="controls">
+        <button id="tabModules" class="control-btn active-tab">Module Generator</button>
+        <button id="tabLibrary" class="control-btn">Module Library</button>
+        <button id="tabBuilder" class="control-btn">House Builder</button>
+        <button id="reset" class="control-btn">Reset</button>
       </div>
+    </header>
 
-      <label class="field-label">AI Description:</label>
-      <textarea id="description" rows="4" placeholder="Example: red metallic cube"></textarea>
-      <button id="generate" class="export">Generate</button>
-      <button id="export" class="export">Export OBJ</button>
-    </aside>
+    <main class="content">
+      <aside class="params">
+        <!-- ================= MODULE GENERATOR ================= -->
+        <div id="modulePage">
+          <h2>Module Generator</h2>
 
-    <section class="preview">
-      <div id="objectPreview"></div>
-    </section>
-  </main>
-</div>
+          <label class="field-label">Module Description:</label>
+          <textarea id="moduleDescription" rows="4" placeholder="Например: серая панель с окном"></textarea>
 
+          <button id="analyzeModule" class="export">Analyze</button>
 
-<!-- THREE + addons -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+          <label class="field-label">Module Name:</label>
+          <input id="moduleName" class="text-input" type="text" placeholder="Например: Gray wall with window" />
+
+          <label class="field-label">Module Type:</label>
+          <select id="moduleType" class="select-input">
+            <option value="wall">Wall</option>
+            <option value="window">Window</option>
+            <option value="door">Door</option>
+            <option value="roof">Roof</option>
+            <option value="balcony">Balcony</option>
+          </select>
+
+          <label class="field-label">Color:</label>
+          <input id="moduleColor" type="color" value="#8f8f8f" />
+
+          <label class="field-label">Width:</label>
+          <input id="moduleWidth" class="text-input" type="number" min="1" max="10" step="0.1" value="1" />
+
+          <label class="field-label">Height:</label>
+          <input id="moduleHeight" class="text-input" type="number" min="1" max="10" step="0.1" value="1.2" />
+
+          <label class="field-label">Depth:</label>
+          <input id="moduleDepth" class="text-input" type="number" min="0.1" max="5" step="0.1" value="0.2" />
+
+          <label class="field-label checkbox-line">
+            <input id="moduleHasWindow" type="checkbox" />
+            <span>Has Window</span>
+          </label>
+
+          <label class="field-label checkbox-line">
+            <input id="moduleHasDoor" type="checkbox" />
+            <span>Has Door</span>
+          </label>
+
+          <label class="field-label checkbox-line">
+            <input id="moduleHasBalcony" type="checkbox" />
+            <span>Has Balcony</span>
+          </label>
+
+          <label class="field-label checkbox-line">
+            <input id="moduleIsRoofPiece" type="checkbox" />
+            <span>Is Roof Piece</span>
+          </label>
+
+          <button id="generateModule" class="export">Generate Module</button>
+          <button id="saveModule" class="export secondary-btn">Save Module</button>
+
+          <label class="field-label">Module JSON:</label>
+          <pre id="moduleJson" class="json-box">{}</pre>
+        </div>
+
+        <!-- ================= MODULE LIBRARY ================= -->
+        <div id="libraryPage" class="hidden">
+          <h2>Module Library</h2>
+
+          <label class="field-label">Filter by Type:</label>
+          <select id="libraryFilter" class="select-input">
+            <option value="all">All</option>
+            <option value="wall">Wall</option>
+            <option value="window">Window</option>
+            <option value="door">Door</option>
+            <option value="roof">Roof</option>
+            <option value="balcony">Balcony</option>
+          </select>
+
+          <label class="field-label">Saved Modules:</label>
+          <div id="savedModules" class="library-list"></div>
+        </div>
+
+        <!-- ================= HOUSE BUILDER ================= -->
+        <div id="builderPage" class="hidden">
+          <h2>House Builder</h2>
+
+          <label class="field-label">House Description:</label>
+          <textarea id="houseDescription" rows="4" placeholder="Например: серый длинный панельный дом на 9 этажей с балконами"></textarea>
+
+          <button id="analyzeHouse" class="export">Analyze</button>
+
+          <label class="field-label">Floors:</label>
+          <input id="floors" type="range" min="1" max="25" value="9" />
+          <div id="floorsValue" class="small-value">9</div>
+
+          <label class="field-label">Sections / Entrances:</label>
+          <input id="sections" type="range" min="1" max="10" value="5" />
+          <div id="sectionsValue" class="small-value">5</div>
+
+          <label class="field-label">Width:</label>
+          <input id="width" type="range" min="6" max="30" value="18" />
+          <div id="widthValue" class="small-value">18</div>
+
+          <label class="field-label">Depth:</label>
+          <input id="depth" type="range" min="1" max="6" value="2" />
+          <div id="depthValue" class="small-value">2</div>
+
+          <label class="field-label">Facade Color:</label>
+          <input id="houseColor" type="color" value="#8f8f8f" />
+
+          <label class="field-label">Roof Type:</label>
+          <select id="roofType" class="select-input">
+            <option value="flat">Flat</option>
+            <option value="gable">Gable</option>
+          </select>
+
+          <label class="field-label checkbox-line">
+            <input id="hasBalconies" type="checkbox" checked />
+            <span>Has Balconies</span>
+          </label>
+
+          <label class="field-label">Balcony Density:</label>
+          <input id="balconyRate" type="range" min="0" max="1" step="0.05" value="0.30" />
+          <div id="balconyRateValue" class="small-value">0.30</div>
+
+          <label class="field-label">Window Columns:</label>
+          <input id="windowCols" type="range" min="2" max="20" value="8" />
+          <div id="windowColsValue" class="small-value">8</div>
+
+          <label class="field-label">Wall Module:</label>
+          <select id="wallModule" class="select-input"></select>
+
+          <label class="field-label">Window Module:</label>
+          <select id="windowModule" class="select-input"></select>
+
+          <label class="field-label">Door Module:</label>
+          <select id="doorModule" class="select-input"></select>
+
+          <label class="field-label">Roof Module:</label>
+          <select id="roofModule" class="select-input"></select>
+
+          <label class="field-label">Balcony Module:</label>
+          <select id="balconyModule" class="select-input"></select>
+
+          <button id="generateHouse" class="export">Generate House</button>
+          <button id="animateHouse" class="export secondary-btn">Build Animation</button>
+          <button id="compareHouse" class="export secondary-btn">Compare</button>
+          <button id="exportZip" class="export secondary-btn">Export ZIP</button>
+
+          <label class="field-label">House JSON:</label>
+          <pre id="houseJson" class="json-box">{}</pre>
+        </div>
+      </aside>
+
+      <section class="preview">
+        <div class="preview-top-label">3D Preview</div>
+        <div id="objectPreview"></div>
+        <div id="hoverInfo" class="hover-info hidden"></div>
+
+        <div class="preview-json-box">
+          <div class="preview-json-title">AI interpretation</div>
+          <pre id="previewJson">{}</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+    }
   }
-}
-</script>
+  </script>
 
-<script type="module">
-  import * as THREE from 'three';
-  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-  import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-  import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
-  import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-  window.THREE = { ...THREE, OrbitControls, OBJLoader, MTLLoader, OBJExporter };
-</script>
+    window.THREE = Object.assign({}, THREE);
+    window.THREE.OrbitControls = OrbitControls;
+  </script>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="script.js"></script>
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
