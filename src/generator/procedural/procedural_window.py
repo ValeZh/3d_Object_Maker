@@ -13,9 +13,9 @@
     список (bay_index, z_frac): bay 0..nv слева направо, z_frac 0=низ проёма, 1=верх.
 
 Обзор в Open3D (нужен пакет open3d: pip install open3d):
-  python -m src.generator.dataset.procedural_window preview
+  python -m src.generator.procedural.procedural_window preview
 Экспорт OBJ без Open3D:
-  python -m src.generator.dataset.procedural_window export -o ./out
+  python -m src.generator.procedural.procedural_window export -o ./out
 
 Числа и списки ниже (USER_*) можно править вручную — они подхватываются при вызове
 build_window_mesh() / preview_windows_open3d() без аргументов и в run_window_demo.
@@ -373,16 +373,23 @@ def _rect_frame(
 def _rect_glass(inner_w: float, inner_h: float, glass_y: float, glass_t: float, gp: List[trimesh.Trimesh]) -> None:
     if inner_w <= 1e-6 or inner_h <= 1e-6:
         return
-    gp.append(
-        _box_at(
-            0.0,
-            glass_y,
-            0.0,
-            max(inner_w - 0.002, 1e-4),
-            glass_t,
-            max(inner_h - 0.002, 1e-4),
-        )
+    w = max(inner_w - 0.002, 1e-4)
+    h = max(inner_h - 0.002, 1e-4)
+    hw, hh = w * 0.5, h * 0.5
+    y_lo = glass_y - glass_t * 0.5
+    y_hi = glass_y + glass_t * 0.5
+    # Два листа в плоскости XZ вместо полного box: грани «крышки» box (размер X×толщина и Z×толщина)
+    # давали треугольники с aspect ratio ~100+ и «улётные» спайки в OpenGL.
+    pts_hi = np.array(
+        [[-hw, y_hi, -hh], [hw, y_hi, -hh], [hw, y_hi, hh], [-hw, y_hi, hh]], dtype=np.float64
     )
+    pts_lo = np.array(
+        [[-hw, y_lo, -hh], [hw, y_lo, -hh], [hw, y_lo, hh], [-hw, y_lo, hh]], dtype=np.float64
+    )
+    fac_out = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+    fac_in = np.array([[0, 2, 1], [0, 3, 2]], dtype=np.int64)
+    gp.append(trimesh.Trimesh(vertices=pts_hi, faces=fac_out, process=False, validate=False))
+    gp.append(trimesh.Trimesh(vertices=pts_lo, faces=fac_in, process=False, validate=False))
 
 
 def build_window_mesh(
@@ -428,6 +435,7 @@ def build_window_mesh(
         ft=ft,
         glass_t=glass_t,
         glass_y=glass_y,
+        with_glass=True,
     )
     if len(mf.faces) == 0 and len(mg.faces) == 0:
         return trimesh.Trimesh()
@@ -458,8 +466,10 @@ def build_window_frame_glass_meshes(
     ft: float,
     glass_t: float,
     glass_y: float,
+    with_glass: bool = True,
+    merge_vertices: bool = True,
 ) -> Tuple[trimesh.Trimesh, trimesh.Trimesh]:
-    """Рама + импосты и стекло отдельно (для разных текстур / UV-атласа)."""
+    """Рама + импосты и стекло отдельно (для разных текстур / UV-атласа). with_glass=False — только рама."""
     fp: List[trimesh.Trimesh] = []
     gp: List[trimesh.Trimesh] = []
     nv = mullions_vertical
@@ -476,7 +486,21 @@ def build_window_frame_glass_meshes(
         )
     else:
         _rect_window_parts(
-            width, height, depth, ft, glass_y, glass_t, kind, nv, nh, ox, oz, partial_horizontal_bars, fp, gp
+            width,
+            height,
+            depth,
+            ft,
+            glass_y,
+            glass_t,
+            kind,
+            nv,
+            nh,
+            ox,
+            oz,
+            partial_horizontal_bars,
+            fp,
+            gp,
+            with_glass=with_glass,
         )
 
     mf = _merge(fp)
@@ -484,11 +508,13 @@ def build_window_frame_glass_meshes(
     if len(mf.vertices):
         mf.remove_unreferenced_vertices()
         mf.fix_normals()
-        mf.merge_vertices(merge_tex=False)
+        if merge_vertices:
+            mf.merge_vertices(merge_tex=False)
     if len(mg.vertices):
         mg.remove_unreferenced_vertices()
         mg.fix_normals()
-        mg.merge_vertices(merge_tex=False)
+        if merge_vertices:
+            mg.merge_vertices(merge_tex=False)
     return mf, mg
 
 
@@ -507,11 +533,14 @@ def _rect_window_parts(
     partial_bars: List[Tuple[int, float]],
     fp: List[trimesh.Trimesh],
     gp: List[trimesh.Trimesh],
+    *,
+    with_glass: bool = True,
 ) -> None:
     inner_w = max(width - 2 * ft, 1e-4)
     inner_h = max(height - 2 * ft, 1e-4)
     _rect_frame(width, height, depth, ft, fp)
-    _rect_glass(inner_w, inner_h, glass_y, glass_t, gp)
+    if with_glass:
+        _rect_glass(inner_w, inner_h, glass_y, glass_t, gp)
     _mullions_rect_or_arch(kind, nv, nh, ox, oz, inner_w, inner_h, depth, ft, 0.0, fp)
     _partial_horizontal_bars_geometry(partial_bars, nv, inner_w, inner_h, depth, ft, 0.0, ox, fp)
 
@@ -658,7 +687,7 @@ def _require_open3d():
             "Команда preview требует пакет open3d.\n"
             "  pip install open3d\n"
             "Без Open3D можно только экспортировать меш:\n"
-            "  python -m src.generator.dataset.procedural_window export -o ./out",
+            "  python -m src.generator.procedural.procedural_window export -o ./out",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
@@ -817,12 +846,12 @@ def _build_arg_parser() -> Any:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры:
-  python -m src.generator.dataset.procedural_window preview
-  python -m src.generator.dataset.procedural_window preview --profile arch --kind french
-  python -m src.generator.dataset.procedural_window preview --profiles rect round --spacing 3.2
-  python -m src.generator.dataset.procedural_window export -o ./out --width 1.4 --mullions-vertical 2
-  python -m src.generator.dataset.procedural_window export --mullions-vertical 2 --partial-h 2:0.78 -o ./out
-  python -m src.generator.dataset.procedural_window export --frame-tex wood.jpg --glass-tex frosted.png -o ./out
+  python -m src.generator.procedural.procedural_window preview
+  python -m src.generator.procedural.procedural_window preview --profile arch --kind french
+  python -m src.generator.procedural.procedural_window preview --profiles rect round --spacing 3.2
+  python -m src.generator.procedural.procedural_window export -o ./out --width 1.4 --mullions-vertical 2
+  python -m src.generator.procedural.procedural_window export --mullions-vertical 2 --partial-h 2:0.78 -o ./out
+  python -m src.generator.procedural.procedural_window export --frame-tex wood.jpg --glass-tex frosted.png -o ./out
 """.strip(),
     )
     sub = p.add_subparsers(dest="command", required=True)
@@ -915,7 +944,7 @@ def _cli_preview(args: Any) -> None:
 def _cli_export(args: Any) -> None:
     from pathlib import Path
 
-    from src.generator.dataset.run_window_demo import export_window_demo
+    from src.generator.procedural.run_window_demo import export_window_demo
 
     partial_kw: List[Tuple[int, float]] | None = None
     if args.partial_h is not None:

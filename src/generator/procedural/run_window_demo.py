@@ -2,17 +2,17 @@
 Тест процедурного окна: экспорт OBJ+MTL+атлас текстур и просмотр в Open3D (окно приложения).
 
 По умолчанию файлы пишутся в data/window_export/. После экспорта открывается интерактивный
-просмотр (нужен пакет open3d). Без просмотра: python -m src.generator.dataset.run_window_demo --no-view
+просмотр (нужен пакет open3d). Без просмотра: python -m src.generator.procedural.run_window_demo --no-view
 
 Размеры и тип — из procedural_window.USER_WINDOW_MESH.
 
 Запуск из корня репозитория:
-  python -m src.generator.dataset.run_window_demo
+  python -m src.generator.procedural.run_window_demo
 
 CLI с флагами (превью нескольких форм / экспорт в произвольную папку):
-  python -m src.generator.dataset.procedural_window preview --help
-  python -m src.generator.dataset.procedural_window export -o ./out
-  python -m src.generator.dataset.procedural_window export --frame-tex wood.png --glass-tex glass.png -o ./out
+  python -m src.generator.procedural.procedural_window preview --help
+  python -m src.generator.procedural.procedural_window export -o ./out
+  python -m src.generator.procedural.procedural_window export --frame-tex wood.png --glass-tex glass.png -o ./out
 
 Свои текстуры (рама / стекло): флаги --frame-tex и --glass-tex (можно указать только одно).
 """
@@ -32,7 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.generator.dataset.procedural_window import (
+from src.generator.procedural.procedural_window import (
     USER_WINDOW_MESH,
     build_window_frame_glass_meshes,
     _frame_thickness,
@@ -42,7 +42,7 @@ from src.generator.dataset.procedural_window import (
     _pick_nonneg_int,
     _pick_profile,
 )
-from src.generator.dataset.window_texture_assets import ensure_window_textures, make_atlas_from_sources
+from src.generator.procedural.window_texture_assets import ensure_window_textures, make_atlas_from_sources
 
 _DEFAULT_EXPORT_DIR = _REPO_ROOT / "data" / "window_export"
 
@@ -101,7 +101,7 @@ def preview_window_obj_open3d(obj_path: Path) -> None:
         print(
             "Для интерактивного просмотра установите: pip install open3d\n"
             "Меш уже сохранён на диск; превью нескольких профилей: "
-            "python -m src.generator.dataset.procedural_window preview",
+            "python -m src.generator.procedural.procedural_window preview",
         )
         return
     obj_path = obj_path.resolve()
