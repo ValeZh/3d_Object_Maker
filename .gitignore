@@ -213,3 +213,8 @@ __marimo__/
 /data/textures/
 *.png
 /data/generated_obj/
+/panels/
+/runs/
+/data/
+/panels1/
+/yolov8n.pt
