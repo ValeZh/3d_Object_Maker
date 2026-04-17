@@ -7,9 +7,10 @@
   • Основание: либо width_back / width_front / depth, либо четыре угла (левый/правый у стены, перед лев/прав).
   • По умолчанию вертикальная призма (бока — прямоугольники); --legacy-tilt-top — старый наклон верха.
   • Перед под окном — один прямоугольник парапета; опционально окна на левой/правой боковой стене.
-  • Внутренняя (задняя) стена BL—BR: список окон inner_wall_windows / --inner-wall-window (вырез в стене + рамы).
+  • Внутренняя (задняя) стена BL—BR: окна inner_wall_windows / --inner-wall-window; двери inner_wall_doors / --inner-wall-door (procedural_door, вырез в стене).
   • Отдельно фронт над парапетом: --front-window-mode (open = дыра, none = стена, frame_only | with_glass).
   • Проём без геометрии на боку: --open-side-left / --open-side-right (над парапетом; по сторонам BL—FL и BR—FR соответственно).
+  • Толщина вертикальных стен (зад/бок/парапет): wall_thickness / --wall-thickness (м); вынос наружу в −n_in (в плане XY к центру пола). 0 — одна грань.
   • Атлас 7 PNG (колонки): низ | верх | рама | стекло | бок «корзина» | бок у окна | грань между ними.
     Низ/верх/рама/стекло: --wall-lower-tex, --wall-upper-tex, --frame-tex, --glass-tex.
     Боковые зоны: --side-basket-tex, --side-jamb-tex, --side-separator-tex; доля полосы у окна — --side-parapet-split-frac (0 = без разреза).
@@ -44,6 +45,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.generator.procedural.procedural_door import build_french_double_door_parts, build_simple_door_slab
 from src.generator.procedural.procedural_window import (
     build_window_frame_glass_meshes,
     _frame_thickness,
@@ -83,6 +85,7 @@ USER_BALCONY: dict[str, Any] = {
     "window_left_wall": False,
     "window_right_wall": False,
     "floor_thickness": 0.14,
+    "wall_thickness": 0.0,
     "parapet_z_frac": 0.42,
     "parapet_height": None,
     "window_mode": "none",
@@ -112,6 +115,7 @@ USER_BALCONY: dict[str, Any] = {
     # Окна во внутренней (задней) стене BL—BR, в сторону балкона. Список словарей:
     # u0,u1 (0..1 вдоль BL→BR), z_bottom,z_top (м мира); опционально window_mode, mullions_*, window_depth, window_kind, …
     "inner_wall_windows": [],
+    "inner_wall_doors": [],
 }
 
 
@@ -133,6 +137,105 @@ def _quad(v: List[List[float]], flip: bool = False) -> trimesh.Trimesh:
     if flip:
         f = [[0, 2, 1], [0, 3, 2]]
     return trimesh.Trimesh(vertices=[a, b, c, d], faces=f, process=False)
+
+
+def _point_close_to_segment_2d(p_xy: np.ndarray, a_xy: np.ndarray, b_xy: np.ndarray, eps: float) -> bool:
+    """Точка p близка к отрезку ab в плоскости XY."""
+    p = np.asarray(p_xy, dtype=np.float64).reshape(2)
+    a = np.asarray(a_xy, dtype=np.float64).reshape(2)
+    b = np.asarray(b_xy, dtype=np.float64).reshape(2)
+    ab = b - a
+    l2 = float(np.dot(ab, ab))
+    if l2 < 1e-18:
+        return float(np.linalg.norm(p - a)) < eps
+    t = float(np.dot(p - a, ab) / l2)
+    t = float(np.clip(t, 0.0, 1.0))
+    proj = a + t * ab
+    return float(np.linalg.norm(p - proj)) < eps
+
+
+def _segment_inward_normal_xy(a_xy: np.ndarray, b_xy: np.ndarray, floor_cxy: np.ndarray) -> np.ndarray:
+    """Единичная нормаль к ребру ab в XY, направленная к центру пола (внутрь балкона)."""
+    mid = 0.5 * (np.asarray(a_xy, dtype=np.float64) + np.asarray(b_xy, dtype=np.float64))
+    e = np.asarray(b_xy, dtype=np.float64) - np.asarray(a_xy, dtype=np.float64)
+    le = float(np.linalg.norm(e))
+    if le < 1e-12:
+        return np.array([0.0, 1.0], dtype=np.float64)
+    e = e / le
+    c1 = np.array([-e[1], e[0]], dtype=np.float64)
+    c2 = np.array([e[1], -e[0]], dtype=np.float64)
+    fc = np.asarray(floor_cxy, dtype=np.float64)[:2]
+    toward = fc - mid
+    n = c1 if float(np.dot(c1, toward)) >= float(np.dot(c2, toward)) else c2
+    ln = float(np.linalg.norm(n))
+    return n / ln if ln > 1e-12 else np.array([0.0, 1.0], dtype=np.float64)
+
+
+def _miter_outward_offset_xy(
+    p_xy: np.ndarray,
+    floor_xy_ring: List[np.ndarray],
+    floor_cxy: np.ndarray,
+    thickness: float,
+    eps: float = 0.008,
+) -> Optional[np.ndarray]:
+    """Сдвиг наружу в XY: −t·Σ n_i по рёрам контура, к которым близка p (внешний угол без щели)."""
+    acc = np.zeros(2, dtype=np.float64)
+    fc = np.asarray(floor_cxy, dtype=np.float64)[:2]
+    px = np.asarray(p_xy, dtype=np.float64).reshape(2)
+    nseg = len(floor_xy_ring)
+    for i in range(nseg):
+        ai = np.asarray(floor_xy_ring[i][:2], dtype=np.float64)
+        bi = np.asarray(floor_xy_ring[(i + 1) % nseg][:2], dtype=np.float64)
+        if _point_close_to_segment_2d(px, ai, bi, eps):
+            acc += _segment_inward_normal_xy(ai, bi, fc)
+    if float(np.linalg.norm(acc)) < 1e-10:
+        return None
+    return -float(thickness) * acc
+
+
+def _raw_wall_slab_from_quad(
+    bl: np.ndarray,
+    br: np.ndarray,
+    tr: np.ndarray,
+    tl: np.ndarray,
+    n_in_xy: np.ndarray,
+    thickness: float,
+    *,
+    flip: bool,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
+    floor_cxy: Optional[np.ndarray] = None,
+) -> trimesh.Trimesh:
+    """Призма: внутренняя грань bl—br—tr—tl, наружная — митер по контуру основания или −n·t."""
+    wt = max(float(thickness), 0.0)
+    if wt <= 1e-9:
+        return _quad([bl, br, tr, tl], flip=flip)
+    n2 = np.asarray(n_in_xy[:2], dtype=np.float64)
+    ln = float(np.linalg.norm(n2))
+    if ln < 1e-9:
+        n2 = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        n2 = n2 / ln
+    n3 = np.array([float(n2[0]), float(n2[1]), 0.0], dtype=np.float64)
+    uni_off = -n3 * wt
+    bi = [np.asarray(bl, dtype=np.float64), np.asarray(br, dtype=np.float64), np.asarray(tr, dtype=np.float64), np.asarray(tl, dtype=np.float64)]
+    bo: List[np.ndarray] = []
+    for p in bi:
+        off_xy: Optional[np.ndarray] = None
+        if floor_xy_ring is not None and floor_cxy is not None:
+            off_xy = _miter_outward_offset_xy(p[:2], floor_xy_ring, floor_cxy, wt)
+        if off_xy is None:
+            off_xy = uni_off[:2]
+        bo.append(p + np.array([float(off_xy[0]), float(off_xy[1]), 0.0], dtype=np.float64))
+    parts: List[trimesh.Trimesh] = []
+    parts.append(_quad(bi, flip=flip))
+    parts.append(_quad(bo, flip=not flip))
+    for i in range(4):
+        j = (i + 1) % 4
+        parts.append(_quad([bi[i], bi[j], bo[j], bo[i]], flip=False))
+    m = trimesh.util.concatenate(parts)
+    m.remove_unreferenced_vertices()
+    m.fix_normals()
+    return m
 
 
 def _lerp_z(p0: np.ndarray, p1: np.ndarray, z_cut: float) -> np.ndarray:
@@ -157,13 +260,153 @@ def _make_wall_stack(
     z_cut: float,
     *,
     flip: bool = False,
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> Tuple[trimesh.Trimesh, trimesh.Trimesh]:
     """Нижняя кромка bl—br, верхняя tl—tr (tl над bl, tr над br). flip=True — инвертировать нормаль."""
     blc = _lerp_z(bl, tl, z_cut)
     brc = _lerp_z(br, tr, z_cut)
-    lower = _quad([bl, br, brc, blc], flip=flip)
-    upper = _quad([blc, brc, tr, tl], flip=flip)
+    wt = max(float(wall_thickness), 0.0)
+    if wt <= 1e-9 or floor_cxy is None:
+        lower = _quad([bl, br, brc, blc], flip=flip)
+        upper = _quad([blc, brc, tr, tl], flip=flip)
+        return lower, upper
+    mid_lo = 0.25 * (bl[:2] + br[:2] + brc[:2] + blc[:2])
+    n_lo = _inward_horizontal(mid_lo, floor_cxy)
+    lower = _raw_wall_slab_from_quad(
+        bl, br, brc, blc, n_lo, wt, flip=flip, floor_xy_ring=floor_xy_ring, floor_cxy=floor_cxy
+    )
+    mid_hi = 0.25 * (blc[:2] + brc[:2] + tr[:2] + tl[:2])
+    n_hi = _inward_horizontal(mid_hi, floor_cxy)
+    upper = _raw_wall_slab_from_quad(
+        blc, brc, tr, tl, n_hi, wt, flip=flip, floor_xy_ring=floor_xy_ring, floor_cxy=floor_cxy
+    )
     return lower, upper
+
+
+def _vertical_wall_slab_textured(
+    bl: np.ndarray,
+    br: np.ndarray,
+    tr: np.ndarray,
+    tl: np.ndarray,
+    tile_i: int,
+    uv4: np.ndarray,
+    *,
+    flip: bool,
+    n_in_xy: np.ndarray,
+    thickness: float,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
+    floor_cxy: Optional[np.ndarray] = None,
+) -> trimesh.Trimesh:
+    """Вертикальная стена с UV: при thickness>0 — призма наружу; углы — митер по контуру основания."""
+    wt = max(float(thickness), 0.0)
+    if wt <= 1e-9:
+        return _textured_quad([bl, br, tr, tl], tile_i, uv4, flip=flip)
+    n2 = np.asarray(n_in_xy[:2], dtype=np.float64)
+    ln = float(np.linalg.norm(n2))
+    if ln < 1e-9:
+        n2 = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        n2 = n2 / ln
+    n3 = np.array([float(n2[0]), float(n2[1]), 0.0], dtype=np.float64)
+    uni_off = -n3 * wt
+    bi = [np.asarray(bl, dtype=np.float64), np.asarray(br, dtype=np.float64), np.asarray(tr, dtype=np.float64), np.asarray(tl, dtype=np.float64)]
+    bo: List[np.ndarray] = []
+    for p in bi:
+        off_xy: Optional[np.ndarray] = None
+        if floor_xy_ring is not None and floor_cxy is not None:
+            off_xy = _miter_outward_offset_xy(p[:2], floor_xy_ring, floor_cxy, wt)
+        if off_xy is None:
+            off_xy = uni_off[:2]
+        bo.append(p + np.array([float(off_xy[0]), float(off_xy[1]), 0.0], dtype=np.float64))
+    parts: List[trimesh.Trimesh] = []
+    parts.append(_textured_quad(bi, tile_i, uv4, flip=flip))
+    parts.append(_textured_quad(bo, tile_i, uv4, flip=not flip))
+    for i in range(4):
+        j = (i + 1) % 4
+        uvi = np.stack([uv4[i], uv4[j], uv4[j], uv4[i]])
+        parts.append(_textured_quad([bi[i], bi[j], bo[j], bo[i]], tile_i, uvi, flip=False))
+    m = trimesh.util.concatenate(parts)
+    m.remove_unreferenced_vertices()
+    m.fix_normals()
+    return m
+
+
+def _slab_or_quad_vertical_wall(
+    vertices_4: List[np.ndarray],
+    tile_i: int,
+    uvs01: np.ndarray,
+    *,
+    flip: bool,
+    floor_cxy: Optional[np.ndarray],
+    wall_thickness: float,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
+) -> trimesh.Trimesh:
+    """Вертикальная грань: при wall_thickness>0 — призма наружу (−n_in), иначе один квад."""
+    wt = max(float(wall_thickness), 0.0)
+    if wt <= 1e-9 or floor_cxy is None:
+        return _textured_quad(vertices_4, tile_i, uvs01, flip=flip)
+    bl, br, tr, tl = (np.asarray(p, dtype=np.float64) for p in vertices_4)
+    mid = 0.25 * (bl[:2] + br[:2] + tr[:2] + tl[:2])
+    n_in = _inward_horizontal(mid, floor_cxy)
+    return _vertical_wall_slab_textured(
+        bl,
+        br,
+        tr,
+        tl,
+        tile_i,
+        uvs01,
+        flip=flip,
+        n_in_xy=n_in,
+        thickness=wt,
+        floor_xy_ring=floor_xy_ring,
+        floor_cxy=floor_cxy,
+    )
+
+
+def _outer_vertices_match_vertical_slab(
+    vertices_4: List[np.ndarray],
+    *,
+    floor_cxy: np.ndarray,
+    wall_thickness: float,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Наружные углы той же вертикальной призмы, что и у _slab_or_quad_vertical_wall
+    (порядок bl, br, tr, tl совпадает с внутренним квадом).
+    """
+    wt = max(float(wall_thickness), 0.0)
+    bl, br, tr, tl = (np.asarray(p, dtype=np.float64) for p in vertices_4)
+    if wt <= 1e-9:
+        return (bl.copy(), br.copy(), tr.copy(), tl.copy())
+    fc = np.asarray(floor_cxy, dtype=np.float64)
+    mid = 0.25 * (bl[:2] + br[:2] + tr[:2] + tl[:2])
+    n_in = _inward_horizontal(mid, fc)
+    n2 = np.asarray(n_in[:2], dtype=np.float64)
+    ln = float(np.linalg.norm(n2))
+    if ln < 1e-9:
+        n2 = np.array([1.0, 0.0], dtype=np.float64)
+    else:
+        n2 = n2 / ln
+    n3 = np.array([float(n2[0]), float(n2[1]), 0.0], dtype=np.float64)
+    uni_off = -n3 * wt
+    bi = [bl, br, tr, tl]
+    bo: List[np.ndarray] = []
+    for p in bi:
+        off_xy: Optional[np.ndarray] = None
+        if floor_xy_ring is not None:
+            off_xy = _miter_outward_offset_xy(p[:2], floor_xy_ring, fc, wt)
+        if off_xy is None:
+            off_xy = uni_off[:2]
+        bo.append(
+            p
+            + np.array(
+                [float(off_xy[0]), float(off_xy[1]), 0.0],
+                dtype=np.float64,
+            )
+        )
+    return (bo[0], bo[1], bo[2], bo[3])
 
 
 def _proc_wall_texture(size: int, base_rgb: Tuple[int, int, int]) -> Image.Image:
@@ -268,6 +511,10 @@ def _textured_quad_right_parapet_no_diag_artifact(
     FR_zp: np.ndarray,
     BR_zp: np.ndarray,
     tile_i: int,
+    *,
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> trimesh.Trimesh:
     """
     Один квад от низа плиты до Zp (без горизонтального разреза у z=0).
@@ -275,7 +522,15 @@ def _textured_quad_right_parapet_no_diag_artifact(
     """
     u01 = _uv_planar_quad_bl_br_tr_tl(BR_b, FR_b, FR_zp, BR_zp)
     uv = np.stack([u01[1], u01[2], u01[3], u01[0]])
-    return _textured_quad([FR_b, FR_zp, BR_zp, BR_b], tile_i, uv, flip=False)
+    return _slab_or_quad_vertical_wall(
+        [FR_b, FR_zp, BR_zp, BR_b],
+        tile_i,
+        uv,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wall_thickness,
+        floor_xy_ring=floor_xy_ring,
+    )
 
 
 def _textured_quad_left_parapet_no_diag_artifact(
@@ -284,11 +539,23 @@ def _textured_quad_left_parapet_no_diag_artifact(
     FL_zp: np.ndarray,
     BL_zp: np.ndarray,
     tile_i: int,
+    *,
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> trimesh.Trimesh:
     """Левая боковина: зеркально правой, один квад от низа плиты до Zp."""
     u01 = _uv_planar_quad_bl_br_tr_tl(BL_b, FL_b, FL_zp, BL_zp)
     uv = np.stack([u01[1], u01[2], u01[3], u01[0]])
-    return _textured_quad([FL_b, FL_zp, BL_zp, BL_b], tile_i, uv, flip=False)
+    return _slab_or_quad_vertical_wall(
+        [FL_b, FL_zp, BL_zp, BL_b],
+        tile_i,
+        uv,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wall_thickness,
+        floor_xy_ring=floor_xy_ring,
+    )
 
 
 def _side_parapet_left_meshes(
@@ -302,17 +569,27 @@ def _side_parapet_left_meshes(
     separator_depth: float,
     window_on_side: bool,
     window_mode: str,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
     """
     Левый нижний парапет: полоса у фронтового угла (у окна) | корзина | тонкая грань-перегородка внутрь.
     Если на этой стороне окно (не mode=none) — один квад wall_lower, без разбиения.
     """
+    wt = max(float(wall_thickness), 0.0)
     if window_on_side and window_mode != "none":
         return [
             (
                 "wall_lower",
                 _textured_quad_left_parapet_no_diag_artifact(
-                    BL_b, FL_b, FL_zp, BL_zp, BALCONY_TILE_WALL_LOWER
+                    BL_b,
+                    FL_b,
+                    FL_zp,
+                    BL_zp,
+                    BALCONY_TILE_WALL_LOWER,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         ]
@@ -321,7 +598,14 @@ def _side_parapet_left_meshes(
             (
                 "wall_lower",
                 _textured_quad_left_parapet_no_diag_artifact(
-                    BL_b, FL_b, FL_zp, BL_zp, BALCONY_TILE_WALL_LOWER
+                    BL_b,
+                    FL_b,
+                    FL_zp,
+                    BL_zp,
+                    BALCONY_TILE_WALL_LOWER,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         ]
@@ -329,9 +613,25 @@ def _side_parapet_left_meshes(
     S_b = FL_b + a * (BL_b - FL_b)
     S_zp = FL_zp + a * (BL_zp - FL_zp)
     uv_j = _uv_planar_quad_bl_br_tr_tl(FL_b, S_b, S_zp, FL_zp)
-    jamb = _textured_quad([FL_b, S_b, S_zp, FL_zp], BALCONY_TILE_SIDE_JAMB, uv_j, flip=False)
+    jamb = _slab_or_quad_vertical_wall(
+        [FL_b, S_b, S_zp, FL_zp],
+        BALCONY_TILE_SIDE_JAMB,
+        uv_j,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wt,
+        floor_xy_ring=floor_xy_ring,
+    )
     uv_b = _uv_planar_quad_bl_br_tr_tl(S_b, BL_b, BL_zp, S_zp)
-    basket = _textured_quad([S_b, BL_b, BL_zp, S_zp], BALCONY_TILE_SIDE_BASKET, uv_b, flip=False)
+    basket = _slab_or_quad_vertical_wall(
+        [S_b, BL_b, BL_zp, S_zp],
+        BALCONY_TILE_SIDE_BASKET,
+        uv_b,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wt,
+        floor_xy_ring=floor_xy_ring,
+    )
     mid = 0.5 * (S_b + S_zp)
     inward = _inward_horizontal(mid[:2], floor_cxy)
     in3 = np.array([float(inward[0]), float(inward[1]), 0.0], dtype=np.float64)
@@ -363,14 +663,24 @@ def _side_parapet_right_meshes(
     separator_depth: float,
     window_on_side: bool,
     window_mode: str,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
     """Правый нижний парапет — зеркально левому."""
+    wt = max(float(wall_thickness), 0.0)
     if window_on_side and window_mode != "none":
         return [
             (
                 "wall_lower",
                 _textured_quad_right_parapet_no_diag_artifact(
-                    BR_b, FR_b, FR_zp, BR_zp, BALCONY_TILE_WALL_LOWER
+                    BR_b,
+                    FR_b,
+                    FR_zp,
+                    BR_zp,
+                    BALCONY_TILE_WALL_LOWER,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         ]
@@ -379,7 +689,14 @@ def _side_parapet_right_meshes(
             (
                 "wall_lower",
                 _textured_quad_right_parapet_no_diag_artifact(
-                    BR_b, FR_b, FR_zp, BR_zp, BALCONY_TILE_WALL_LOWER
+                    BR_b,
+                    FR_b,
+                    FR_zp,
+                    BR_zp,
+                    BALCONY_TILE_WALL_LOWER,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         ]
@@ -387,9 +704,25 @@ def _side_parapet_right_meshes(
     S_b = FR_b + a * (BR_b - FR_b)
     S_zp = FR_zp + a * (BR_zp - FR_zp)
     uv_j = _uv_planar_quad_bl_br_tr_tl(FR_b, S_b, S_zp, FR_zp)
-    jamb = _textured_quad([FR_b, S_b, S_zp, FR_zp], BALCONY_TILE_SIDE_JAMB, uv_j, flip=False)
+    jamb = _slab_or_quad_vertical_wall(
+        [FR_b, S_b, S_zp, FR_zp],
+        BALCONY_TILE_SIDE_JAMB,
+        uv_j,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wt,
+        floor_xy_ring=floor_xy_ring,
+    )
     uv_b = _uv_planar_quad_bl_br_tr_tl(S_b, BR_b, BR_zp, S_zp)
-    basket = _textured_quad([S_b, BR_b, BR_zp, S_zp], BALCONY_TILE_SIDE_BASKET, uv_b, flip=False)
+    basket = _slab_or_quad_vertical_wall(
+        [S_b, BR_b, BR_zp, S_zp],
+        BALCONY_TILE_SIDE_BASKET,
+        uv_b,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wt,
+        floor_xy_ring=floor_xy_ring,
+    )
     mid = 0.5 * (S_b + S_zp)
     inward = _inward_horizontal(mid[:2], floor_cxy)
     in3 = np.array([float(inward[0]), float(inward[1]), 0.0], dtype=np.float64)
@@ -652,13 +985,14 @@ def _rects_subtract_axis_hole(
 
 
 def _inner_holes_us_in_z_span(
-    inner_wall_windows: List[dict],
+    opening_specs: List[dict],
     z_lo: float,
     z_hi: float,
 ) -> List[Tuple[float, float, float, float]]:
+    """Проёмы (окна + двери) на задней стене: u0,u1, z_bottom, z_top."""
     span = max(float(z_hi) - float(z_lo), 1e-9)
     holes: List[Tuple[float, float, float, float]] = []
-    for spec in inner_wall_windows:
+    for spec in opening_specs:
         u0 = float(np.clip(spec["u0"], 0.0, 1.0))
         u1 = float(np.clip(spec["u1"], 0.0, 1.0))
         if u1 <= u0 + 1e-4:
@@ -684,6 +1018,9 @@ def _perforated_back_wall_patches(
     flip: bool,
     tile_i: int,
     part_name: str,
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
     rects: List[Tuple[float, float, float, float]] = [(0.0, 1.0, 0.0, 1.0)]
     for h in holes_us:
@@ -700,7 +1037,26 @@ def _perforated_back_wall_patches(
             uv = np.stack([uv_for_point(bl), uv_for_point(br), uv_for_point(tr), uv_for_point(tl)])
         else:
             uv = _uv_planar_quad_bl_br_tr_tl(bl, br, tr, tl)
-        out.append((part_name, _textured_quad([bl, br, tr, tl], tile_i, uv, flip=flip)))
+        wt = max(float(wall_thickness), 0.0)
+        if wt > 1e-9 and floor_cxy is not None:
+            mid = 0.25 * (bl[:2] + br[:2] + tr[:2] + tl[:2])
+            n_in = _inward_horizontal(mid, floor_cxy)
+            mesh = _vertical_wall_slab_textured(
+                bl,
+                br,
+                tr,
+                tl,
+                tile_i,
+                uv,
+                flip=flip,
+                n_in_xy=n_in,
+                thickness=wt,
+                floor_xy_ring=floor_xy_ring,
+                floor_cxy=floor_cxy,
+            )
+        else:
+            mesh = _textured_quad([bl, br, tr, tl], tile_i, uv, flip=flip)
+        out.append((part_name, mesh))
     return out
 
 
@@ -748,6 +1104,41 @@ def _normalize_inner_wall_windows(
                 "partial_horizontal_bars": _normalize_partial_horizontal_bars(
                     item.get("partial_horizontal_bars", default_partial)
                 ),
+            }
+        )
+    return out
+
+
+def _normalize_inner_wall_doors(raw: Any) -> List[dict]:
+    """Двери во внутренней стене: u0,u1, z_bottom, z_top; style french | slab."""
+    if not raw or not isinstance(raw, list):
+        return []
+    out: List[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            u0, u1 = float(item["u0"]), float(item["u1"])
+            zb, zt = float(item["z_bottom"]), float(item["z_top"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if u1 <= u0 + 1e-6 or zt <= zb + 1e-6:
+            continue
+        style = str(item.get("style", "french")).lower().strip()
+        if style not in ("french", "slab"):
+            style = "french"
+        out.append(
+            {
+                "u0": u0,
+                "u1": u1,
+                "z_bottom": zb,
+                "z_top": zt,
+                "style": style,
+                "frame_width": max(float(item.get("frame_width", 0.09)), 0.025),
+                "frame_depth": max(float(item.get("frame_depth", 0.06)), 0.02),
+                "leaf_gap": max(float(item.get("leaf_gap", 0.025)), 0.012),
+                "midrail_z_frac": float(np.clip(float(item.get("midrail_z_frac", 0.58)), 0.2, 0.82)),
+                "y_outer": max(float(item.get("y_outer", 0.05)), 0.02),
             }
         )
     return out
@@ -814,6 +1205,78 @@ def _append_inner_back_wall_window_meshes(
         )
 
 
+def _append_inner_back_wall_door_meshes(
+    window_parts: List[Tuple[str, trimesh.Trimesh]],
+    inner_wall_doors: List[dict],
+    BL_b: np.ndarray,
+    BR_b: np.ndarray,
+    TBL: np.ndarray,
+    TBR: np.ndarray,
+    BL: np.ndarray,
+    BR: np.ndarray,
+    floor_cxy: np.ndarray,
+) -> None:
+    """Процедурная дверь (procedural_door) в плоскости внутренней стены; ось глубины двери — −n (к фасаду)."""
+    mid_back_xy = 0.5 * (np.asarray(BL, dtype=np.float64)[:2] + np.asarray(BR, dtype=np.float64)[:2])
+    inward_xy = _inward_horizontal(mid_back_xy, floor_cxy)
+    for di, spec in enumerate(inner_wall_doors):
+        z0, z1 = float(spec["z_bottom"]), float(spec["z_top"])
+        u0, u1 = float(spec["u0"]), float(spec["u1"])
+        bb, bf = _inner_back_edge_points_at_z(BL_b, BR_b, TBL, TBR, u0, u1, z0)
+        u_raw = bf - bb
+        win_w = float(np.linalg.norm(u_raw))
+        win_h = float(z1 - z0)
+        if win_w < 0.14 or win_h < 0.45:
+            continue
+        u_hat = u_raw / win_w
+        v_hat = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        n_hat = np.cross(u_hat, v_hat)
+        ln = float(np.linalg.norm(n_hat))
+        if ln < 1e-12:
+            continue
+        n_hat = n_hat / ln
+        inward3 = np.asarray(inward_xy, dtype=np.float64)
+        if float(np.dot(n_hat[:2], inward3[:2])) < 0.0:
+            n_hat = -n_hat
+        mid = 0.5 * (bb + bf)
+        center = np.array([float(mid[0]), float(mid[1]), 0.5 * (z0 + z1)], dtype=np.float64)
+        R = np.column_stack([u_hat, -n_hat, v_hat])
+        hw = 0.5 * win_w
+        hh = 0.5 * win_h
+        y_outer = float(spec["y_outer"])
+        fd = float(spec["frame_depth"])
+        if spec["style"] == "slab":
+            parts = build_simple_door_slab(
+                x0=-hw,
+                x1=hw,
+                z0=-hh,
+                z1=hh,
+                y_outer=y_outer,
+                depth=max(fd, 0.05),
+                niche_depth=None,
+            )
+        else:
+            parts = build_french_double_door_parts(
+                x0=-hw,
+                x1=hw,
+                z0=-hh,
+                z1=hh,
+                y_outer=y_outer,
+                frame_width=float(spec["frame_width"]),
+                frame_depth=fd,
+                leaf_gap=float(spec["leaf_gap"]),
+                midrail_z_frac=float(spec["midrail_z_frac"]),
+                niche_depth=None,
+            )
+        for tag, m in parts:
+            if m is None or len(m.vertices) == 0:
+                continue
+            vv = np.asarray(m.vertices, dtype=np.float64)
+            vv = (R @ vv.T).T + center
+            m2 = trimesh.Trimesh(vertices=vv, faces=m.faces, process=False, validate=False)
+            window_parts.append((f"{tag}_{di}", m2))
+
+
 def _parse_inner_wall_window_cli(s: str) -> dict:
     """u0,u1,z_bottom,z_top[,mv=2,mh=0,mode=frame_only,depth=0.12,kind=fixed,ox=0,oz=0]"""
     toks = [t.strip() for t in s.split(",") if t.strip()]
@@ -849,6 +1312,44 @@ def _parse_inner_wall_window_cli(s: str) -> dict:
             d["mullion_offset_x"] = float(v)
         elif k == "oz":
             d["mullion_offset_z"] = float(v)
+        else:
+            raise argparse.ArgumentTypeError(f"неизвестный ключ: {k}")
+    return d
+
+
+def _parse_inner_wall_door_cli(s: str) -> dict:
+    """u0,u1,z_bottom,z_top[,style=french|slab,fw=,fd=,gap=,mid=,y0=]"""
+    toks = [t.strip() for t in s.split(",") if t.strip()]
+    if len(toks) < 4:
+        raise argparse.ArgumentTypeError(
+            "inner-wall-door: нужно u0,u1,z_bottom,z_top и опционально key=value через запятую"
+        )
+    try:
+        d: dict[str, Any] = {
+            "u0": float(toks[0]),
+            "u1": float(toks[1]),
+            "z_bottom": float(toks[2]),
+            "z_top": float(toks[3]),
+        }
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(str(e)) from e
+    for t in toks[4:]:
+        if "=" not in t:
+            raise argparse.ArgumentTypeError(f"ожидалось key=value, получено {t!r}")
+        k, v = t.split("=", 1)
+        k, v = k.strip().lower(), v.strip()
+        if k == "style":
+            d["style"] = v
+        elif k in ("fw", "frame_width"):
+            d["frame_width"] = float(v)
+        elif k in ("fd", "frame_depth"):
+            d["frame_depth"] = float(v)
+        elif k in ("gap", "leaf_gap"):
+            d["leaf_gap"] = float(v)
+        elif k in ("mid", "midrail_z_frac"):
+            d["midrail_z_frac"] = float(v)
+        elif k in ("y0", "y_outer"):
+            d["y_outer"] = float(v)
         else:
             raise argparse.ArgumentTypeError(f"неизвестный ключ: {k}")
     return d
@@ -893,6 +1394,9 @@ def _front_parapet_one_quad(
     Zp: float,
     *,
     floor_thickness: float,
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
     """Передняя стена под окном + наружный торец пола одним квадом (без отдельной «губы» у z=0)."""
     t = max(float(floor_thickness), 0.02)
@@ -901,12 +1405,16 @@ def _front_parapet_one_quad(
     FR_b = np.asarray(FR, dtype=np.float64).copy()
     FR_b[2] -= t
     uv = _uv_front_vertical_wall_quad(FL_b, FR_b, FR_zp, FL_zp)
-    return [
-        (
-            "wall_lower",
-            _textured_quad([FL_b, FR_b, FR_zp, FL_zp], BALCONY_TILE_WALL_LOWER, uv, flip=False),
-        )
-    ]
+    mesh = _slab_or_quad_vertical_wall(
+        [FL_b, FR_b, FR_zp, FL_zp],
+        BALCONY_TILE_WALL_LOWER,
+        uv,
+        flip=False,
+        floor_cxy=floor_cxy,
+        wall_thickness=wall_thickness,
+        floor_xy_ring=floor_xy_ring,
+    )
+    return [("wall_lower", mesh)]
 
 
 def _window_parts_on_wall_edge(
@@ -945,13 +1453,14 @@ def _window_parts_on_wall_edge(
     inward3 = np.asarray(inward_xy, dtype=np.float64)
     if float(np.dot(n_hat[:2], inward3[:2])) < 0.0:
         n_hat = -n_hat
+    # n_hat — внутрь балкона (к центру пола в XY). Рама/стекло — снаружи стены: вторая ось локали = −n_hat.
     mid = 0.5 * (bb + bf)
     # z_bottom / z_top — абсолютные Z; bb/bf уже на высоте z_bottom, нельзя снова прибавлять mid[2].
     center = np.array(
         [float(mid[0]), float(mid[1]), float(z_bottom) + 0.5 * win_h],
         dtype=np.float64,
     )
-    R = np.column_stack([u_hat, n_hat, v_hat])
+    R = np.column_stack([u_hat, -n_hat, v_hat])
     kind = _pick_kind(window_kind, "fixed")
     ft = _frame_thickness(win_w, win_h)
     glass_t = max(window_depth * 0.12, 0.004)
@@ -1086,11 +1595,15 @@ def _simple_box_back_and_sides(
     side_parapet_split_frac: float,
     side_parapet_separator_depth: float,
     inner_wall_windows: List[dict],
+    inner_wall_doors: List[dict],
     open_left_above_parapet: bool,
     open_right_above_parapet: bool,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
     """Зад + бока: парапет (прямоугольник) и верх; без передней стены."""
     out: List[Tuple[str, trimesh.Trimesh]] = []
+    wt = max(float(wall_thickness), 0.0)
     t = max(float(floor_thickness), 0.02)
     BL_b = np.asarray(BL, dtype=np.float64).copy()
     BL_b[2] -= t
@@ -1100,7 +1613,11 @@ def _simple_box_back_and_sides(
     FR_b[2] -= t
     FL_b = np.asarray(FL, dtype=np.float64).copy()
     FL_b[2] -= t
-    holes_b = _inner_holes_us_in_z_span(inner_wall_windows, float(BL_b[2]), float(TBL[2]))
+    holes_b = _inner_holes_us_in_z_span(
+        list(inner_wall_windows) + list(inner_wall_doors),
+        float(BL_b[2]),
+        float(TBL[2]),
+    )
     out.extend(
         _perforated_back_wall_patches(
             BL_b,
@@ -1112,6 +1629,9 @@ def _simple_box_back_and_sides(
             flip=True,
             tile_i=BALCONY_TILE_WALL_LOWER,
             part_name="wall_lower",
+            floor_cxy=floor_cxy,
+            wall_thickness=wt,
+            floor_xy_ring=floor_xy_ring,
         )
     )
     side_tile = BALCONY_TILE_GLASS if sumode == "glass" else BALCONY_TILE_WALL_UPPER
@@ -1127,18 +1647,24 @@ def _simple_box_back_and_sides(
             separator_depth=side_parapet_separator_depth,
             window_on_side=window_left_wall,
             window_mode=mode,
+            wall_thickness=wt,
+            floor_xy_ring=floor_xy_ring,
         )
     )
     # open_side_right → грань BL—FL (левый борт в -X); open_side_left → BR—FR (+X) — как в CLI-именах у пользователя.
     if ((not window_left_wall) or mode == "none") and not open_right_above_parapet:
+        uv_sl = _uv_planar_quad_bl_br_tr_tl(BL_zp, FL_zp, TFL, TBL)
         out.append(
             (
                 side_name,
-                _textured_quad(
+                _slab_or_quad_vertical_wall(
                     [BL_zp, FL_zp, TFL, TBL],
                     side_tile,
-                    _uv_planar_quad_bl_br_tr_tl(BL_zp, FL_zp, TFL, TBL),
+                    uv_sl,
                     flip=False,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         )
@@ -1153,17 +1679,23 @@ def _simple_box_back_and_sides(
             separator_depth=side_parapet_separator_depth,
             window_on_side=window_right_wall,
             window_mode=mode,
+            wall_thickness=wt,
+            floor_xy_ring=floor_xy_ring,
         )
     )
     if ((not window_right_wall) or mode == "none") and not open_left_above_parapet:
+        uv_sr = _uv_planar_quad_bl_br_tr_tl(BR_zp, FR_zp, TFR, TBR)
         out.append(
             (
                 side_name,
-                _textured_quad(
+                _slab_or_quad_vertical_wall(
                     [BR_zp, FR_zp, TFR, TBR],
                     side_tile,
-                    _uv_planar_quad_bl_br_tr_tl(BR_zp, FR_zp, TFR, TBR),
+                    uv_sr,
                     flip=False,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wt,
+                    floor_xy_ring=floor_xy_ring,
                 ),
             )
         )
@@ -1184,16 +1716,70 @@ def _balcony_procedural_window_parts(
     mullion_offset_x: float,
     mullion_offset_z: float,
     partial_horizontal_bars: List[Tuple[int, float]],
+    floor_cxy: Optional[np.ndarray] = None,
+    wall_thickness: float = 0.0,
+    floor_xy_ring: Optional[List[np.ndarray]] = None,
+    FL_b_parapet: Optional[np.ndarray] = None,
+    FR_b_parapet: Optional[np.ndarray] = None,
+    extend_along_front_for_side_corners: bool = False,
 ) -> List[Tuple[str, trimesh.Trimesh]]:
+    """
+    Фронт над парапетом: при толстой стене — наружная кромка как у _front_parapet_one_quad,
+    центр по глубине на наружной плоскости (стык с боковыми окнами без щели).
+    extend_along_front_for_side_corners — слегка удлинить вдоль фасада, чтобы рамы перекрывались в углу.
+    """
     win_h = H - Zp
-    win_w = float(np.linalg.norm(FR_zp - FL_zp))
-    if mode in ("none", "open") or win_w <= 0.1 or win_h <= 0.1:
+    if mode in ("none", "open") or win_h <= 0.1:
         return []
-    cx = 0.5 * (FL_zp[0] + FR_zp[0])
-    y_open = 0.5 * (float(FL_zp[1]) + float(FR_zp[1]))
+    fl_i = np.asarray(FL_zp, dtype=np.float64)
+    fr_i = np.asarray(FR_zp, dtype=np.float64)
+    wt = max(float(wall_thickness), 0.0)
+    mi = 0.5 * (fl_i + fr_i)
+    o_fl = fl_i.copy()
+    o_fr = fr_i.copy()
+    if (
+        wt > 1e-9
+        and floor_xy_ring is not None
+        and floor_cxy is not None
+        and FL_b_parapet is not None
+        and FR_b_parapet is not None
+    ):
+        ov = _outer_vertices_match_vertical_slab(
+            [
+                np.asarray(FL_b_parapet, dtype=np.float64),
+                np.asarray(FR_b_parapet, dtype=np.float64),
+                fr_i,
+                fl_i,
+            ],
+            floor_cxy=np.asarray(floor_cxy, dtype=np.float64),
+            wall_thickness=wt,
+            floor_xy_ring=floor_xy_ring,
+        )
+        o_fl = np.asarray(ov[3], dtype=np.float64)
+        o_fr = np.asarray(ov[2], dtype=np.float64)
+    win_w_base = float(np.linalg.norm(o_fr - o_fl))
+    if win_w_base <= 0.1:
+        return []
+    u_edge = (o_fr - o_fl) / win_w_base
+    ext = 0.0025 if extend_along_front_for_side_corners else 0.0
+    o_fl_e = o_fl - u_edge * ext
+    o_fr_e = o_fr + u_edge * ext
+    win_w = float(np.linalg.norm(o_fr_e - o_fl_e))
+    mid_open = 0.5 * (o_fl_e + o_fr_e)
+    n2 = mid_open[:2] - mi[:2]
+    ln2 = float(np.linalg.norm(n2))
     wd = max(window_depth, 0.05)
-    cy = y_open + wd * 0.5 - 0.004
-    cz = Zp + win_h * 0.5
+    if ln2 < 1e-9:
+        # Тонкая стена: внутренняя и наружная кромки совпадают — наружу по +Y (как в старой формуле cy).
+        n2 = np.array([0.0, 1.0], dtype=np.float64)
+        center_xy = mi[:2] + n2 * (wd * 0.5)
+    else:
+        n2 = n2 / ln2
+        # mid_open на наружной плоскости; центр рамы — на половину глубины внутрь от фасада.
+        center_xy = mid_open[:2] - n2 * (wd * 0.5)
+    cx = float(center_xy[0])
+    cy = float(center_xy[1])
+    cz = float(Zp) + win_h * 0.5
     kind = _pick_kind(window_kind, "fixed")
     ft = _frame_thickness(win_w, win_h)
     glass_t = max(window_depth * 0.12, 0.004)
@@ -1261,8 +1847,10 @@ def build_balcony_meshes(
     side_parapet_split_frac: float = 0.0,
     side_parapet_separator_depth: float = 0.022,
     inner_wall_windows: Any = None,
+    inner_wall_doors: Any = None,
     open_left_above_parapet: bool = False,
     open_right_above_parapet: bool = False,
+    wall_thickness: float = 0.0,
 ) -> Tuple[List[Tuple[str, trimesh.Trimesh]], List[Tuple[str, trimesh.Trimesh]]]:
     """
     Парапет снизу по периметру фронта/боков, сверху — окно на всю ширину фронта.
@@ -1270,9 +1858,10 @@ def build_balcony_meshes(
     (левый у стены, правый у стены, передний левый, передний правый); если все None — width_back/width_front/depth.
     vertical_prism: верхнее кольцо = нижнее + (0,0,H) — боковые грани прямоугольники в вертикали.
     window_left_wall / window_right_wall — вторичные окна на боковых стенах (над парапетом).
-    inner_wall_windows — список словарей с u0,u1,z_bottom,z_top и опциями; вырез во внутренней (задней) стене.
+    inner_wall_windows — окна во внутренней стене; inner_wall_doors — двери (вырез + procedural_door).
     front_window_mode — режим только для фронта над парапетом; None = как window_mode; open = без грани (дыра).
     open_left_above_parapet / open_right_above_parapet — убрать верх грани BR—FR / BL—FL (как --open-side-left / --open-side-right).
+    wall_thickness — толщина вертикальных стен (м); при vertical_prism углы с митером по контуру низа пола.
     """
     H = max(height, 0.05)
     T = max(floor_thickness, 0.02)
@@ -1289,6 +1878,7 @@ def build_balcony_meshes(
     sumode = side_upper_mode.lower().strip()
     if sumode not in ("glass", "wall"):
         sumode = "glass"
+    wthick = max(0.0, float(wall_thickness))
 
     if parapet_height is not None:
         Zp = float(parapet_height)
@@ -1330,11 +1920,27 @@ def build_balcony_meshes(
         default_oz=mullion_offset_z,
         default_partial=ph_norm,
     )
+    raw_doors = inner_wall_doors if inner_wall_doors is not None else []
+    inner_d = _normalize_inner_wall_doors(raw_doors)
+    inner_openings_holes: List[dict] = list(inner_w) + list(inner_d)
 
     FL_zp = _edge_at_height(FL, TFL, Zp)
     FR_zp = _edge_at_height(FR, TFR, Zp)
     BL_zp = _edge_at_height(BL, TBL, Zp)
     BR_zp = _edge_at_height(BR, TBR, Zp)
+
+    t_mit = max(float(T), 0.02)
+    floor_ring_miter: Optional[List[np.ndarray]] = None
+    if vertical_prism:
+        _b_bl = np.asarray(BL, dtype=np.float64).copy()
+        _b_bl[2] -= t_mit
+        _b_br = np.asarray(BR, dtype=np.float64).copy()
+        _b_br[2] -= t_mit
+        _b_fr = np.asarray(FR, dtype=np.float64).copy()
+        _b_fr[2] -= t_mit
+        _b_fl = np.asarray(FL, dtype=np.float64).copy()
+        _b_fl[2] -= t_mit
+        floor_ring_miter = [_b_bl, _b_br, _b_fr, _b_fl]
 
     if simple_box:
         parts: List[Tuple[str, trimesh.Trimesh]] = []
@@ -1374,11 +1980,26 @@ def build_balcony_meshes(
                 side_parapet_split_frac=float(side_parapet_split_frac),
                 side_parapet_separator_depth=float(side_parapet_separator_depth),
                 inner_wall_windows=inner_w,
+                inner_wall_doors=inner_d,
                 open_left_above_parapet=bool(open_left_above_parapet),
                 open_right_above_parapet=bool(open_right_above_parapet),
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
             )
         )
-        parts.extend(_front_parapet_one_quad(FL, FR, FL_zp, FR_zp, Zp, floor_thickness=T))
+        parts.extend(
+            _front_parapet_one_quad(
+                FL,
+                FR,
+                FL_zp,
+                FR_zp,
+                Zp,
+                floor_thickness=T,
+                floor_cxy=floor_cxy,
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
+            )
+        )
         if parapet_sill:
             st = max(sill_thickness, 0.03)
             sd = max(sill_depth, 0.05)
@@ -1389,6 +2010,14 @@ def build_balcony_meshes(
             parts.append(("divider_frame", sill))
         win_h = H - Zp
         window_parts: List[Tuple[str, trimesh.Trimesh]] = []
+        _flb_p = np.asarray(FL, dtype=np.float64).copy()
+        _flb_p[2] -= T
+        _frb_p = np.asarray(FR, dtype=np.float64).copy()
+        _frb_p[2] -= T
+        _corner_ext = (window_left_wall or window_right_wall) and mode != "none" and front_mode not in (
+            "none",
+            "open",
+        )
         window_parts.extend(
             _balcony_procedural_window_parts(
                 mode=front_mode,
@@ -1403,15 +2032,40 @@ def build_balcony_meshes(
                 mullion_offset_x=mullion_offset_x,
                 mullion_offset_z=mullion_offset_z,
                 partial_horizontal_bars=ph,
+                floor_cxy=floor_cxy,
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
+                FL_b_parapet=_flb_p,
+                FR_b_parapet=_frb_p,
+                extend_along_front_for_side_corners=_corner_ext,
             )
         )
+        _side_corner_ext = 0.0025 if front_mode not in ("none", "open") else 0.0
         if window_left_wall and mode != "none":
-            mid_l = 0.5 * (BL_zp[:2] + FL_zp[:2])
+            pb_l, pf_l = np.asarray(BL_zp, dtype=np.float64), np.asarray(FL_zp, dtype=np.float64)
+            if wthick > 1e-9 and floor_ring_miter is not None:
+                fl_b = np.asarray(FL, dtype=np.float64).copy()
+                fl_b[2] -= T
+                bl_b = np.asarray(BL, dtype=np.float64).copy()
+                bl_b[2] -= T
+                ov = _outer_vertices_match_vertical_slab(
+                    [fl_b, FL_zp, BL_zp, bl_b],
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wthick,
+                    floor_xy_ring=floor_ring_miter,
+                )
+                pb_l, pf_l = np.asarray(ov[2], dtype=np.float64), np.asarray(ov[1], dtype=np.float64)
+            if _side_corner_ext > 0.0:
+                uu = pf_l - pb_l
+                lu = float(np.linalg.norm(uu))
+                if lu > 1e-9:
+                    pf_l = pf_l + (uu / lu) * _side_corner_ext
+            mid_l = 0.5 * (pb_l[:2] + pf_l[:2])
             window_parts.extend(
                 _window_parts_on_wall_edge(
                     mode=mode,
-                    p_back_zp=BL_zp,
-                    p_front_zp=FL_zp,
+                    p_back_zp=pb_l,
+                    p_front_zp=pf_l,
                     z_bottom=Zp,
                     z_top=H,
                     window_depth=window_depth,
@@ -1425,12 +2079,30 @@ def build_balcony_meshes(
                 )
             )
         if window_right_wall and mode != "none":
-            mid_r = 0.5 * (BR_zp[:2] + FR_zp[:2])
+            pb_r, pf_r = np.asarray(BR_zp, dtype=np.float64), np.asarray(FR_zp, dtype=np.float64)
+            if wthick > 1e-9 and floor_ring_miter is not None:
+                fr_b = np.asarray(FR, dtype=np.float64).copy()
+                fr_b[2] -= T
+                br_b = np.asarray(BR, dtype=np.float64).copy()
+                br_b[2] -= T
+                ov = _outer_vertices_match_vertical_slab(
+                    [fr_b, FR_zp, BR_zp, br_b],
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wthick,
+                    floor_xy_ring=floor_ring_miter,
+                )
+                pb_r, pf_r = np.asarray(ov[2], dtype=np.float64), np.asarray(ov[1], dtype=np.float64)
+            if _side_corner_ext > 0.0:
+                uu = pf_r - pb_r
+                lu = float(np.linalg.norm(uu))
+                if lu > 1e-9:
+                    pf_r = pf_r + (uu / lu) * _side_corner_ext
+            mid_r = 0.5 * (pb_r[:2] + pf_r[:2])
             window_parts.extend(
                 _window_parts_on_wall_edge(
                     mode=mode,
-                    p_back_zp=BR_zp,
-                    p_front_zp=FR_zp,
+                    p_back_zp=pb_r,
+                    p_front_zp=pf_r,
                     z_bottom=Zp,
                     z_top=H,
                     window_depth=window_depth,
@@ -1450,8 +2122,20 @@ def build_balcony_meshes(
         _append_inner_back_wall_window_meshes(
             window_parts, inner_w, BL_b_in, BR_b_in, TBL, TBR, BL, BR, floor_cxy
         )
+        _append_inner_back_wall_door_meshes(
+            window_parts, inner_d, BL_b_in, BR_b_in, TBL, TBR, BL, BR, floor_cxy
+        )
         if front_mode == "none" and win_h > 0.05:
-            lo_u, hi_u = _make_wall_stack(FL_zp, FR_zp, TFR, TFL, z_cut_back)
+            lo_u, hi_u = _make_wall_stack(
+                FL_zp,
+                FR_zp,
+                TFR,
+                TFL,
+                z_cut_back,
+                floor_cxy=floor_cxy,
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
+            )
             parts.append(("wall_upper", lo_u))
             parts.append(("wall_upper", hi_u))
         return parts, window_parts
@@ -1508,7 +2192,7 @@ def build_balcony_meshes(
         vv = (float(p[2]) - z_cut_back) / z_hi_span
         return np.array([uu, vv], dtype=np.float64)
 
-    holes_lo = _inner_holes_us_in_z_span(inner_w, float(BL_b[2]), float(b_blc[2]))
+    holes_lo = _inner_holes_us_in_z_span(inner_openings_holes, float(BL_b[2]), float(b_blc[2]))
     wall_parts.extend(
         _perforated_back_wall_patches(
             BL_b,
@@ -1520,9 +2204,12 @@ def build_balcony_meshes(
             flip=True,
             tile_i=BALCONY_TILE_WALL_LOWER,
             part_name="wall_lower",
+            floor_cxy=floor_cxy,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
         )
     )
-    holes_hi = _inner_holes_us_in_z_span(inner_w, float(b_blc[2]), float(TBL[2]))
+    holes_hi = _inner_holes_us_in_z_span(inner_openings_holes, float(b_blc[2]), float(TBL[2]))
     wall_parts.extend(
         _perforated_back_wall_patches(
             b_blc,
@@ -1534,11 +2221,26 @@ def build_balcony_meshes(
             flip=True,
             tile_i=BALCONY_TILE_WALL_UPPER,
             part_name="wall_upper",
+            floor_cxy=floor_cxy,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
         )
     )
 
     # --- перед: один прямоугольник парапета под окном ---
-    wall_parts.extend(_front_parapet_one_quad(FL, FR, FL_zp, FR_zp, Zp, floor_thickness=T))
+    wall_parts.extend(
+        _front_parapet_one_quad(
+            FL,
+            FR,
+            FL_zp,
+            FR_zp,
+            Zp,
+            floor_thickness=T,
+            floor_cxy=floor_cxy,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
+        )
+    )
 
     # --- боковины: прямоугольник парапета + верх (стекло/стена), если нет окна на этой стене ---
     side_tile = BALCONY_TILE_GLASS if sumode == "glass" else BALCONY_TILE_WALL_UPPER
@@ -1554,17 +2256,23 @@ def build_balcony_meshes(
             separator_depth=float(side_parapet_separator_depth),
             window_on_side=window_left_wall,
             window_mode=mode,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
         )
     )
     if ((not window_left_wall) or mode == "none") and not orr:
+        uv_nl = _uv_planar_quad_bl_br_tr_tl(BL_zp, FL_zp, TFL, TBL)
         wall_parts.append(
             (
                 side_name,
-                _textured_quad(
+                _slab_or_quad_vertical_wall(
                     [BL_zp, FL_zp, TFL, TBL],
                     side_tile,
-                    _uv_planar_quad_bl_br_tr_tl(BL_zp, FL_zp, TFL, TBL),
+                    uv_nl,
                     flip=False,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wthick,
+                    floor_xy_ring=floor_ring_miter,
                 ),
             )
         )
@@ -1579,17 +2287,23 @@ def build_balcony_meshes(
             separator_depth=float(side_parapet_separator_depth),
             window_on_side=window_right_wall,
             window_mode=mode,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
         )
     )
     if ((not window_right_wall) or mode == "none") and not ol:
+        uv_nr = _uv_planar_quad_bl_br_tr_tl(BR_zp, FR_zp, TFR, TBR)
         wall_parts.append(
             (
                 side_name,
-                _textured_quad(
+                _slab_or_quad_vertical_wall(
                     [BR_zp, FR_zp, TFR, TBR],
                     side_tile,
-                    _uv_planar_quad_bl_br_tr_tl(BR_zp, FR_zp, TFR, TBR),
+                    uv_nr,
                     flip=False,
+                    floor_cxy=floor_cxy,
+                    wall_thickness=wthick,
+                    floor_xy_ring=floor_ring_miter,
                 ),
             )
         )
@@ -1604,6 +2318,11 @@ def build_balcony_meshes(
         wall_parts.append(("divider_frame", sill))
 
     window_parts: List[Tuple[str, trimesh.Trimesh]] = []
+    _corner_ext2 = (window_left_wall or window_right_wall) and mode != "none" and front_mode not in (
+        "none",
+        "open",
+    )
+    _side_corner_ext2 = 0.0025 if front_mode not in ("none", "open") else 0.0
     window_parts.extend(
         _balcony_procedural_window_parts(
             mode=front_mode,
@@ -1618,15 +2337,35 @@ def build_balcony_meshes(
             mullion_offset_x=mullion_offset_x,
             mullion_offset_z=mullion_offset_z,
             partial_horizontal_bars=ph,
+            floor_cxy=floor_cxy,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
+            FL_b_parapet=FL_b,
+            FR_b_parapet=FR_b,
+            extend_along_front_for_side_corners=_corner_ext2,
         )
     )
     if window_left_wall and mode != "none":
-        mid_l = 0.5 * (BL_zp[:2] + FL_zp[:2])
+        pb_l, pf_l = np.asarray(BL_zp, dtype=np.float64), np.asarray(FL_zp, dtype=np.float64)
+        if wthick > 1e-9 and floor_ring_miter is not None:
+            ov = _outer_vertices_match_vertical_slab(
+                [FL_b, FL_zp, BL_zp, BL_b],
+                floor_cxy=floor_cxy,
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
+            )
+            pb_l, pf_l = np.asarray(ov[2], dtype=np.float64), np.asarray(ov[1], dtype=np.float64)
+        if _side_corner_ext2 > 0.0:
+            uu = pf_l - pb_l
+            lu = float(np.linalg.norm(uu))
+            if lu > 1e-9:
+                pf_l = pf_l + (uu / lu) * _side_corner_ext2
+        mid_l = 0.5 * (pb_l[:2] + pf_l[:2])
         window_parts.extend(
             _window_parts_on_wall_edge(
                 mode=mode,
-                p_back_zp=BL_zp,
-                p_front_zp=FL_zp,
+                p_back_zp=pb_l,
+                p_front_zp=pf_l,
                 z_bottom=Zp,
                 z_top=H,
                 window_depth=window_depth,
@@ -1640,12 +2379,26 @@ def build_balcony_meshes(
             )
         )
     if window_right_wall and mode != "none":
-        mid_r = 0.5 * (BR_zp[:2] + FR_zp[:2])
+        pb_r, pf_r = np.asarray(BR_zp, dtype=np.float64), np.asarray(FR_zp, dtype=np.float64)
+        if wthick > 1e-9 and floor_ring_miter is not None:
+            ov = _outer_vertices_match_vertical_slab(
+                [FR_b, FR_zp, BR_zp, BR_b],
+                floor_cxy=floor_cxy,
+                wall_thickness=wthick,
+                floor_xy_ring=floor_ring_miter,
+            )
+            pb_r, pf_r = np.asarray(ov[2], dtype=np.float64), np.asarray(ov[1], dtype=np.float64)
+        if _side_corner_ext2 > 0.0:
+            uu = pf_r - pb_r
+            lu = float(np.linalg.norm(uu))
+            if lu > 1e-9:
+                pf_r = pf_r + (uu / lu) * _side_corner_ext2
+        mid_r = 0.5 * (pb_r[:2] + pf_r[:2])
         window_parts.extend(
             _window_parts_on_wall_edge(
                 mode=mode,
-                p_back_zp=BR_zp,
-                p_front_zp=FR_zp,
+                p_back_zp=pb_r,
+                p_front_zp=pf_r,
                 z_bottom=Zp,
                 z_top=H,
                 window_depth=window_depth,
@@ -1661,10 +2414,22 @@ def build_balcony_meshes(
     _append_inner_back_wall_window_meshes(
         window_parts, inner_w, BL_b, BR_b, TBL, TBR, BL, BR, floor_cxy
     )
+    _append_inner_back_wall_door_meshes(
+        window_parts, inner_d, BL_b, BR_b, TBL, TBR, BL, BR, floor_cxy
+    )
 
     win_h = H - Zp
     if front_mode == "none" and win_h > 0.05:
-        lo_u, hi_u = _make_wall_stack(FL_zp, FR_zp, TFR, TFL, z_cut_back)
+        lo_u, hi_u = _make_wall_stack(
+            FL_zp,
+            FR_zp,
+            TFR,
+            TFL,
+            z_cut_back,
+            floor_cxy=floor_cxy,
+            wall_thickness=wthick,
+            floor_xy_ring=floor_ring_miter,
+        )
         wall_parts.append(("wall_upper", lo_u))
         wall_parts.append(("wall_upper", hi_u))
 
@@ -1727,8 +2492,10 @@ def export_balcony(
         side_parapet_split_frac=float(p.get("side_parapet_split_frac", 0.0)),
         side_parapet_separator_depth=float(p.get("side_parapet_separator_depth", 0.022)),
         inner_wall_windows=p.get("inner_wall_windows"),
+        inner_wall_doors=p.get("inner_wall_doors"),
         open_left_above_parapet=bool(p.get("open_left_above_parapet", False)),
         open_right_above_parapet=bool(p.get("open_right_above_parapet", False)),
+        wall_thickness=float(p.get("wall_thickness", 0.0)),
     )
 
     atlas_img = make_balcony_atlas(
@@ -1777,12 +2544,14 @@ def export_balcony(
         if len(m.faces) == 0:
             continue
         m2, uv = _faceted_triplanar_uv(m)
-        if name == "frame":
+        is_door_glass = name.startswith("door_") and "glass" in name
+        is_door_solid = name.startswith("door_") and not is_door_glass
+        if name == "frame" or is_door_solid:
             uv_t = _scale_uv_to_tile(uv, BALCONY_TILE_FRAME)
         else:
             uv_t = _scale_uv_to_tile(uv, BALCONY_TILE_GLASS)
         m2.visual = trimesh.visual.texture.TextureVisuals(uv=uv_t)
-        if name == "glass":
+        if name == "glass" or is_door_glass:
             m2 = _double_sided_copy_uv(m2)
         mesh_blocks.append(m2)
 
@@ -1891,11 +2660,32 @@ def _build_cli() -> argparse.ArgumentParser:
         metavar="PATH",
         help="JSON-массив объектов окон (u0,u1,z_bottom,z_top и опции); суммируется с --inner-wall-window",
     )
+    ap.add_argument(
+        "--inner-wall-door",
+        action="append",
+        default=None,
+        metavar="SPEC",
+        help="Дверь на внутренней стене: u0,u1,z_bottom,z_top[,style=french|slab,fw=,fd=,gap=,mid=,y0=]",
+    )
+    ap.add_argument(
+        "--inner-wall-doors-json",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="JSON-массив дверей; суммируется с --inner-wall-door",
+    )
     ap.add_argument("--width-back", type=float, default=None)
     ap.add_argument("--width-front", type=float, default=None)
     ap.add_argument("--depth", type=float, default=None)
     ap.add_argument("--height", type=float, default=None)
     ap.add_argument("--floor-thickness", type=float, default=None)
+    ap.add_argument(
+        "--wall-thickness",
+        type=float,
+        default=None,
+        metavar="M",
+        help="Толщина вертикальных стен (м): призма наружу от внутренней грани в −n_in; 0 — как раньше",
+    )
     ap.add_argument(
         "--parapet-frac",
         type=float,
@@ -1998,6 +2788,8 @@ def main(argv: List[str] | None = None) -> None:
         kw["height"] = args.height
     if args.floor_thickness is not None:
         kw["floor_thickness"] = args.floor_thickness
+    if args.wall_thickness is not None:
+        kw["wall_thickness"] = args.wall_thickness
     if args.parapet_frac is not None:
         kw["parapet_z_frac"] = args.parapet_frac
     if args.parapet_height is not None:
@@ -2072,6 +2864,20 @@ def main(argv: List[str] | None = None) -> None:
             inner_specs.append(_parse_inner_wall_window_cli(spec_s))
     if inner_specs:
         kw["inner_wall_windows"] = inner_specs
+
+    door_specs: List[dict] = []
+    if args.inner_wall_doors_json:
+        djpath = Path(args.inner_wall_doors_json).expanduser()
+        draw = json.loads(djpath.read_text(encoding="utf-8"))
+        if isinstance(draw, list):
+            door_specs.extend(x for x in draw if isinstance(x, dict))
+        else:
+            ap.error("--inner-wall-doors-json: ожидается JSON-массив объектов")
+    if args.inner_wall_door:
+        for spec_s in args.inner_wall_door:
+            door_specs.append(_parse_inner_wall_door_cli(spec_s))
+    if door_specs:
+        kw["inner_wall_doors"] = door_specs
 
     out = Path(args.output).resolve() if args.output else None
     export_balcony(

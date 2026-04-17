@@ -911,6 +911,11 @@ def _build_arg_parser() -> Any:
         dest="texture_half_size",
         help="Сторона квадрата половины атласа при сборке из файлов",
     )
+    ex.add_argument(
+        "--no-view",
+        action="store_true",
+        help="Не открывать Open3D после экспорта",
+    )
     ex.set_defaults(_handler=_cli_export)
 
     return p
@@ -944,14 +949,14 @@ def _cli_preview(args: Any) -> None:
 def _cli_export(args: Any) -> None:
     from pathlib import Path
 
-    from src.generator.procedural.run_window_demo import export_window_demo
+    from src.generator.procedural.run_window_demo import export_window_demo, preview_window_obj_open3d
 
     partial_kw: List[Tuple[int, float]] | None = None
     if args.partial_h is not None:
         partial_kw = _parse_partial_h_tokens(args.partial_h)
 
     out = Path(args.output).resolve() if args.output else None
-    export_window_demo(
+    obj_path = export_window_demo(
         out,
         width=args.width,
         height=args.height,
@@ -967,6 +972,8 @@ def _cli_export(args: Any) -> None:
         glass_texture=args.glass_texture,
         atlas_half_size=max(getattr(args, "texture_half_size", 512), 64),
     )
+    if not args.no_view:
+        preview_window_obj_open3d(obj_path)
 
 
 def main(argv: List[str] | None = None) -> None:

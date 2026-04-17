@@ -11,6 +11,8 @@
 Запуск:
   python -m src.generator.procedural.procedural_entrance export --style niche -o data/podezd_nisha
   python -m src.generator.procedural.procedural_entrance export --style canopy ...
+  Экспорт с атласом (текстуры стен / крыши / двери): procedural_entrance_textured — см. модуль
+  src.generator.procedural.procedural_entrance_textured.
 """
 from __future__ import annotations
 
