@@ -78,6 +78,24 @@ def _open_image_rgb(path: Path) -> Image.Image:
     return im
 
 
+def _boost_dark_glass_visible(img: Image.Image, luminance_threshold: float = 72.0) -> Image.Image:
+    """
+    Тёмные карты вроде glass_black.png почти не видны в превью и на светлом фоне сцены.
+    Слегка поднимаем яркость и контраст только если средняя яркость ниже порога.
+    """
+    a = np.asarray(img.convert("RGB"), dtype=np.float32)
+    lum = float(
+        np.dot(a.reshape(-1, 3).mean(axis=0), np.array([0.299, 0.587, 0.114], dtype=np.float64))
+    )
+    if lum >= luminance_threshold:
+        return img
+    # gain + сдвиг к «светло-стеклянному» серому
+    gain = 1.0 + (luminance_threshold - lum) / 100.0
+    bias = (luminance_threshold - lum) * 0.45
+    b = np.clip(a * gain + bias, 0.0, 255.0).astype(np.uint8)
+    return Image.fromarray(b, mode="RGB")
+
+
 def make_atlas_from_sources(
     *,
     frame_path: Path | str | None = None,
@@ -105,6 +123,7 @@ def make_atlas_from_sources(
 
     if gp is not None and gp.is_file():
         gl = _open_image_rgb(gp).resize((half, half), resample)
+        gl = _boost_dark_glass_visible(gl)
     else:
         gl = make_window_glass_texture(half)
 
