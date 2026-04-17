@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -13,6 +13,7 @@
         <img src="photo_2025-11-18_14-06-36.jpg" alt="logo" />
         <span>3D Object Maker</span>
       </div>
+
       <div class="controls">
         <button id="tabModules" class="control-btn active-tab">Module Generator</button>
         <button id="tabLibrary" class="control-btn">Module Library</button>
@@ -23,19 +24,28 @@
 
     <main class="content">
       <aside class="params">
-        <!-- ================= MODULE GENERATOR ================= -->
         <div id="modulePage">
           <h2>Module Generator</h2>
 
-          <label class="field-label">Module Description:</label>
-          <textarea id="moduleDescription" rows="4" placeholder="Например: серая панель с окном"></textarea>
+          <label class="field-label" for="moduleDescription">Module Description</label>
+          <textarea
+            id="moduleDescription"
+            rows="6"
+            placeholder="Example: gray wall panel with window"
+          ></textarea>
 
           <button id="analyzeModule" class="export">Analyze</button>
 
-          <label class="field-label">Module Name:</label>
-          <input id="moduleName" class="text-input" type="text" placeholder="Например: Gray wall with window" />
+          <label class="field-label" for="moduleName">Module Name</label>
+          <input
+            id="moduleName"
+            class="text-input"
+            type="text"
+            placeholder="Example: Gray Wall With Window"
+          />
+          <div id="moduleNameError" class="field-error hidden"></div>
 
-          <label class="field-label">Module Type:</label>
+          <label class="field-label" for="moduleType">Module Type</label>
           <select id="moduleType" class="select-input">
             <option value="wall">Wall</option>
             <option value="window">Window</option>
@@ -44,132 +54,192 @@
             <option value="balcony">Balcony</option>
           </select>
 
-          <label class="field-label">Color:</label>
+          <label class="field-label" for="moduleColor">Color</label>
           <input id="moduleColor" type="color" value="#8f8f8f" />
 
-          <label class="field-label">Width:</label>
-          <input id="moduleWidth" class="text-input" type="number" min="1" max="10" step="0.1" value="1" />
+          <div class="advanced-block">
+            <div class="advanced-header" id="moduleAdvancedToggle">
+              Advanced Parameters <span class="toggle-icon"></span>
+            </div>
 
-          <label class="field-label">Height:</label>
-          <input id="moduleHeight" class="text-input" type="number" min="1" max="10" step="0.1" value="1.2" />
+            <div class="advanced-content" id="moduleAdvancedContent">
+              <label class="field-label" for="moduleWidth">Width</label>
+              <input id="moduleWidth" class="text-input" type="number" min="0.2" max="20" step="0.1" value="1" />
+              <div id="moduleWidthError" class="field-error hidden"></div>
 
-          <label class="field-label">Depth:</label>
-          <input id="moduleDepth" class="text-input" type="number" min="0.1" max="5" step="0.1" value="0.2" />
+              <label class="field-label" for="moduleHeight">Height</label>
+              <input id="moduleHeight" class="text-input" type="number" min="0.05" max="20" step="0.05" value="1.2" />
+              <div id="moduleHeightError" class="field-error hidden"></div>
 
-          <label class="field-label checkbox-line">
-            <input id="moduleHasWindow" type="checkbox" />
-            <span>Has Window</span>
-          </label>
+              <label class="field-label" for="moduleDepth">Depth</label>
+              <input id="moduleDepth" class="text-input" type="number" min="0.02" max="10" step="0.01" value="0.2" />
+              <div id="moduleDepthError" class="field-error hidden"></div>
+            </div>
+          </div>
 
-          <label class="field-label checkbox-line">
-            <input id="moduleHasDoor" type="checkbox" />
-            <span>Has Door</span>
-          </label>
-
-          <label class="field-label checkbox-line">
-            <input id="moduleHasBalcony" type="checkbox" />
-            <span>Has Balcony</span>
-          </label>
-
-          <label class="field-label checkbox-line">
-            <input id="moduleIsRoofPiece" type="checkbox" />
-            <span>Is Roof Piece</span>
-          </label>
+          <div id="moduleFormError" class="form-error hidden"></div>
 
           <button id="generateModule" class="export">Generate Module</button>
           <button id="saveModule" class="export secondary-btn">Save Module</button>
-
-          <label class="field-label">Module JSON:</label>
-          <pre id="moduleJson" class="json-box">{}</pre>
         </div>
 
-        <!-- ================= MODULE LIBRARY ================= -->
         <div id="libraryPage" class="hidden">
           <h2>Module Library</h2>
 
-          <label class="field-label">Filter by Type:</label>
-          <select id="libraryFilter" class="select-input">
-            <option value="all">All</option>
-            <option value="wall">Wall</option>
-            <option value="window">Window</option>
-            <option value="door">Door</option>
-            <option value="roof">Roof</option>
-            <option value="balcony">Balcony</option>
-          </select>
+          <div class="inline-two-fields">
+            <div class="inline-field">
+              <label class="field-label" for="libraryFilter">Filter by Type</label>
+              <select id="libraryFilter" class="select-input">
+                <option value="all">All</option>
+                <option value="wall">Wall</option>
+                <option value="window">Window</option>
+                <option value="door">Door</option>
+                <option value="roof">Roof</option>
+                <option value="balcony">Balcony</option>
+              </select>
+            </div>
 
-          <label class="field-label">Saved Modules:</label>
+            <div class="inline-field">
+              <label class="field-label" for="librarySort">Sort Modules</label>
+              <select id="librarySort" class="select-input">
+                <option value="date_desc">Newest first</option>
+                <option value="date_asc">Oldest first</option>
+                <option value="name_asc">Name A–Z</option>
+                <option value="name_desc">Name Z–A</option>
+                <option value="type_asc">Type A–Z</option>
+                <option value="type_desc">Type Z–A</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="field-label">Saved Modules</label>
           <div id="savedModules" class="library-list"></div>
+
+          <div class="module-actions">
+            <button id="exportLibraryZipBtn" class="small-btn">Export Library ZIP</button>
+            <button id="importLibraryZipBtn" class="small-btn">Import Library ZIP</button>
+            <input id="importLibraryZipInput" type="file" accept=".zip" class="hidden" />
+          </div>
         </div>
 
-        <!-- ================= HOUSE BUILDER ================= -->
         <div id="builderPage" class="hidden">
           <h2>House Builder</h2>
 
-          <label class="field-label">House Description:</label>
-          <textarea id="houseDescription" rows="4" placeholder="Например: серый длинный панельный дом на 9 этажей с балконами"></textarea>
+          <label class="field-label" for="houseDescription">House Description</label>
+          <textarea
+            id="houseDescription"
+            rows="6"
+            placeholder="Example: long gray panel house with 9 floors and balconies"
+          ></textarea>
 
           <button id="analyzeHouse" class="export">Analyze</button>
 
-          <label class="field-label">Floors:</label>
-          <input id="floors" type="range" min="1" max="25" value="9" />
-          <div id="floorsValue" class="small-value">9</div>
+          <div class="advanced-block">
+            <div class="advanced-header" id="houseAdvancedToggle">
+              Advanced Parameters <span class="toggle-icon"></span>
+            </div>
 
-          <label class="field-label">Sections / Entrances:</label>
-          <input id="sections" type="range" min="1" max="10" value="5" />
-          <div id="sectionsValue" class="small-value">5</div>
+            <div class="advanced-content" id="houseAdvancedContent">
+              <label class="field-label" for="facadeTextureSelect">Facade Texture</label>
+              <select id="facadeTextureSelect" class="select-input">
+                <option value="">No texture</option>
+              </select>
 
-          <label class="field-label">Width:</label>
-          <input id="width" type="range" min="6" max="30" value="18" />
-          <div id="widthValue" class="small-value">18</div>
+              <label class="field-label" for="facadeTextureRepeat">Texture Scale</label>
+              <input id="facadeTextureRepeat" type="range" min="1" max="8" value="3" />
+              <div id="facadeTextureRepeatValue" class="small-value">3</div>
 
-          <label class="field-label">Depth:</label>
-          <input id="depth" type="range" min="1" max="6" value="2" />
-          <div id="depthValue" class="small-value">2</div>
+              <label class="field-label" for="floors">Floors</label>
+              <input id="floors" type="range" min="1" max="25" value="8" />
+              <div id="floorsValue" class="small-value">8</div>
+              <div id="floorsError" class="field-error hidden"></div>
 
-          <label class="field-label">Facade Color:</label>
-          <input id="houseColor" type="color" value="#8f8f8f" />
+              <label class="field-label" for="sections">Sections / Entrances</label>
+              <input id="sections" type="range" min="1" max="10" value="3" />
+              <div id="sectionsValue" class="small-value">3</div>
+              <div id="sectionsError" class="field-error hidden"></div>
 
-          <label class="field-label">Roof Type:</label>
-          <select id="roofType" class="select-input">
-            <option value="flat">Flat</option>
-            <option value="gable">Gable</option>
-          </select>
+              <label class="field-label" for="width">Width</label>
+              <input id="width" type="range" min="6" max="30" value="18" />
+              <div id="widthValue" class="small-value">18</div>
+              <div id="widthError" class="field-error hidden"></div>
 
-          <label class="field-label checkbox-line">
-            <input id="hasBalconies" type="checkbox" checked />
-            <span>Has Balconies</span>
-          </label>
+              <label class="field-label" for="depth">Depth</label>
+              <input id="depth" type="range" min="1" max="6" value="2" />
+              <div id="depthValue" class="small-value">2</div>
+              <div id="depthError" class="field-error hidden"></div>
 
-          <label class="field-label">Balcony Density:</label>
-          <input id="balconyRate" type="range" min="0" max="1" step="0.05" value="0.30" />
-          <div id="balconyRateValue" class="small-value">0.30</div>
+              <label class="field-label checkbox-line">
+                <input id="hasBalconies" type="checkbox" checked />
+                <span>Has Balconies</span>
+              </label>
 
-          <label class="field-label">Window Columns:</label>
-          <input id="windowCols" type="range" min="2" max="20" value="8" />
-          <div id="windowColsValue" class="small-value">8</div>
+              <label class="field-label" for="balconyRate">Balcony Density</label>
+              <input id="balconyRate" type="range" min="0" max="1" step="0.05" value="0.25" />
+              <div id="balconyRateValue" class="small-value">0.25</div>
+              <div id="balconyRateError" class="field-error hidden"></div>
 
-          <label class="field-label">Wall Module:</label>
-          <select id="wallModule" class="select-input"></select>
+              <label class="field-label" for="windowCols">Window Columns</label>
+              <input id="windowCols" type="range" min="2" max="20" value="8" />
+              <div id="windowColsValue" class="small-value">8</div>
+              <div id="windowColsError" class="field-error hidden"></div>
 
-          <label class="field-label">Window Module:</label>
-          <select id="windowModule" class="select-input"></select>
+              <label class="field-label" for="wallModule">Wall Module</label>
+              <select id="wallModule" class="select-input"></select>
+              <div id="wallModuleError" class="field-error hidden"></div>
 
-          <label class="field-label">Door Module:</label>
-          <select id="doorModule" class="select-input"></select>
+              <label class="field-label" for="windowModule">Window Module</label>
+              <select id="windowModule" class="select-input"></select>
 
-          <label class="field-label">Roof Module:</label>
-          <select id="roofModule" class="select-input"></select>
+              <label class="field-label" for="doorModule">Door Module</label>
+              <select id="doorModule" class="select-input"></select>
 
-          <label class="field-label">Balcony Module:</label>
-          <select id="balconyModule" class="select-input"></select>
+              <label class="field-label" for="roofModule">Roof Module</label>
+              <select id="roofModule" class="select-input"></select>
+
+              <label class="field-label" for="balconyModule">Balcony Module</label>
+              <select id="balconyModule" class="select-input"></select>
+              <div id="balconyModuleError" class="field-error hidden"></div>
+            </div>
+          </div>
+
+          <div id="houseFormError" class="form-error hidden"></div>
 
           <button id="generateHouse" class="export">Generate House</button>
           <button id="animateHouse" class="export secondary-btn">Build Animation</button>
-          <button id="compareHouse" class="export secondary-btn">Compare</button>
-          <button id="exportZip" class="export secondary-btn">Export ZIP</button>
+          <button id="randomizeHouseBtn" class="export secondary-btn">Randomize House</button>
+          <button id="randomizeFacadeBtn" class="export secondary-btn">Randomize Facade</button>
 
-          <label class="field-label">House JSON:</label>
-          <pre id="houseJson" class="json-box">{}</pre>
+          <label class="field-label" for="houseName">House Name</label>
+          <input
+            id="houseName"
+            class="text-input"
+            type="text"
+            placeholder="Example: My Panel House"
+          />
+
+          <div class="module-actions">
+            <button id="saveHouseBtn" class="small-btn">Save House</button>
+            <button id="exportProjectZipBtn" class="small-btn">Export Project ZIP</button>
+            <button id="importProjectZipBtn" class="small-btn">Import Project ZIP</button>
+            <input id="importProjectZipInput" type="file" accept=".zip" class="hidden" />
+          </div>
+
+          <div class="inline-two-fields">
+            <div class="inline-field">
+              <label class="field-label" for="houseSort">Sort Houses</label>
+              <select id="houseSort" class="select-input">
+                <option value="date_desc">Newest first</option>
+                <option value="date_asc">Oldest first</option>
+                <option value="name_asc">Name A–Z</option>
+                <option value="name_desc">Name Z–A</option>
+              </select>
+            </div>
+            <div class="inline-field"></div>
+          </div>
+
+          <label class="field-label">Saved Houses</label>
+          <div id="savedHouses" class="library-list"></div>
         </div>
       </aside>
 
@@ -179,20 +249,22 @@
         <div id="hoverInfo" class="hover-info hidden"></div>
 
         <div class="preview-json-box">
-          <div class="preview-json-title">AI interpretation</div>
+          <div class="preview-json-title">Preview JSON</div>
           <pre id="previewJson">{}</pre>
         </div>
       </section>
     </main>
   </div>
 
+  <div id="toastContainer" class="toast-container"></div>
+
   <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+      }
     }
-  }
   </script>
 
   <script type="module">
