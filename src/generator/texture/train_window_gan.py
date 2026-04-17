@@ -1,17 +1,19 @@
 """
 DCGAN по кропам окон (папка JPG/PNG).
 
-Обучение:
-  python src/generator/texture/train_window_gan.py --data panels --out runs/window_gan_v2
-  (при ~5 батчах/эпоху см. сглаженные D~ G~ в логе или --loss hinge)
+По умолчанию конфиг заточен под небольшой датасет кропов из panels/: hinge, batch 16, 128×128,
+300 эпох, рекурсивный обход папок, вывод в runs/window_gan_panels, drop_last=False.
+
+Обучение (достаточно без аргументов, если данные в папке panels/):
+  python src/generator/texture/train_window_gan.py
 
 Генерация:
-  python src/generator/texture/train_window_gan.py --generate --weights runs/window_gan_v2/window_generator.pt --out runs/window_gan_v2 --n 20
+  python src/generator/texture/train_window_gan.py --generate --weights runs/window_gan_panels/window_generator.pt --out runs/window_gan_panels --n 20
 
-При --image-size 128 генератор должен выдавать 128×128 (а не 64×64), иначе D легко отличает фейки.
+Одна строка лога = среднее за эпоху по батчам; при малом числе батчей смотрите samples_epoch_*.png.
 
-Одна строка лога = среднее за эпоху по батчам. При 176 картинках и batch 32 получается ~5 батчей —
-метрики шумные; смотрите также samples_epoch_*.png. Для мягче графика: --loss hinge.
+Чекпоинты: out/checkpoints/best.pt, out/checkpoints/epoch_XXXXX.pt каждые --checkpoint-every эпох.
+При необходимости отбрасывать неполный последний батч: --drop-last.
 """
 from __future__ import annotations
 
@@ -168,8 +170,12 @@ def train_loop(
     d_steps: int,
     grad_clip: float,
     gan_loss: str,
+    checkpoint_every: int,
+    drop_last: bool,
 ):
     out_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_dir = out_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
     ds = WindowsDataset(data_dir, image_size, recursive, augment)
     if len(ds) < 256:
         logger.warning(
@@ -182,7 +188,7 @@ def train_loop(
         shuffle=True,
         num_workers=num_workers,
         pin_memory=(device == "cuda"),
-        drop_last=True,
+        drop_last=drop_last,
     )
 
     G = Generator(z_dim, image_size).to(device)
@@ -204,16 +210,26 @@ def train_loop(
     fixed_noise = torch.randn(16, z_dim, 1, 1, device=device)
 
     n_batches_loader = len(loader)
-    logger.info(
-        "Батчей за эпоху: %d (мало батчей → сильный разброс D_loss/G_loss между эпохами; это не баг).",
-        n_batches_loader,
-    )
+    r = len(ds) % batch_size
+    if not drop_last and r != 0:
+        logger.info(
+            "Батчей за эпоху: %d (последний батч = %d прим.; drop_last=False — все примеры за эпоху).",
+            n_batches_loader,
+            r,
+        )
+    else:
+        logger.info(
+            "Батчей за эпоху: %d (мало батчей → сильный разброс D_loss/G_loss между эпохами; это не баг).",
+            n_batches_loader,
+        )
 
     cfg = {
         "z_dim": z_dim,
         "image_size": image_size,
         "n_samples": len(ds),
         "data_dir": str(data_dir.resolve()),
+        "batch_size": batch_size,
+        "drop_last": drop_last,
         "lr_g": lr_g,
         "lr_d": lr_d,
         "d_steps": d_steps,
@@ -225,6 +241,21 @@ def train_loop(
     ema_d: float | None = None
     ema_g: float | None = None
     ema_alpha = 0.15
+    best_ema_g = float("inf")
+    best_epoch = 0
+
+    def _ckpt_payload(ep: int, d_ep: float, g_ep: float) -> dict:
+        return {
+            "G_state": G.state_dict(),
+            "D_state": D.state_dict(),
+            "z_dim": z_dim,
+            "image_size": image_size,
+            "epoch": ep,
+            "d_loss": d_ep,
+            "g_loss": g_ep,
+            "ema_d": ema_d,
+            "ema_g": ema_g,
+        }
 
     for epoch in range(1, epochs + 1):
         g_acc = 0.0
@@ -291,6 +322,32 @@ def train_loop(
             gan_loss,
         )
 
+        if ema_g < best_ema_g:
+            best_ema_g = ema_g
+            best_epoch = epoch
+            best_path = ckpt_dir / "best.pt"
+            torch.save(_ckpt_payload(epoch, d_epoch, g_epoch), best_path)
+            (ckpt_dir / "best_meta.json").write_text(
+                json.dumps(
+                    {
+                        "epoch": epoch,
+                        "ema_g": ema_g,
+                        "ema_d": ema_d,
+                        "g_loss_epoch": g_epoch,
+                        "d_loss_epoch": d_epoch,
+                        "metric": "min_ema_g",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            logger.info("Лучший чекпоинт (min G~) → %s (эпоха %d, G~=%.4f)", best_path, epoch, ema_g)
+
+        if checkpoint_every > 0 and epoch % checkpoint_every == 0:
+            ep_path = ckpt_dir / f"epoch_{epoch:05d}.pt"
+            torch.save(_ckpt_payload(epoch, d_epoch, g_epoch), ep_path)
+            logger.info("Чекпоинт каждые %d эпох: %s", checkpoint_every, ep_path)
+
         if epoch % max(1, epochs // 10) == 0 or epoch == epochs:
             with torch.no_grad():
                 s = G(fixed_noise).cpu() * 0.5 + 0.5
@@ -334,28 +391,69 @@ def generate_images(weights_path: Path, out_dir: Path, n_images: int, device: st
 
 
 def main():
-    p = argparse.ArgumentParser(description="DCGAN: окна по кропам.")
+    p = argparse.ArgumentParser(description="DCGAN: окна по кропам (дефолты — малый датасет panels/).")
     p.add_argument("--data", type=str, default=str(PROJECT_ROOT / "panels"))
-    p.add_argument("--out", type=str, default=str(PROJECT_ROOT / "window_gan"))
+    p.add_argument("--out", type=str, default=str(PROJECT_ROOT / "runs" / "window_gan_panels"))
     p.add_argument("--size", "--image-size", dest="size", type=int, default=128)
-    p.add_argument("--batch", "--batch-size", dest="batch", type=int, default=32)
+    p.add_argument(
+        "--batch",
+        "--batch-size",
+        dest="batch",
+        type=int,
+        default=16,
+        help="По умолчанию 16: больше шагов за эпоху при малом числе кропов.",
+    )
     p.add_argument("--z-dim", type=int, default=128)
-    p.add_argument("--epochs", type=int, default=100)
-    p.add_argument("--recursive", action="store_true")
+    p.add_argument(
+        "--epochs",
+        type=int,
+        default=300,
+        help="По умолчанию 300 для сходимости на малом датасите окон.",
+    )
+    _rec = p.add_mutually_exclusive_group()
+    _rec.add_argument(
+        "--recursive",
+        dest="recursive",
+        action="store_true",
+        help="Искать изображения в подпапках (по умолчанию уже включено).",
+    )
+    _rec.add_argument(
+        "--no-recursive",
+        dest="recursive",
+        action="store_false",
+        help="Только файлы прямо в корне --data.",
+    )
+    p.set_defaults(recursive=True)
     p.add_argument("--no-augment", action="store_true")
-    p.add_argument("--workers", type=int, default=0)
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="Потоки DataLoader; на Windows при сбоях оставьте 0.",
+    )
     p.add_argument("--label-smooth", type=float, default=0.1)
     p.add_argument(
         "--loss",
         choices=("bce", "hinge"),
-        default="bce",
-        help="hinge часто спокойнее на малом датасите (игнорирует --label-smooth для D).",
+        default="hinge",
+        help="По умолчанию hinge для малого датасита; bce — классический вариант.",
     )
     p.add_argument("--lr", type=float, default=None, help="Один lr для G и D.")
     p.add_argument("--lr-g", type=float, default=2e-4)
     p.add_argument("--lr-d", type=float, default=2e-4)
     p.add_argument("--d-steps", type=int, default=1, help="Шагов D на один шаг G.")
     p.add_argument("--grad-clip", type=float, default=0.0, help="0 = выкл.")
+    p.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=50,
+        help="Полный чекпоинт каждые N эпох (по умолчанию 50 при длинном обучении; 0 = выкл.).",
+    )
+    p.add_argument(
+        "--drop-last",
+        action="store_true",
+        help="Отбрасывать неполный последний батч (по умолчанию он учитывается — лучше при малом датасите).",
+    )
     p.add_argument("--generate", action="store_true")
     p.add_argument("--weights", type=str, default="")
     p.add_argument("--n", type=int, default=20)
@@ -408,6 +506,8 @@ def main():
         d_steps=args.d_steps,
         grad_clip=args.grad_clip,
         gan_loss=args.loss,
+        checkpoint_every=args.checkpoint_every,
+        drop_last=args.drop_last,
     )
 
 

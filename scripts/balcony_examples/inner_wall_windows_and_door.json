@@ -1,0 +1,24 @@
+[
+  {
+    "u0": 0.04,
+    "u1": 0.22,
+    "z_bottom": 1.48,
+    "z_top": 1.94,
+    "window_mode": "with_glass",
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "window_depth": 0.14,
+    "window_kind": "fixed"
+  },
+  {
+    "u0": 0.78,
+    "u1": 0.96,
+    "z_bottom": 1.48,
+    "z_top": 1.94,
+    "window_mode": "with_glass",
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "window_depth": 0.14,
+    "window_kind": "fixed"
+  }
+]

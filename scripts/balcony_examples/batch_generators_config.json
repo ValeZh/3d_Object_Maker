@@ -1,0 +1,57 @@
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/balcony",
+    "no_view": true,
+    "inner_wall_windows": [
+      {
+        "u0": 0.04,
+        "u1": 0.22,
+        "z_bottom": 1.48,
+        "z_top": 1.94,
+        "window_mode": "with_glass",
+        "mullions_vertical": 1,
+        "mullions_horizontal": 0,
+        "window_depth": 0.14,
+        "window_kind": "fixed"
+      }
+    ],
+    "inner_wall_doors": [
+      {
+        "u0": 0.3,
+        "u1": 0.7,
+        "z_bottom": 0.02,
+        "z_top": 2.14,
+        "style": "french",
+        "frame_width": 0.09,
+        "frame_depth": 0.08,
+        "leaf_gap": 0.025,
+        "midrail_z_frac": 0.58,
+        "y_outer": 0.06
+      }
+    ]
+  },
+  "entrance": {
+    "enabled": false,
+    "out_dir": "data/out_batch/entrance",
+    "no_view": true
+  },
+  "entrance_textured": {
+    "enabled": false,
+    "out_dir": "data/out_batch/entrance_textured",
+    "no_view": true
+  },
+  "window": {
+    "enabled": false,
+    "out_dir": "data/out_batch/window"
+  },
+  "wall_window": {
+    "enabled": false,
+    "out_dir": "data/out_batch/wall_window",
+    "wall_length": 3.0,
+    "wall_thickness": 0.25,
+    "wall_height": 3.0,
+    "window_center_x": 0.0,
+    "window_sill_z": 1.0
+  }
+}
