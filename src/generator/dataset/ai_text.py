@@ -1,4 +1,3 @@
-from . import dataset_maker
 
 SHAPES = ["cube", "sphere", "pyramid", "cylinder", "cone"]
 COLORS = ["green", "bluish", "blue", "red", "yellow", "black", "white", "brown"]
@@ -20,6 +19,10 @@ def extract_attributes(text):
         result["color"] = found_color
     if found_texture:
         result["texture"] = found_texture
-
+    print(result)
     return result
 
+if __name__ == "__main__":
+    text = "Create me black cube"
+    result = extract_attributes(text)
+    print("Результат:", result)
