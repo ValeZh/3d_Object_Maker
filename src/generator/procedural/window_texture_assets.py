@@ -24,6 +24,14 @@ def default_textures_dir() -> Path:
     return _repo_root() / "data" / "textures"
 
 
+def resolve_texture_path(path: str | Path | None) -> Path | None:
+    """Абсолютный путь к существующему файлу или None."""
+    if path is None:
+        return None
+    r = Path(path).expanduser().resolve()
+    return r if r.is_file() else None
+
+
 def make_window_frame_texture(size: int = 512) -> Image.Image:
     """Белая рама: почти чистый белый, лёгкий шум и едва заметные вертикальные швы."""
     rng = np.random.default_rng(42)

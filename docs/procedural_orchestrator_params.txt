@@ -1,0 +1,229 @@
+Procedural Orchestrator Parameters
+=================================
+
+Orchestrator file:
+- src/generator/procedural/procedural_batch_runner.py
+
+JSON parser file:
+- src/generator/procedural/procedural_batch_json_parser.py
+
+
+1) Top-level JSON structure
+---------------------------
+Config must be a JSON object (dictionary) with optional sections:
+- balcony
+- entrance
+- entrance_textured
+- window
+- wall_window
+
+Each section is optional. If section is missing, it is skipped.
+
+
+2) Common section fields
+------------------------
+Every section can contain:
+- enabled: bool (default true)
+- out_dir: string path (preferred output key)
+- output: string path (alias for out_dir)
+
+How common fields work:
+- If enabled=false -> section is skipped
+- If out_dir/output is missing -> default path is used:
+  <out_root>/<section_name>
+- All remaining keys in section are passed directly to the export function.
+
+
+3) Section: balcony
+-------------------
+Export function:
+- export_balcony(out_dir=..., no_view=..., atlas_tile=..., textures..., **kwargs)
+
+Direct function arguments supported by orchestrator:
+- no_view: bool
+- atlas_tile: int
+- wall_lower_tex: string path
+- wall_upper_tex: string path
+- frame_tex: string path
+- glass_tex: string path
+- side_basket_tex: string path
+- side_jamb_tex: string path
+- side_separator_tex: string path
+
+Additional balcony kwargs (from USER_BALCONY, also accepted):
+- width_back: float
+- width_front: float
+- depth: float
+- height: float
+- simple_box: bool
+- floor_corner_left_wall: [x, y] or null
+- floor_corner_right_wall: [x, y] or null
+- floor_corner_front_left: [x, y] or null
+- floor_corner_front_right: [x, y] or null
+- vertical_prism: bool
+- window_left_wall: bool
+- window_right_wall: bool
+- floor_thickness: float
+- wall_thickness: float
+- parapet_z_frac: float
+- parapet_height: float or null
+- window_mode: string ("none", "frame_only", "with_glass", "open", depending on module logic)
+- front_window_mode: string or null
+- open_left_above_parapet: bool
+- open_right_above_parapet: bool
+- window_depth: float
+- tilt_left_deg: float
+- tilt_right_deg: float
+- wall_upper_z_frac: float
+- side_upper_mode: string
+- mullions_vertical: int
+- mullions_horizontal: int
+- mullion_offset_x: float
+- mullion_offset_z: float
+- partial_horizontal_bars: list
+- window_kind: string
+- parapet_sill: bool
+- sill_thickness: float
+- sill_depth: float
+- side_parapet_split_frac: float
+- side_parapet_separator_depth: float
+- inner_wall_windows: list[dict]
+- inner_wall_doors: list[dict]
+
+
+4) Section: entrance
+--------------------
+Export function:
+- export_entrance(out_dir=..., no_view=..., **kwargs)
+
+Direct function arguments:
+- no_view: bool
+
+Additional entrance kwargs (from USER_ENTRANCE, accepted):
+- entrance_style: string ("canopy" or "niche")
+
+Niche-style related:
+- niche_clear_height: float
+- niche_ceiling_thickness: float
+- niche_floor_z: float
+- step_front_depth: float
+- plinth_height: float
+- double_door: bool
+- niche_door_u0: float
+- niche_door_u1: float
+- niche_door_z_bottom: float or null
+- niche_door_z_top: float or null
+- door_frame_depth: float
+- door_frame_width: float
+- door_leaf_gap: float
+- door_midrail_z_frac: float
+- door_recess_y: float
+
+Canopy-style related:
+- width: float
+- depth: float
+- canopy_thickness: float
+- canopy_z_bottom: float
+- platform_height: float
+- platform_depth: float
+- platform_width: float or null
+- has_left_wall: bool
+- has_right_wall: bool
+- wall_thickness: float
+- partition_thickness: float
+- partitions_x: list[float]
+- right_support_pole: bool
+- pole_radius: float
+- pole_front_inset: float
+- pole_side_inset: float
+- doors: list[dict with u0,u1,z_bottom,z_top]
+- door_plane_y: float
+- door_plane_thickness: float
+
+
+5) Section: entrance_textured
+-----------------------------
+Export function:
+- export_entrance_textured(out_dir=..., no_view=..., atlas_tile=..., wall_tex=..., roof_tex=..., door_tex=..., **kwargs)
+
+Direct function arguments:
+- no_view: bool
+- atlas_tile: int
+- wall_tex: string path
+- roof_tex: string path
+- door_tex: string path
+
+Additional kwargs:
+- Same geometry kwargs as "entrance" section (USER_ENTRANCE keys listed above).
+
+
+6) Section: window
+------------------
+Export function:
+- export_window_demo(out_dir=..., width=..., height=..., depth=..., profile=..., kind=..., mullions..., textures..., atlas_half_size=...)
+
+Supported arguments:
+- width: float
+- height: float
+- depth: float
+- profile: string
+- kind: string
+- mullions_vertical: int
+- mullions_horizontal: int
+- mullion_offset_x: float
+- mullion_offset_z: float
+- partial_horizontal_bars: list
+- frame_texture: string path
+- glass_texture: string path
+- atlas_half_size: int
+- no_view: bool (batch runner only; default true). If false, Open3D preview after export (pip install open3d).
+
+Note:
+- export_window_demo() has no no_view in its signature; procedural_batch_runner strips no_view and calls preview separately.
+
+
+7) Section: wall_window
+-----------------------
+Export function:
+- export_wall_with_window(out_dir=..., required wall params..., optional window params..., textures..., atlas_half_size=...)
+
+Required arguments (must be provided when section enabled):
+- wall_length: float
+- wall_thickness: float
+- wall_height: float
+- window_center_x: float
+- window_sill_z: float
+
+Optional arguments:
+- width: float or null
+- height: float or null
+- depth: float or null
+- profile: string or null
+- kind: string or null
+- mullions_vertical: int or null
+- mullions_horizontal: int or null
+- mullion_offset_x: float or null
+- mullion_offset_z: float or null
+- partial_horizontal_bars: list or null
+- frame_texture: string path or null
+- glass_texture: string path or null
+- wall_texture: string path or null
+- atlas_half_size: int
+- no_view: bool (batch runner only; default true). If false, Open3D preview after export.
+
+
+8) Minimal config example
+-------------------------
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/balcony",
+    "no_view": true
+  },
+  "window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/window",
+    "width": 1.4,
+    "height": 1.6
+  }
+}

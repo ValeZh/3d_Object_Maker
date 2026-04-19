@@ -24,6 +24,7 @@ from typing import Any, List, Optional, Tuple
 import numpy as np
 import trimesh
 
+from src.generator.procedural.open3d_preview import preview_entrance_obj_open3d
 from src.generator.procedural.procedural_door import (
     build_french_double_door_parts,
     build_simple_door_slab,
@@ -551,35 +552,8 @@ def export_entrance(
     print(f"[OK] Entrance export: {obj_path}")
 
     if not no_view:
-        _preview_entrance_open3d(obj_path, niche=(style == "niche"))
+        preview_entrance_obj_open3d(obj_path, niche=(style == "niche"))
     return obj_path
-
-
-def _preview_entrance_open3d(obj_path: Path, *, niche: bool = False) -> None:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError:
-        print("pip install open3d for interactive preview.")
-        return
-    obj_path = obj_path.resolve()
-    if niche:
-        lookat = np.array([0.0, 0.65, 1.05], dtype=np.float64)
-        eye = np.array([0.0, -2.85, 1.32], dtype=np.float64)
-    else:
-        lookat = np.array([0.0, 0.9, 1.0], dtype=np.float64)
-        eye = np.array([0.0, -4.5, 1.45], dtype=np.float64)
-    up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    mesh = o3d.io.read_triangle_mesh(str(obj_path), enable_post_processing=True)
-    if len(mesh.vertices):
-        mesh.compute_vertex_normals()
-        o3d.visualization.draw(
-            mesh,
-            title="Entrance",
-            lookat=lookat,
-            eye=eye,
-            up=up,
-            field_of_view=58.0,
-        )
 
 
 def _parse_door_cli(s: str) -> dict:

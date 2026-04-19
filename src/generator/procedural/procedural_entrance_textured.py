@@ -25,13 +25,14 @@ import numpy as np
 import trimesh
 from PIL import Image
 
+from src.generator.procedural.open3d_preview import preview_entrance_textured_obj_open3d
 from src.generator.procedural.procedural_entrance import (
     ENTRANCE_NICHE_PRESET,
     USER_ENTRANCE,
     build_entrance_meshes,
     build_niche_entrance_meshes,
 )
-from src.generator.procedural.run_window_demo import _faceted_triplanar_uv
+from src.generator.procedural.procedural_window import faceted_triplanar_uv
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
@@ -212,7 +213,7 @@ def export_entrance_textured(
     for name, m in parts:
         if m is None or len(m.faces) == 0:
             continue
-        m2, uv = _faceted_triplanar_uv(m)
+        m2, uv = faceted_triplanar_uv(m)
         ti = _entrance_part_tile_index(name)
         uv_t = _scale_uv_to_atlas_tile(uv, ti)
         m2.visual = trimesh.visual.texture.TextureVisuals(uv=uv_t)
@@ -252,23 +253,8 @@ def export_entrance_textured(
     print(f"     Atlas: {tex_path}")
 
     if not no_view:
-        _preview_entrance_textured_open3d(obj_path)
+        preview_entrance_textured_obj_open3d(obj_path)
     return obj_path
-
-
-def _preview_entrance_textured_open3d(obj_path: Path) -> None:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError:
-        print("pip install open3d for interactive preview.")
-        return
-    mesh = o3d.io.read_triangle_mesh(str(obj_path.resolve()), enable_post_processing=False)
-    if len(mesh.vertices) and mesh.has_triangle_uvs():
-        mesh.compute_vertex_normals()
-    lookat = np.array([0.0, 0.65, 1.05], dtype=np.float64)
-    eye = np.array([0.0, -3.2, 1.35], dtype=np.float64)
-    up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    o3d.visualization.draw(mesh, title="Entrance (textured)", lookat=lookat, eye=eye, up=up, field_of_view=58.0)
 
 
 def _parse_door_cli(s: str) -> dict:

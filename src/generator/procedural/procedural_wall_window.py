@@ -38,22 +38,15 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.generator.procedural.procedural_window import (
-    USER_WINDOW_MESH,
-    _normalize_partial_horizontal_bars,
-    _pick_float_param,
-    _pick_kind,
-    _pick_nonneg_int,
-    _pick_profile,
     build_window_frame_glass_meshes,
+    frame_glass_atlas_uv_mesh,
+    resolve_window_frame_glass_params,
     _add_window_build_args,
-    _parse_partial_h_tokens,
     _frame_thickness,
+    _parse_partial_h_tokens,
 )
-from src.generator.procedural.run_window_demo import (
-    _faceted_triplanar_uv,
-    _resolve_texture_path,
-    preview_window_obj_open3d,
-)
+from src.generator.procedural.open3d_preview import preview_window_obj_open3d
+from src.generator.procedural.window_texture_assets import resolve_texture_path
 from src.generator.procedural.window_texture_assets import ensure_window_textures, make_atlas_from_sources
 from src.generator.procedural.procedural_wall_mesh import build_wall_mesh_rect_opening, wall_mesh_expanded_uv
 
@@ -166,42 +159,39 @@ def build_wall_with_window(
     mullion_offset_z: float | None = None,
     partial_horizontal_bars: List[Tuple[int, float]] | None = None,
 ) -> WallWindowBuild:
-    u = USER_WINDOW_MESH
-    w = float(width if width is not None else u["width"])
-    h = float(height if height is not None else u["height"])
-    d = float(depth if depth is not None else u["depth"])
-    prof = profile if profile is not None else str(u["profile"])
-    knd = kind if kind is not None else str(u["kind"])
-    nv = _pick_nonneg_int(mullions_vertical, u.get("mullions_vertical", 0))
-    nh = _pick_nonneg_int(mullions_horizontal, u.get("mullions_horizontal", 0))
-    ox = _pick_float_param(mullion_offset_x, u.get("mullion_offset_x", 0.0))
-    oz = _pick_float_param(mullion_offset_z, u.get("mullion_offset_z", 0.0))
-    ph_raw = partial_horizontal_bars if partial_horizontal_bars is not None else u.get("partial_horizontal_bars")
-    partial_bars = _normalize_partial_horizontal_bars(ph_raw)
-    pf = _pick_profile(prof, str(u.get("profile", "rect")))
-    kd = _pick_kind(knd, str(u.get("kind", "fixed")))
-
-    ft = _frame_thickness(w, h)
-    glass_t = max(d * 0.12, 0.004)
+    p = resolve_window_frame_glass_params(
+        width=width,
+        height=height,
+        depth=depth,
+        profile=profile,
+        kind=kind,
+        mullions_vertical=mullions_vertical,
+        mullions_horizontal=mullions_horizontal,
+        mullion_offset_x=mullion_offset_x,
+        mullion_offset_z=mullion_offset_z,
+        partial_horizontal_bars=partial_horizontal_bars,
+    )
+    ft = _frame_thickness(p.width, p.height)
+    glass_t = max(p.depth * 0.12, 0.004)
 
     mf, mg = build_window_frame_glass_meshes(
-        width=w,
-        height=h,
-        depth=d,
-        profile=pf,
-        kind=kd,
-        mullions_vertical=nv,
-        mullions_horizontal=nh,
-        mullion_offset_x=ox,
-        mullion_offset_z=oz,
-        partial_horizontal_bars=partial_bars,
+        width=p.width,
+        height=p.height,
+        depth=p.depth,
+        profile=p.profile,
+        kind=p.kind,
+        mullions_vertical=p.mullions_vertical,
+        mullions_horizontal=p.mullions_horizontal,
+        mullion_offset_x=p.mullion_offset_x,
+        mullion_offset_z=p.mullion_offset_z,
+        partial_horizontal_bars=p.partial_horizontal_bars,
         ft=ft,
         glass_t=glass_t,
         glass_y=0.0,
         with_glass=True,
     )
 
-    tz = float(window_sill_z) + h * 0.5
+    tz = float(window_sill_z) + p.height * 0.5
     tvec = np.array([float(window_center_x), 0.0, tz], dtype=np.float64)
     mf_w = mf.copy()
     mg_w = mg.copy()
@@ -222,24 +212,7 @@ def build_wall_with_window(
         opening_zmax,
     )
 
-    mf_uv, uv_f = _faceted_triplanar_uv(mf)
-    mg_uv, uv_g = _faceted_triplanar_uv(mg)
-    uv_f = np.asarray(uv_f, dtype=np.float64).copy()
-    uv_g = np.asarray(uv_g, dtype=np.float64).copy()
-    uv_f[:, 0] = uv_f[:, 0] * 0.5
-    uv_g[:, 0] = uv_g[:, 0] * 0.5 + 0.5
-    uv = np.vstack([uv_f, uv_g]) if len(uv_f) + len(uv_g) else np.zeros((0, 2))
-
-    if len(mf_uv.faces) == 0 and len(mg_uv.faces) == 0:
-        wt = trimesh.Trimesh()
-    elif len(mf_uv.faces) == 0:
-        wt = mg_uv
-        uv = uv_g
-    elif len(mg_uv.faces) == 0:
-        wt = mf_uv
-        uv = uv_f
-    else:
-        wt = trimesh.util.concatenate([mf_uv, mg_uv])
+    wt, uv = frame_glass_atlas_uv_mesh(mf, mg)
     wt.apply_translation(tvec)
 
     return WallWindowBuild(
@@ -279,8 +252,8 @@ def export_wall_with_window(
     out_dir.mkdir(parents=True, exist_ok=True)
     tex_name = "window_atlas.png"
     tex_path = out_dir / tex_name
-    fp = _resolve_texture_path(frame_texture)
-    gp = _resolve_texture_path(glass_texture)
+    fp = resolve_texture_path(frame_texture)
+    gp = resolve_texture_path(glass_texture)
     if frame_texture is not None and fp is None:
         print(f"[warn] frame_texture missing, procedural frame: {frame_texture}")
     if glass_texture is not None and gp is None:
@@ -314,7 +287,7 @@ def export_wall_with_window(
     win_export.visual = trimesh.visual.texture.TextureVisuals(uv=b.window_uv, image=Image.open(tex_path))
 
     hx = float(wall_length) * 0.5
-    wp = _resolve_texture_path(wall_texture)
+    wp = resolve_texture_path(wall_texture)
     if wall_texture is not None and wp is None:
         print(f"[warn] wall_texture missing, wall without map: {wall_texture}")
     wall_tex_name: str | None = None

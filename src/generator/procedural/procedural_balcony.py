@@ -46,15 +46,16 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.generator.procedural.procedural_door import build_french_double_door_parts, build_simple_door_slab
+from src.generator.procedural.open3d_preview import preview_balcony_obj_open3d
 from src.generator.procedural.procedural_window import (
     build_window_frame_glass_meshes,
+    faceted_triplanar_uv,
     _frame_thickness,
     _normalize_partial_horizontal_bars,
     _parse_partial_h_tokens,
     _pick_kind,
     _pick_nonneg_int,
 )
-from src.generator.procedural.run_window_demo import _faceted_triplanar_uv
 from src.generator.procedural.window_texture_assets import make_window_frame_texture, make_window_glass_texture
 
 
@@ -2520,7 +2521,7 @@ def export_balcony(
         if _mesh_has_per_vertex_uv(m):
             mesh_blocks.append(m)
             continue
-        m2, uv = _faceted_triplanar_uv(m)
+        m2, uv = faceted_triplanar_uv(m)
         if name == "wall_lower":
             tile_i = BALCONY_TILE_WALL_LOWER
         elif name == "wall_upper":
@@ -2543,7 +2544,7 @@ def export_balcony(
     for name, m in win_parts:
         if len(m.faces) == 0:
             continue
-        m2, uv = _faceted_triplanar_uv(m)
+        m2, uv = faceted_triplanar_uv(m)
         is_door_glass = name.startswith("door_") and "glass" in name
         is_door_solid = name.startswith("door_") and not is_door_glass
         if name == "frame" or is_door_solid:
@@ -2579,44 +2580,8 @@ def export_balcony(
     print(f"     Atlas: {tex_path}")
 
     if not no_view:
-        _preview_balcony_open3d(obj_path)
+        preview_balcony_obj_open3d(obj_path)
     return obj_path
-
-
-def _preview_balcony_open3d(obj_path: Path) -> None:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError:
-        print("pip install open3d for interactive preview.")
-        return
-    obj_path = obj_path.resolve()
-    lookat = np.array([0.0, 0.65, 1.05], dtype=np.float64)
-    eye = np.array([3.6, -4.0, 1.35], dtype=np.float64)
-    up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    # TriangleMesh с UV чаще корректнее тянет map_Kd из MTL, чем read_triangle_model.
-    # True: Open3D может сшить совпадающие по позиции вершины и усреднить нормали — «грязный» свет на кромках.
-    mesh = o3d.io.read_triangle_mesh(str(obj_path), enable_post_processing=False)
-    if len(mesh.vertices) and mesh.has_triangle_uvs():
-        mesh.compute_vertex_normals()
-        o3d.visualization.draw(
-            mesh,
-            title="Balcony",
-            lookat=lookat,
-            eye=eye,
-            up=up,
-            field_of_view=58.0,
-            ibl_intensity=1.15,
-        )
-    else:
-        model = o3d.io.read_triangle_model(str(obj_path))
-        o3d.visualization.draw(
-            model,
-            title="Balcony",
-            lookat=lookat,
-            eye=eye,
-            up=up,
-            field_of_view=58.0,
-        )
 
 
 def _build_cli() -> argparse.ArgumentParser:
