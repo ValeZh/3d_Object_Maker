@@ -5,9 +5,10 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import numpy as np
 import trimesh
@@ -37,6 +38,17 @@ def require_open3d():
     return o3d
 
 
+def _open3d_mesh_preview_camera(mesh: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Центр меша, позиция камеры и up для превью окон/стен с UV."""
+    bbox = mesh.get_axis_aligned_bounding_box()
+    ctr = np.asarray(bbox.get_center(), dtype=np.float64)
+    ext = np.asarray(bbox.get_extent(), dtype=np.float64)
+    r = float(max(float(np.linalg.norm(ext)), 0.15))
+    eye = ctr + np.array([1.15 * r, -0.92 * r, 0.42 * r], dtype=np.float64)
+    up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    return ctr, eye, up
+
+
 def trimesh_to_open3d_mesh(
     mesh: trimesh.Trimesh,
     color_rgb: Tuple[float, float, float] | List[float] | None = None,
@@ -57,7 +69,11 @@ def trimesh_to_open3d_mesh(
 
 
 def preview_window_obj_open3d(obj_path: Path | str) -> None:
-    """Экспортированное окно или wall_window с текстурами (read_triangle_model)."""
+    """
+    Окно / wall_window: ``defaultLit`` + ``window_atlas.png`` и при наличии ``window_normal_atlas.png``.
+
+    По умолчанию **без skybox**, два шага PBR (albedo+normal → только albedo при ошибке) — меньше сбоев Filament на Windows.
+    """
     o3d = try_import_open3d()
     if o3d is None:
         print(
@@ -69,12 +85,93 @@ def preview_window_obj_open3d(obj_path: Path | str) -> None:
     path = Path(obj_path).resolve()
     if not path.is_file():
         return
-    try:
-        model = o3d.io.read_triangle_model(str(path))
-    except Exception as e:
-        print(f"Open3D не удалось открыть {path}: {e}")
+
+    mesh = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
+    if len(mesh.vertices) == 0:
+        try:
+            model = o3d.io.read_triangle_model(str(path))
+            o3d.visualization.draw(model, title="Procedural window", show_skybox=False)
+        except Exception as e:
+            print(f"Open3D не удалось открыть {path}: {e}")
         return
-    o3d.visualization.draw(model, title="Procedural window")
+
+    mesh.compute_vertex_normals()
+    lookat, eye, up = _open3d_mesh_preview_camera(mesh)
+    draw_base = dict(
+        title="Procedural window",
+        lookat=lookat,
+        eye=eye,
+        up=up,
+        field_of_view=58.0,
+        ibl_intensity=1.0,
+        show_skybox=False,
+    )
+    if os.environ.get("OPEN3D_WIN_PREVIEW_SAFE", "").strip().lower() in ("1", "true", "yes"):
+        safe_kw = dict(draw_base)
+        safe_kw["title"] = "Procedural window (safe)"
+        o3d.visualization.draw(mesh, **safe_kw)
+        return
+
+    out_dir = path.parent
+    atlas_path = out_dir / "window_atlas.png"
+    normal_path = out_dir / "window_normal_atlas.png"
+
+    if atlas_path.is_file():
+        from open3d.visualization import rendering
+
+        try:
+            albedo = o3d.io.read_image(str(atlas_path))
+        except Exception as e:
+            albedo = None
+            print(f"[warn] Open3D read_image(window_atlas.png): {e}")
+
+        normal_img = None
+        if albedo is not None:
+            if normal_path.is_file():
+                try:
+                    normal_img = o3d.io.read_image(str(normal_path))
+                except Exception as e:
+                    print(f"[warn] Open3D read_image(normal atlas): {e}")
+
+        if albedo is not None:
+            attempts: List[Tuple[str, Any]] = []
+            m0 = rendering.MaterialRecord()
+            m0.shader = "defaultLit"
+            m0.albedo_img = albedo
+            m0.base_color = (1.0, 1.0, 1.0, 1.0)
+            m0.base_metallic = 0.0
+            m0.base_roughness = 0.58
+            attempts.append(("lit+albedo", m0))
+
+            if normal_img is not None:
+                m1 = rendering.MaterialRecord()
+                m1.shader = "defaultLit"
+                m1.albedo_img = albedo
+                m1.normal_img = normal_img
+                m1.base_color = (1.0, 1.0, 1.0, 1.0)
+                m1.base_metallic = 0.0
+                m1.base_roughness = 0.58
+                attempts.append(("lit+albedo+normal", m1))
+
+            for label, mat in reversed(attempts):
+                try:
+                    o3d.visualization.draw(
+                        [{"name": "Window", "geometry": mesh, "material": mat}],
+                        **draw_base,
+                    )
+                    return
+                except Exception as e:
+                    print(f"[warn] Open3D preview ({label}): {e}")
+
+    try:
+        o3d.visualization.draw(mesh, **draw_base)
+    except Exception as e:
+        print(f"[warn] Open3D mesh-only preview: {e}")
+        try:
+            model = o3d.io.read_triangle_model(str(path))
+            o3d.visualization.draw(model, title="Procedural window", show_skybox=False)
+        except Exception as e2:
+            print(f"[warn] Open3D read_triangle_model fallback: {e2}")
 
 
 def preview_entrance_obj_open3d(obj_path: Path | str, *, niche: bool = False) -> None:

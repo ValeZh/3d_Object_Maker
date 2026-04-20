@@ -5,8 +5,7 @@ from typing import Any, Dict
 
 from src.generator.procedural.open3d_preview import preview_window_obj_open3d
 from src.generator.procedural.procedural_balcony import export_balcony
-from src.generator.procedural.procedural_entrance import export_entrance
-from src.generator.procedural.procedural_entrance_textured import export_entrance_textured
+from src.generator.procedural.procedural_entrance import export_entrance, export_entrance_textured
 from src.generator.procedural.procedural_wall_window import export_wall_with_window
 from src.generator.procedural.procedural_window import export_window_demo
 

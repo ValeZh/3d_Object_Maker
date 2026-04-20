@@ -41,6 +41,8 @@ import numpy as np
 import trimesh
 from PIL import Image
 
+from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
@@ -49,14 +51,14 @@ from src.generator.procedural.procedural_door import build_french_double_door_pa
 from src.generator.procedural.open3d_preview import preview_balcony_obj_open3d
 from src.generator.procedural.procedural_window import (
     build_window_frame_glass_meshes,
-    faceted_triplanar_uv,
     _frame_thickness,
     _normalize_partial_horizontal_bars,
     _parse_partial_h_tokens,
     _pick_kind,
     _pick_nonneg_int,
 )
-from src.generator.procedural.window_texture_assets import make_window_frame_texture, make_window_glass_texture
+from src.generator.procedural.texturing import make_window_frame_texture, make_window_glass_texture
+from src.generator.procedural.unfolding import faceted_triplanar_uv
 
 
 # Плитки атласа (слева направо): низ | верх | рама | стекло | бок корзина | бок у окна | перегородка
@@ -428,6 +430,13 @@ def make_balcony_atlas(
     side_basket_path: Path | str | None = None,
     side_jamb_path: Path | str | None = None,
     side_separator_path: Path | str | None = None,
+    wall_lower_color: Tuple[int, int, int] | None = None,
+    wall_upper_color: Tuple[int, int, int] | None = None,
+    frame_color: Tuple[int, int, int] | None = None,
+    glass_color: Tuple[int, int, int] | None = None,
+    side_basket_color: Tuple[int, int, int] | None = None,
+    side_jamb_color: Tuple[int, int, int] | None = None,
+    side_separator_color: Tuple[int, int, int] | None = None,
 ) -> Image.Image:
     """Атлас BALCONY_ATLAS_NUM_TILES×1: низ | верх | рама | стекло | бок корзина | бок у окна | перегородка."""
     t = max(tile, 64)
@@ -436,36 +445,43 @@ def make_balcony_atlas(
         if wall_lower_path and Path(wall_lower_path).expanduser().resolve().is_file()
         else _proc_wall_texture(t, (168, 158, 148))
     )
+    wl = apply_texture_color_tint(wl, wall_lower_color)
     wu = (
         _open_rgb(Path(wall_upper_path)).resize((t, t), _resample())
         if wall_upper_path and Path(wall_upper_path).expanduser().resolve().is_file()
         else _proc_wall_texture(t, (210, 205, 198))
     )
+    wu = apply_texture_color_tint(wu, wall_upper_color)
     fr = (
         _open_rgb(Path(frame_path)).resize((t, t), _resample())
         if frame_path and Path(frame_path).expanduser().resolve().is_file()
         else make_window_frame_texture(t)
     )
+    fr = apply_texture_color_tint(fr, frame_color)
     gl = (
         _open_rgb(Path(glass_path)).resize((t, t), _resample())
         if glass_path and Path(glass_path).expanduser().resolve().is_file()
         else make_window_glass_texture(t)
     )
+    gl = apply_texture_color_tint(gl, glass_color)
     sb = (
         _open_rgb(Path(side_basket_path)).resize((t, t), _resample())
         if side_basket_path and Path(side_basket_path).expanduser().resolve().is_file()
         else wl.copy()
     )
+    sb = apply_texture_color_tint(sb, side_basket_color)
     sj = (
         _open_rgb(Path(side_jamb_path)).resize((t, t), _resample())
         if side_jamb_path and Path(side_jamb_path).expanduser().resolve().is_file()
         else wl.copy()
     )
+    sj = apply_texture_color_tint(sj, side_jamb_color)
     sep = (
         _open_rgb(Path(side_separator_path)).resize((t, t), _resample())
         if side_separator_path and Path(side_separator_path).expanduser().resolve().is_file()
         else _proc_wall_texture(t, (140, 136, 130))
     )
+    sep = apply_texture_color_tint(sep, side_separator_color)
     n = BALCONY_ATLAS_NUM_TILES
     out = Image.new("RGB", (t * n, t))
     out.paste(wl, (0, 0))
@@ -2455,8 +2471,27 @@ def export_balcony(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    _BALCONY_TEX_COLOR_KEYS = (
+        "wall_lower_tex_color",
+        "wall_upper_tex_color",
+        "frame_tex_color",
+        "glass_tex_color",
+        "side_basket_tex_color",
+        "side_jamb_tex_color",
+        "side_separator_tex_color",
+    )
+    kw_rest = dict(kwargs)
+    tex_color_raw = {k: kw_rest.pop(k, None) for k in _BALCONY_TEX_COLOR_KEYS}
+    wl_c = parse_texture_color_tint(tex_color_raw["wall_lower_tex_color"])
+    wu_c = parse_texture_color_tint(tex_color_raw["wall_upper_tex_color"])
+    fr_c = parse_texture_color_tint(tex_color_raw["frame_tex_color"])
+    gl_c = parse_texture_color_tint(tex_color_raw["glass_tex_color"])
+    sb_c = parse_texture_color_tint(tex_color_raw["side_basket_tex_color"])
+    sj_c = parse_texture_color_tint(tex_color_raw["side_jamb_tex_color"])
+    sep_c = parse_texture_color_tint(tex_color_raw["side_separator_tex_color"])
+
     u = USER_BALCONY
-    p = {**u, **kwargs}
+    p = {**u, **kw_rest}
     ph = p.get("parapet_height")
     wall_parts, win_parts = build_balcony_meshes(
         width_back=float(p["width_back"]),
@@ -2508,6 +2543,13 @@ def export_balcony(
         side_basket_path=side_basket_tex,
         side_jamb_path=side_jamb_tex,
         side_separator_path=side_separator_tex,
+        wall_lower_color=wl_c,
+        wall_upper_color=wu_c,
+        frame_color=fr_c,
+        glass_color=gl_c,
+        side_basket_color=sb_c,
+        side_jamb_color=sj_c,
+        side_separator_color=sep_c,
     )
     tex_name = "balcony_atlas.png"
     tex_path = out_dir / tex_name

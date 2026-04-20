@@ -27,6 +27,10 @@ Every section can contain:
 - out_dir: string path (preferred output key)
 - output: string path (alias for out_dir)
 
+Optional diffuse tint for texture map paths (multiplies RGB in the atlas / wall image):
+- Use JSON array of three numbers per slot, e.g. ``[220, 200, 180]`` (0–255) or ``[0.86, 0.78, 0.71]`` (0–1).
+- Parsed in code as ``parse_texture_color_tint``; see section-specific key names below (``*_tex_color``, ``frame_texture_color``, etc.).
+
 How common fields work:
 - If enabled=false -> section is skipped
 - If out_dir/output is missing -> default path is used:
@@ -49,6 +53,10 @@ Direct function arguments supported by orchestrator:
 - side_basket_tex: string path
 - side_jamb_tex: string path
 - side_separator_tex: string path
+
+Optional tint (same slot as the texture above):
+- wall_lower_tex_color, wall_upper_tex_color, frame_tex_color, glass_tex_color
+- side_basket_tex_color, side_jamb_tex_color, side_separator_tex_color
 
 Additional balcony kwargs (from USER_BALCONY, also accepted):
 - width_back: float
@@ -144,7 +152,7 @@ Canopy-style related:
 5) Section: entrance_textured
 -----------------------------
 Export function:
-- export_entrance_textured(out_dir=..., no_view=..., atlas_tile=..., wall_tex=..., roof_tex=..., door_tex=..., **kwargs)
+- export_entrance_textured(...) — procedural_entrance.py; атлас: texturing.entrance_atlas. CLI: тот же модуль, команда export-textured (отдельный -m procedural_entrance_textured удалён).
 
 Direct function arguments:
 - no_view: bool
@@ -152,6 +160,7 @@ Direct function arguments:
 - wall_tex: string path
 - roof_tex: string path
 - door_tex: string path
+- wall_tex_color, roof_tex_color, door_tex_color (optional RGB arrays as above)
 
 Additional kwargs:
 - Same geometry kwargs as "entrance" section (USER_ENTRANCE keys listed above).
@@ -175,6 +184,7 @@ Supported arguments:
 - partial_horizontal_bars: list
 - frame_texture: string path
 - glass_texture: string path
+- frame_texture_color, glass_texture_color (optional RGB arrays)
 - atlas_half_size: int
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export (pip install open3d).
 
@@ -208,6 +218,7 @@ Optional arguments:
 - frame_texture: string path or null
 - glass_texture: string path or null
 - wall_texture: string path or null
+- frame_texture_color, glass_texture_color, wall_texture_color (optional RGB arrays)
 - atlas_half_size: int
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export.
 
@@ -227,3 +238,7 @@ Optional arguments:
     "height": 1.6
   }
 }
+
+Ready-made example with texture tint keys (paths under data/textures/):
+- scripts/balcony_examples/batch_texture_tint_demo.json
+  Run ``python -m src.generator.procedural.texturing.window_texture_assets`` once from repo root if PNGs are missing.
