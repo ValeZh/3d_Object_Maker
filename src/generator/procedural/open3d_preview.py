@@ -86,6 +86,30 @@ def preview_window_obj_open3d(obj_path: Path | str) -> None:
     if not path.is_file():
         return
 
+    # Стена+окно: в MTL два материала (map_Kd стены + атлас окна). Ветка ниже с одним albedo
+    # window_atlas.png на весь TriangleMesh красит стену в цвета атласа — только модель с материалами корректна.
+    if path.name.lower() == "wall_window.obj":
+        try:
+            model = o3d.io.read_triangle_model(str(path))
+            mesh_cam = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
+            if len(mesh_cam.vertices) > 0:
+                mesh_cam.compute_vertex_normals()
+                lookat, eye, up = _open3d_mesh_preview_camera(mesh_cam)
+                o3d.visualization.draw(
+                    model,
+                    title="Wall + window",
+                    show_skybox=False,
+                    lookat=lookat,
+                    eye=eye,
+                    up=up,
+                    field_of_view=58.0,
+                )
+            else:
+                o3d.visualization.draw(model, title="Wall + window", show_skybox=False)
+            return
+        except Exception as e:
+            print(f"[warn] Open3D wall_window (multi-material): {e}")
+
     mesh = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
     if len(mesh.vertices) == 0:
         try:

@@ -45,6 +45,13 @@
     "enabled": false,
     "out_dir": "data/out_batch/window"
   },
+  "wall": {
+    "enabled": false,
+    "out_dir": "data/out_batch/wall",
+    "wall_length": 4.0,
+    "wall_thickness": 0.25,
+    "wall_height": 3.0
+  },
   "wall_window": {
     "enabled": false,
     "out_dir": "data/out_batch/wall_window",
