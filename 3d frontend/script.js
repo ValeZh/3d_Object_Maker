@@ -2271,11 +2271,17 @@ async function importProjectZip(file) {
 
 // ================= SERVER ANALYZE (JSON) =================
 async function analyzeModuleTextOnServer(text) {
-  return fetchJson(`${SERVER_URL}/api/analyze-module-text`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text })
+  const response = await fetch(`${SERVER_URL}/api/parse-module`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: text,
+      module_type: $("moduleType").value
+    })
   });
+
+  if (!response.ok) throw new Error('Parse failed');
+  return await response.json();
 }
 
 async function analyzeHouseTextOnServer(text) {
@@ -2325,63 +2331,109 @@ analyzeModuleBtn?.addEventListener("click", async () => {
     return;
   }
 
-  const localParsed = parseModuleTextLocally(text);
-  applyLocalModuleParse(localParsed);
-
   await withLoading(analyzeModuleBtn, "Analyzing...", async () => {
     try {
-      const parsed = await analyzeModuleTextOnServer(text);
-      applyModuleParams(parsed);
+      // Call new API
+      const response = await fetch(`${SERVER_URL}/api/parse-module`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          module_type: $("moduleType").value
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+
+        // AUTO-SELECT MODULE TYPE from API
+        $("moduleType").value = data.module_type;
+        applyModuleTypeDefaults(data.module_type);
+
+        // Apply parameters
+        if (data.params.width) $("moduleWidth").value = data.params.width;
+        if (data.params.height) $("moduleHeight").value = data.params.height;
+        if (data.params.depth) $("moduleDepth").value = data.params.depth;
+        if (data.params.color) $("moduleColor").value = data.params.color;
+
       renderModulePreview(getModuleFormData());
       showToast("Module analysis completed.", "success");
     } catch (err) {
-      showToast(`Server analyze failed. Local parse was used. ${err.message}`, "info");
+      showToast(`Analyze failed: ${err.message}`, "error");
     }
   });
 });
 
-generateModuleBtn?.addEventListener("click", () => {
-  const validation = validateModuleForm(true);
-  if (!validation.valid) {
-    showToast("Please fix module form errors before generating.", "error");
-    return;
-  }
+generateModuleBtn?.addEventListener("click", async () => {
+  const text = moduleDescription.value.trim();
+  const moduleType = $("moduleType").value;
 
-  const data = getModuleFormData();
-  updateModuleJsonPreview();
-  renderModulePreview(data);
-  showToast("Module generated.", "success");
+  // Если нет текста - генерируем из слайдеров
+  let finalText = text || `${moduleType} width ${$("moduleWidth").value}m height ${$("moduleHeight").value}m depth ${$("moduleDepth").value}m`;
+
+  generateModuleBtn.disabled = true;
+  generateModuleBtn.textContent = "⏳ Generating...";
+
+  try {
+    const response = await fetch(`${SERVER_URL}/api/generate-module`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: finalText,
+        module_type: moduleType
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+
+    showToast(`Module saved: ${data.module_name}`, "success");
+
+    // Только очищаем description, name оставляем
+    moduleDescription.value = '';
+
+  } catch (err) {
+    showToast(`Generation failed: ${err.message}`, "error");
+  } finally {
+    generateModuleBtn.disabled = false;
+    generateModuleBtn.textContent = "Generate Module";
+  }
 });
 
 saveModuleBtn?.addEventListener("click", async () => {
-  const validation = validateModuleForm(true);
-  if (!validation.valid) {
-    showToast("Please fix module form errors before saving.", "error");
+  const text = moduleDescription.value.trim();
+  const moduleType = $("moduleType").value;
+
+  if (!text) {
+    showToast("Enter module description first.", "error");
     return;
   }
 
-  const data = getModuleFormData();
-  data.created_at = new Date().toISOString();
-
   await withLoading(saveModuleBtn, "Saving...", async () => {
     try {
-      const result = await fetchJson(`${SERVER_URL}/api/save-module`, {
+      const result = await fetch(`${SERVER_URL}/api/generate-module`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
+        body: JSON.stringify({
+          text: text,
+          module_type: moduleType
+        })
       });
 
-      const id = result.module_id || `module_${Date.now()}`;
-      savedModulesData.push({ ...data, id });
-      showToast("Module saved successfully.", "success");
-    } catch {
-      savedModulesData.push({ ...data, id: `module_${Date.now()}` });
-      showToast("Module saved locally.", "success");
-    }
+      const data = await result.json();
+      if (!result.ok) throw new Error(data.error);
 
-    renderSavedModules();
-    populateModuleSelectors();
-    setActiveTab("library");
+      showToast(`Module saved: ${data.module_name}`, "success");
+      moduleDescription.value = '';
+
+      renderSavedModules();
+      populateModuleSelectors();
+      await loadModulesLibrary();  // Обновляем библиотеку
+      renderSavedModules();
+      setActiveTab("library");
+    } catch (err) {
+      showToast(`Save failed: ${err.message}`, "error");
+    }
   });
 });
 

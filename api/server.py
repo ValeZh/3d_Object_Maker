@@ -1,15 +1,16 @@
 """
-api/server.py — Интегрированный сервер со всеми компонентами
-Вызывает процедурные генераторы через subprocess (CLI)
+api/server.py — Переделанный сервер для модульной системы
+Три вкладки: Module Generator → Module Library → House Builder
 """
 
 import logging
 import json
 import subprocess
 import zipfile
+import uuid
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
@@ -22,9 +23,11 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent  # Поднимаемся в корень проекта
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ai_parser.parser import extract_building_parameters
-from src.ai_parser.nlp_parser import BuildingTextParser
+from src.ai_parser.parser import extract_module_parameters
+from src.ai_parser.nlp_parser import ModuleTextParser
 from src.generator.assembler import assemble_building
+from src.generator.procedural.procedural_batch_runner import run_all_generators
+from src.generator.procedural.procedural_batch_json_parser import parse_and_run
 
 # ======================= КОНФИГУРАЦИЯ =======================
 
@@ -48,281 +51,172 @@ OUTPUT_DIR = PROJECT_ROOT / "output"
 CONFIG_DIR = OUTPUT_DIR / "config"
 MODELS_DIR = OUTPUT_DIR / "models"
 BUILDINGS_DIR = OUTPUT_DIR / "buildings"
+MODULES_DIR = OUTPUT_DIR / "modules"  # 🆕 Папка для модулей
 TEXTURES_DIR = OUTPUT_DIR / "textures"
 FRONTEND_DIR = PROJECT_ROOT / "3d frontend"
 
+# Реестр модулей (JSON файл со списком всех созданных модулей)
+MODULES_REGISTRY_FILE = OUTPUT_DIR / "modules_registry.json"
+
+# Реестр домов (JSON файл со списком всех созданных домов)
+HOUSES_REGISTRY_FILE = OUTPUT_DIR / "houses_registry.json"
+
 # Создаем папки
-for d in [OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, BUILDINGS_DIR, TEXTURES_DIR]:
+for d in [OUTPUT_DIR, CONFIG_DIR, MODELS_DIR, BUILDINGS_DIR, MODULES_DIR, TEXTURES_DIR]:
     d.mkdir(parents=True, exist_ok=True)
     logger.info(f"✓ Папка создана/проверена: {d}")
 
+# Инициализируем реестры если их нет
+def ensure_registry_exists(registry_file: Path):
+    """Создает пустой реестр если его нет"""
+    if not registry_file.exists():
+        with open(registry_file, 'w', encoding='utf-8') as f:
+            json.dump([], f, ensure_ascii=False, indent=2)
+        logger.info(f"✓ Реестр создан: {registry_file}")
 
-# ======================= ФУНКЦИИ ГЕНЕРАЦИИ =======================
+ensure_registry_exists(MODULES_REGISTRY_FILE)
+ensure_registry_exists(HOUSES_REGISTRY_FILE)
 
-def generate_windows(count: int, config: Dict[str, Any], output_dir: Path) -> bool:
-    """
-    Генерирует окна через procedural_window.py
 
-    Args:
-        count: Количество окон для генерации
-        config: Конфиг окна {width, height, depth, kind, mullions_vertical, ...}
-        output_dir: Папка для сохранения
-    """
+# ======================= ФУНКЦИИ РЕЕСТРА =======================
+
+def load_modules_registry() -> List[Dict[str, Any]]:
+    """Загружает список модулей из реестра"""
     try:
-        logger.info(f"🪟 Генерация {count} окон...")
-
-        cmd = [
-            "python", "-m", "src.generator.procedural.procedural_window", "export",
-            "--width", str(config.get("width", 1.5)),
-            "--height", str(config.get("height", 1.2)),
-            "--depth", str(config.get("depth", 0.14)),
-            "--profile", config.get("profile", "rect"),
-            "--kind", config.get("kind", "fixed"),
-            "--mullions-vertical", str(config.get("mullions_vertical", 2)),
-            "--mullions-horizontal", str(config.get("mullions_horizontal", 1)),
-            "-o", str(output_dir)
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=PROJECT_ROOT)
-
-        if result.returncode != 0:
-            logger.error(f"Ошибка генерации окон: {result.stderr}")
-            return False
-
-        logger.info(f"✓ Окна сгенерированы")
-        return True
-
+        with open(MODULES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
     except Exception as e:
-        logger.error(f"Ошибка при генерации окон: {e}")
-        return False
+        logger.error(f"Ошибка загрузки реестра модулей: {e}")
+        return []
 
-
-def generate_doors(count: int, config: Dict[str, Any], output_dir: Path) -> bool:
-    """
-    Генерирует двери через procedural_door.py
-    """
+def save_modules_registry(modules: List[Dict[str, Any]]):
+    """Сохраняет список модулей в реестр"""
     try:
-        logger.info(f"🚪 Генерация {count} дверей...")
-
-        cmd = [
-            "python", "-m", "src.generator.procedural.procedural_door", "export",
-            "--height", str(config.get("height", 2.1)),
-            "--width", str(config.get("width", 0.9)),
-            "--door-type", config.get("type", "standard"),
-            "-o", str(output_dir)
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=PROJECT_ROOT)
-
-        if result.returncode != 0:
-            logger.error(f"Ошибка генерации дверей: {result.stderr}")
-            return False
-
-        logger.info(f"✓ Двери сгенерированы")
-        return True
-
+        with open(MODULES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(modules, f, ensure_ascii=False, indent=2)
+        logger.info(f"✓ Реестр сохранен ({len(modules)} модулей)")
     except Exception as e:
-        logger.error(f"Ошибка при генерации дверей: {e}")
-        return False
+        logger.error(f"Ошибка сохранения реестра: {e}")
 
-
-def generate_balconies(count: int, config: Dict[str, Any], output_dir: Path) -> bool:
-    """
-    Генерирует балконы через procedural_balcony.py
-    """
+def load_houses_registry() -> List[Dict[str, Any]]:
+    """Загружает список домов из реестра"""
     try:
-        logger.info(f"🏠 Генерация {count} балконов...")
-
-        cmd = [
-            "python", "-m", "src.generator.procedural.procedural_balcony", "export",
-            "--width-back", str(config.get("width_back", 1.6)),
-            "--width-front", str(config.get("width_front", 2.0)),
-            "--depth", str(config.get("depth", 1.15)),
-            "--height", str(config.get("height", 2.15)),
-            "--floor-thickness", str(config.get("floor_thickness", 0.14)),
-            "--window-mode", config.get("window_mode", "with_glass"),
-            "-o", str(output_dir)
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=PROJECT_ROOT)
-
-        if result.returncode != 0:
-            logger.error(f"Ошибка генерации балконов: {result.stderr}")
-            return False
-
-        logger.info(f"✓ Балконы сгенерированы")
-        return True
-
+        with open(HOUSES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
     except Exception as e:
-        logger.error(f"Ошибка при генерации балконов: {e}")
-        return False
+        logger.error(f"Ошибка загрузки реестра домов: {e}")
+        return []
 
-
-def generate_entrances(count: int, config: Dict[str, Any], output_dir: Path) -> bool:
-    """
-    Генерирует входы/подъезды через procedural_entrance.py
-    """
+def save_houses_registry(houses: List[Dict[str, Any]]):
+    """Сохраняет список домов в реестр"""
     try:
-        logger.info(f"🚶 Генерация {count} подъездов...")
-
-        cmd = [
-            "python", "-m", "src.generator.procedural.procedural_entrance", "export",
-            "--platform-height", "0.5",
-            "--platform-width", "1.5",
-            "--platform-depth", "1.5",
-            "-o", str(output_dir)
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=PROJECT_ROOT)
-
-        if result.returncode != 0:
-            logger.error(f"Ошибка генерации подъездов: {result.stderr}")
-            return False
-
-        logger.info(f"✓ Подъезды сгенерированы")
-        return True
-
+        with open(HOUSES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(houses, f, ensure_ascii=False, indent=2)
+        logger.info(f"✓ Реестр домов сохранен ({len(houses)} домов)")
     except Exception as e:
-        logger.error(f"Ошибка при генерации подъездов: {e}")
-        return False
+        logger.error(f"Ошибка сохранения реестра домов: {e}")
 
 
-def generate_all_components(building_params: Dict[str, Any]) -> bool:
-    """
-    Генерирует все компоненты дома
-    """
+# ======================= ФУНКЦИИ ГЕНЕРАЦИИ МОДУЛЕЙ =======================
 
-    # Конфиги для каждого компонента
-    window_config = {
-        "width": building_params.get("window_width", 1.5),
-        "height": building_params.get("window_height", 1.2),
-        "depth": 0.14,
-        "profile": "rect",
-        "kind": "fixed",
-        "mullions_vertical": 2,
-        "mullions_horizontal": 1
-    }
+def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str) -> Optional[Path]:
+    """Генерирует модуль через batch JSON parser"""
+    try:
+        output_dir = MODULES_DIR / module_type / module_id
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    door_config = {
-        "height": building_params.get("door_height", 2.1),
-        "width": building_params.get("door_width", 0.9),
-        "type": "standard"
-    }
+        logger.info(f"🔨 Генерация {module_type}_{module_id}...")
 
-    balcony_config = {
-        "width_back": 1.6,
-        "width_front": 2.0,
-        "depth": building_params.get("balcony_depth", 1.15),
-        "height": 2.15,
-        "floor_thickness": 0.14,
-        "window_mode": "with_glass"
-    }
+        # Конфиг для batch генератора
+        config = {}
 
-    entrance_config = {
-        "steps_count": 5,
-        "landing_width": 1.5,
-        "landing_depth": 1.5,
-        "ramp_enabled": True
-    }
+        if module_type == "wall":
+            config["wall"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "wall_length": params.get("width", 2.0),
+                "wall_height": params.get("height", 3.0),
+                "wall_thickness": params.get("thickness", 0.3),
+            }
 
-    # Вычисляем количество каждого элемента
-    total_windows = building_params["floors"] * building_params["windows_per_floor"]
-    total_balconies = building_params["floors"] * building_params["balconies_per_floor"]
-    total_entrances = building_params["entrance_count"]
-    total_doors = building_params["entrance_count"]
+        elif module_type == "window":  # ← ОКНО = СТЕНА С ОКНОМ
+            config["wall_window"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "wall_length": params.get("width", 2.0),
+                "wall_height": params.get("height", 3.0),
+                "wall_thickness": params.get("thickness", 0.3),
+                "window_center_x": params.get("width", 2.0) / 2,
+                "window_sill_z": params.get("height", 3.0) / 3,
+            }
 
-    logger.info(f"""
-    📊 ПЛАН ГЕНЕРАЦИИ:
-    - Окон: {total_windows} ({building_params['windows_per_floor']} × {building_params['floors']} этажей)
-    - Балконов: {total_balconies} ({building_params['balconies_per_floor']} × {building_params['floors']} этажей)
-    - Входов: {total_doors}
-    - Подъездов: {total_entrances}
-    """)
+        elif module_type == "door":
+            config["entrance"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+            }
 
-    # Генерируем все компоненты
-    success = True
+        elif module_type == "balcony":  # ← БАЛКОН + ОКНО
+            config["balcony"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "width_front": params.get("width", 2.0),
+                "depth": params.get("depth", 1.15),
+            }
+            config["window"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "width": params.get("width", 1.5),
+                "height": 1.2,
+            }
 
-    if total_windows > 0:
-        success &= generate_windows(total_windows, window_config, MODELS_DIR)
+        elif module_type == "entrance":
+            config["entrance_textured"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+            }
 
-    if total_doors > 0:
-        success &= generate_doors(total_doors, door_config, MODELS_DIR)
+        # Вызов batch генератора
+        results = parse_and_run(config, output_dir)
 
-    if total_balconies > 0:
-        success &= generate_balconies(total_balconies, balcony_config, MODELS_DIR)
+        for key, path in results.items():
+            if path and path.exists():
+                logger.info(f"✓ Модуль сгенерирован: {path}")
+                return path
 
-    if total_entrances > 0:
-        success &= generate_entrances(total_entrances, entrance_config, MODELS_DIR)
-
-    return success
-
-
-def assemble_building_components(building_params: Dict[str, Any]) -> Path:
-    """
-    Собирает полный дом из сгенерированных компонентов
-    """
-    logger.info("🔧 Сборка дома из компонентов...")
-
-    building_path = MODELS_DIR / "building.obj"
-
-    # Используем assembler.py
-    success = assemble_building(
-        params=building_params,
-        models_dir=MODELS_DIR,
-        output_path=building_path
-    )
-
-    if success:
-        logger.info(f"✓ Дом собран: {building_path}")
-        return building_path
-    else:
-        logger.error("❌ Ошибка сборки дома")
         return None
 
+    except Exception as e:
+        logger.error(f"Ошибка генерации модуля: {e}")
+        return None
 
-def create_zip_archive(params: Dict[str, Any]) -> Path:
+def create_module_zip(module_id: str, module_type: str, params: Dict[str, Any], obj_path: Optional[Path]) -> Optional[Path]:
     """
-    Создает ZIP архив со всеми сгенерированными файлами
+    Создает ZIP архив модуля
     """
-
-    logger.info("📦 Упаковка в ZIP...")
-
-    zip_filename = f"building_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    zip_path = BUILDINGS_DIR / zip_filename
-
     try:
+        zip_filename = f"{module_type}_{module_id}.zip"
+        zip_path = MODULES_DIR / zip_filename
+
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
-            # Добавляем все OBJ и MTL файлы
-            for obj_file in MODELS_DIR.glob("*.obj"):
-                z.write(obj_file, arcname=obj_file.name)
+            # Добавляем OBJ файл если существует
+            if obj_path and obj_path.exists():
+                z.write(obj_path, arcname=obj_path.name)
 
-            for mtl_file in MODELS_DIR.glob("*.mtl"):
-                z.write(mtl_file, arcname=mtl_file.name)
-
-            # Добавляем текстуры если есть
-            for tex_file in TEXTURES_DIR.glob("*"):
-                if tex_file.is_file():
-                    z.write(tex_file, arcname=f"textures/{tex_file.name}")
-
-            # Добавляем манифест
-            manifest = {
-                "version": "1.0",
-                "created_at": datetime.now().isoformat(),
-                "building": params,
-                "components": {
-                    "windows": params["floors"] * params["windows_per_floor"],
-                    "doors": params["entrance_count"],
-                    "balconies": params["floors"] * params["balconies_per_floor"],
-                    "entrances": params["entrance_count"]
-                }
+            # Добавляем конфиг параметров
+            config = {
+                "module_id": module_id,
+                "module_type": module_type,
+                "params": params,
+                "created_at": datetime.now().isoformat()
             }
-            z.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
+            z.writestr("config.json", json.dumps(config, indent=2, ensure_ascii=False))
 
-        logger.info(f"✓ ZIP создан: {zip_path}")
+        logger.info(f"✓ ZIP модуля создан: {zip_path}")
         return zip_path
 
     except Exception as e:
-        logger.error(f"Ошибка при упаковке ZIP: {e}")
+        logger.error(f"Ошибка создания ZIP модуля: {e}")
         return None
 
 
@@ -334,25 +228,423 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
-        "output_dir": str(OUTPUT_DIR)
+        "modules_count": len(load_modules_registry()),
+        "houses_count": len(load_houses_registry())
     }
 
 
+# ======================= 1️⃣ MODULE GENERATOR ENDPOINTS =======================
+
+@app.post("/api/parse-module")
+async def parse_module(request: Request):
+    """
+    🔹 ВКЛАДКА 1: ПАРСИНГ МОДУЛЯ
+
+    Входные данные:
+    {
+        "text": "стена 3м высота, 2м ширина",
+        "module_type": "wall" (опционально)
+    }
+
+    Выходные данные:
+    {
+        "status": "success",
+        "module_type": "wall",
+        "params": {...},
+        "confidence": 0.95
+    }
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+        module_type = payload.get("module_type")
+
+        if not text:
+            return JSONResponse(
+                {"error": "Пустой текст"},
+                status_code=400
+            )
+
+        logger.info(f"📝 Парсинг модуля: '{text}' (тип: {module_type})")
+
+        # Используем локальный NLP парсер (рекомендуется)
+        parser = ModuleTextParser()
+        result = parser.parse(text)
+
+        logger.info(f"✓ Параметры извлечены: {result.to_dict()}")
+
+        return {
+            "status": "success",
+            "module_type": result.module_type.value,
+            "module_name": result.module_name,
+            "params": result.params,
+            "confidence": result.confidence
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка парсинга: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.post("/api/generate-module")
+async def generate_module(request: Request):
+    """
+    🔹 ВКЛАДКА 1: ГЕНЕРАЦИЯ МОДУЛЯ (текст → 3D → сохранение)
+
+    Входные данные:
+    {
+        "text": "стена 3м высота, 2м ширина, бетон",
+        "module_type": "wall"
+    }
+
+    Выходные данные:
+    {
+        "status": "success",
+        "module_id": "uuid",
+        "module_type": "wall",
+        "params": {...},
+        "zip_url": "/files/wall_uuid.zip"
+    }
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+        module_type = payload.get("module_type")
+
+        if not text:
+            return JSONResponse(
+                {"error": "Пустой текст"},
+                status_code=400
+            )
+
+        logger.info(f"🔨 Генерация модуля: '{text}'")
+
+        # === 1️⃣ Парсинг ===
+        parser = ModuleTextParser()
+        parse_result = parser.parse(text)
+
+        module_type = parse_result.module_type.value
+        params = parse_result.params
+
+        # === 2️⃣ Генерация OBJ ===
+        module_id = str(uuid.uuid4())[:8]
+        obj_path = generate_module_obj(module_type, params, module_id)
+
+        # === 3️⃣ Упаковка в ZIP ===
+        zip_path = create_module_zip(module_id, module_type, params, obj_path)
+
+        if not zip_path:
+            return JSONResponse(
+                {"error": "Ошибка создания ZIP"},
+                status_code=500
+            )
+
+        # === 4️⃣ Сохранение в реестр ===
+        module_record = {
+            "module_id": module_id,
+            "module_type": module_type,
+            "module_name": parse_result.module_name,
+            "params": params,
+            "zip_file": zip_path.name,
+            "created_at": datetime.now().isoformat()
+        }
+
+        modules = load_modules_registry()
+        modules.append(module_record)
+        save_modules_registry(modules)
+
+        logger.info(f"✓ Модуль сохранен: {module_id}")
+
+        return {
+            "status": "success",
+            "module_id": module_id,
+            "module_type": module_type,
+            "module_name": parse_result.module_name,
+            "params": params,
+            "zip_url": f"/api/modules/{module_id}/download",
+            "confidence": parse_result.confidence
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка генерации модуля: {e}", exc_info=True)
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+# ======================= 2️⃣ MODULE LIBRARY ENDPOINTS =======================
+
+@app.get("/api/modules")
+async def get_all_modules():
+    """
+    🔹 ВКЛАДКА 2: БИБЛИОТЕКА - ВСЕ МОДУЛИ
+
+    Возвращает все модули, отсортированные по типам
+    """
+    try:
+        modules = load_modules_registry()
+
+        # Группируем по типам
+        by_type = {}
+        for module in modules:
+            mtype = module["module_type"]
+            if mtype not in by_type:
+                by_type[mtype] = []
+            by_type[mtype].append(module)
+
+        return {
+            "status": "success",
+            "total": len(modules),
+            "by_type": by_type,
+            "modules": modules
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка получения модулей: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/modules/{module_type}")
+async def get_modules_by_type(module_type: str):
+    """
+    🔹 ВКЛАДКА 2: БИБЛИОТЕКА - МОДУЛИ КОНКРЕТНОГО ТИПА
+
+    module_type: wall, window, door, balcony, entrance
+    """
+    try:
+        modules = load_modules_registry()
+        filtered = [m for m in modules if m["module_type"] == module_type]
+
+        return {
+            "status": "success",
+            "module_type": module_type,
+            "count": len(filtered),
+            "modules": filtered
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка получения модулей типа {module_type}: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/modules/{module_id}/download")
+async def download_module(module_id: str):
+    """
+    🔹 ВКЛАДКА 2: СКАЧИВАНИЕ МОДУЛЯ ZIP
+    """
+    try:
+        modules = load_modules_registry()
+        module = next((m for m in modules if m["module_id"] == module_id), None)
+
+        if not module:
+            return JSONResponse(
+                {"error": "Модуль не найден"},
+                status_code=404
+            )
+
+        zip_file = MODULES_DIR / module["zip_file"]
+
+        if not zip_file.exists():
+            return JSONResponse(
+                {"error": "ZIP файл не найден"},
+                status_code=404
+            )
+
+        return FileResponse(zip_file, media_type="application/zip")
+
+    except Exception as e:
+        logger.error(f"Ошибка скачивания модуля: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.delete("/api/modules/{module_id}")
+async def delete_module(module_id: str):
+    """
+    🔹 ВКЛАДКА 2: УДАЛЕНИЕ МОДУЛЯ
+    """
+    try:
+        modules = load_modules_registry()
+        module = next((m for m in modules if m["module_id"] == module_id), None)
+
+        if not module:
+            return JSONResponse(
+                {"error": "Модуль не найден"},
+                status_code=404
+            )
+
+        # Удаляем ZIP файл
+        zip_file = MODULES_DIR / module["zip_file"]
+        if zip_file.exists():
+            zip_file.unlink()
+            logger.info(f"✓ ZIP удален: {zip_file}")
+
+        # Удаляем из реестра
+        modules = [m for m in modules if m["module_id"] != module_id]
+        save_modules_registry(modules)
+
+        logger.info(f"✓ Модуль удален: {module_id}")
+
+        return {"status": "success", "message": "Модуль удален"}
+
+    except Exception as e:
+        logger.error(f"Ошибка удаления модуля: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+# ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
+
+@app.post("/api/generate-house")
+async def generate_house(request: Request):
+    """
+    🔹 ВКЛАДКА 3: СБОРКА ДОМА ИЗ МОДУЛЕЙ
+
+    Входные данные:
+    {
+        "house_name": "Мой дом",
+        "floors": 5,
+        "sections": 3,
+        "width": 18,
+        "depth": 20,
+        "wall_module_id": "uuid",
+        "window_module_id": "uuid",
+        "door_module_id": "uuid",
+        "balcony_module_id": "uuid",
+        "entrance_module_id": "uuid"
+    }
+    """
+    try:
+        payload = await request.json()
+        house_name = payload.get("house_name", "Дом")
+
+        logger.info(f"🏗️ Создание дома: {house_name}")
+
+        # Получаем модули
+        modules = load_modules_registry()
+
+        house_params = {
+            "house_name": house_name,
+            "floors": payload.get("floors", 5),
+            "sections": payload.get("sections", 3),
+            "width": payload.get("width", 18),
+            "depth": payload.get("depth", 20),
+            "modules": {
+                "wall": payload.get("wall_module_id"),
+                "window": payload.get("window_module_id"),
+                "door": payload.get("door_module_id"),
+                "balcony": payload.get("balcony_module_id"),
+                "entrance": payload.get("entrance_module_id"),
+            }
+        }
+
+        logger.info(f"Параметры дома: {house_params}")
+
+        # TODO: Интегрировать с assembler.py для сборки дома из модулей
+
+        # Сохраняем в реестр домов
+        house_id = str(uuid.uuid4())[:8]
+        house_record = {
+            "house_id": house_id,
+            "house_name": house_name,
+            "params": house_params,
+            "created_at": datetime.now().isoformat()
+        }
+
+        houses = load_houses_registry()
+        houses.append(house_record)
+        save_houses_registry(houses)
+
+        logger.info(f"✓ Дом сохранен: {house_id}")
+
+        return {
+            "status": "success",
+            "house_id": house_id,
+            "house_name": house_name,
+            "message": "Дом создан (интеграция с assembler.py в разработке)"
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка создания дома: {e}", exc_info=True)
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/houses")
+async def get_all_houses():
+    """
+    🔹 ВКЛАДКА 3: ВСЕ СОХРАНЕННЫЕ ДОМА
+    """
+    try:
+        houses = load_houses_registry()
+
+        return {
+            "status": "success",
+            "count": len(houses),
+            "houses": houses
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка получения домов: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+@app.get("/api/houses/{house_id}")
+async def get_house(house_id: str):
+    """
+    🔹 ВКЛАДКА 3: ДЕТАЛИ ДОМА
+    """
+    try:
+        houses = load_houses_registry()
+        house = next((h for h in houses if h["house_id"] == house_id), None)
+
+        if not house:
+            return JSONResponse(
+                {"error": "Дом не найден"},
+                status_code=404
+            )
+
+        return {
+            "status": "success",
+            "house": house
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка получения дома: {e}")
+        return JSONResponse(
+            {"error": str(e)},
+            status_code=500
+        )
+
+
+# ======================= СТАРЫЙ ENDPOINT (для совместимости) =======================
+
 @app.post("/api/generate-building")
-async def generate_building(request: Request):
+async def generate_building_legacy(request: Request):
     """
-    Основной эндпоинт для генерации здания из текста
+    ⚠️ СТАРЫЙ ENDPOINT (для совместимости)
 
-    Поток:
-    1. Получить текст
-    2. DeepSeek: исправить и извлечь параметры
-    3. NLP парсер: парсить в параметры здания
-    4. Генерировать компоненты (окна, двери, балконы, входы)
-    5. Собрать дом
-    6. Упаковать в ZIP
-    7. Вернуть ссылку на ZIP
+    Полный поток: текст → дом (без модульной системы)
     """
-
     try:
         payload = await request.json()
         text = payload.get("text", "").strip()
@@ -363,108 +655,45 @@ async def generate_building(request: Request):
                 status_code=400
             )
 
-        logger.info(f"📝 Получен текст: '{text}'")
+        logger.info(f"📝 [LEGACY] Генерация дома: '{text}'")
 
-        # === 1️⃣ DEEPSEEK: Исправление и извлечение параметров ===
-        logger.info("1️⃣ DeepSeek обработка...")
-        ai_params = extract_building_parameters(text)
-        logger.info(f"DeepSeek результат: {ai_params}")
-
-        # === 2️⃣ NLP ПАРСЕР: Дополнительный парсинг ===
-        logger.info("2️⃣ NLP парсер...")
-        nlp_parser = BuildingTextParser()
-        nlp_params = nlp_parser.parse(text)
-        logger.info(f"NLP результат: {nlp_params.__dict__}")
-
-        # Объединяем результаты (DeepSeek + NLP)
-        building_params = {**nlp_params.__dict__, **ai_params}
-        logger.info(f"Финальные параметры: {building_params}")
-
-        # === 3️⃣ ГЕНЕРАЦИЯ КОМПОНЕНТОВ ===
-        logger.info("3️⃣ Генерация компонентов...")
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-
-        success = generate_all_components(building_params)
-        if not success:
-            logger.warning("⚠️ Некоторые компоненты не сгенерировались (может быть OK)")
-
-        # === 4️⃣ СБОРКА ДОМА ===
-        logger.info("4️⃣ Сборка дома...")
-        building_path = assemble_building_components(building_params)
-
-        # === 5️⃣ УПАКОВКА В ZIP ===
-        logger.info("5️⃣ Упаковка в ZIP...")
-        zip_path = create_zip_archive(building_params)
-
-        if not zip_path:
-            return JSONResponse(
-                {"error": "Ошибка при упаковке ZIP"},
-                status_code=500
-            )
-
-        logger.info("✓ Генерация успешно завершена!")
-
-        return {
-            "status": "success",
-            "message": "Дом успешно сгенерирован",
-            "parameters": building_params,
-            "zip_url": f"/files/{zip_path.name}",
-            "timestamp": datetime.now().isoformat()
-        }
+        return JSONResponse(
+            {"warning": "Используется старый endpoint. Перейдите на новую модульную систему"},
+            status_code=501
+        )
 
     except Exception as e:
-        logger.error(f"Ошибка обработки запроса: {e}", exc_info=True)
+        logger.error(f"Ошибка: {e}")
         return JSONResponse(
-            {"error": f"Внутренняя ошибка: {str(e)}"},
+            {"error": str(e)},
             status_code=500
         )
 
 
-@app.get("/files/{filename}")
-async def download_file(filename: str):
-    """Скачивание сгенерированного ZIP файла"""
-    file_path = BUILDINGS_DIR / filename
-
-    if not file_path.exists():
-        return JSONResponse(
-            {"error": "Файл не найден"},
-            status_code=404
-        )
-
-    return FileResponse(file_path, media_type="application/zip")
-
-
-@app.get("/api/options")
-async def get_options():
-    """Возвращает доступные опции"""
-    return {
-        "shapes": ["building"],
-        "profiles": ["rect", "arch", "round"],
-        "window_kinds": ["fixed", "double_hung", "casement", "french"],
-        "door_types": ["standard", "glass", "metal"]
-    }
-
-
 # ======================= СТАТИКА =======================
 
-if BUILDINGS_DIR.exists():
-    app.mount("/files", StaticFiles(directory=BUILDINGS_DIR), name="files")
-    logger.info(f"✓ Файлы доступны по /files (папка: {BUILDINGS_DIR})")
+if MODULES_DIR.exists():
+    app.mount("/modules", StaticFiles(directory=MODULES_DIR), name="modules")
+    logger.info(f"✓ Модули доступны по /modules")
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
-    logger.info(f"✓ Фронтенд подключен (папка: {FRONTEND_DIR})")
+    logger.info(f"✓ Фронтенд подключен: {FRONTEND_DIR}")
 else:
-    logger.warning(f"⚠️ Фронтенд папка не найдена: {FRONTEND_DIR}")
+    logger.warning(f"⚠️ Папка фронтенда не найдена: {FRONTEND_DIR}")
 
 # ======================= ЗАПУСК =======================
 
 if __name__ == "__main__":
     import uvicorn
 
-    logger.info("=" * 60)
+    logger.info("=" * 70)
     logger.info("🚀 Запуск сервера на http://localhost:8000")
-    logger.info(f"📁 Output папка: {OUTPUT_DIR}")
-    logger.info(f"🌐 Фронтенд: {FRONTEND_DIR}")
-    logger.info("=" * 60)
+    logger.info("📋 Модульная система активирована")
+    logger.info("=" * 70)
+    logger.info(f"📁 Модули: {MODULES_DIR}")
+    logger.info(f"📁 Дома: {BUILDINGS_DIR}")
+    logger.info(f"📁 Фронтенд: {FRONTEND_DIR}")
+    logger.info("=" * 70)
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
