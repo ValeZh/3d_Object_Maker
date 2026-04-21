@@ -1,0 +1,91 @@
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/smoke_balcony",
+    "no_view": false,
+    "window_mode": "none",
+    "front_window_mode": "with_glass",
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "window_depth": 0.14,
+    "window_kind": "fixed",
+    "inner_wall_windows": [
+      {
+        "u0": 0.04,
+        "u1": 0.22,
+        "z_bottom": 1.48,
+        "z_top": 1.94,
+        "window_mode": "with_glass",
+        "mullions_vertical": 1,
+        "mullions_horizontal": 0,
+        "window_depth": 0.14,
+        "window_kind": "fixed"
+      }
+    ],
+    "inner_wall_doors": [
+      {
+        "u0": 0.3,
+        "u1": 0.7,
+        "z_bottom": 0.02,
+        "z_top": 2.14,
+        "style": "french",
+        "frame_width": 0.09,
+        "frame_depth": 0.08,
+        "leaf_gap": 0.025,
+        "midrail_z_frac": 0.58,
+        "y_outer": 0.06
+      }
+    ]
+  },
+  "entrance": {
+    "enabled": true,
+    "out_dir": "data/out_batch/smoke_entrance_canopy",
+    "no_view": false,
+    "entrance_style": "canopy",
+    "width": 3.6,
+    "depth": 1.75,
+    "has_left_wall": true,
+    "has_right_wall": true,
+    "partitions_x": [0.0],
+    "doors": [
+      {"u0": 0.06, "u1": 0.44, "z_bottom": 0.12, "z_top": 2.05},
+      {"u0": 0.56, "u1": 0.94, "z_bottom": 0.12, "z_top": 2.05}
+    ]
+  },
+  "entrance_textured": {
+    "enabled": true,
+    "out_dir": "data/out_batch/smoke_entrance_textured_niche",
+    "no_view": false,
+    "entrance_style": "niche",
+    "atlas_tile": 256
+  },
+  "window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/smoke_window",
+    "no_view": false,
+    "width": 1.4,
+    "height": 1.6,
+    "depth": 0.12,
+    "profile": "rect",
+    "kind": "fixed",
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "atlas_half_size": 256
+  },
+  "wall_window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/smoke_wall_window",
+    "no_view": false,
+    "wall_length": 4.0,
+    "wall_thickness": 0.25,
+    "wall_height": 3.0,
+    "window_center_x": 0.5,
+    "window_sill_z": 1.0,
+    "width": 1.5,
+    "height": 1.5,
+    "depth": 0.12,
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "atlas_half_size": 256
+  }
+}

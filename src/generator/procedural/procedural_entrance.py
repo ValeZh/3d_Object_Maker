@@ -11,12 +11,13 @@
 Запуск:
   python -m src.generator.procedural.procedural_entrance export --style niche -o data/podezd_nisha
   python -m src.generator.procedural.procedural_entrance export --style canopy ...
-  Экспорт с атласом (текстуры стен / крыши / двери): procedural_entrance_textured — см. модуль
-  src.generator.procedural.procedural_entrance_textured.
+  С атласом (стены | крыша | дверь):
+  python -m src.generator.procedural.procedural_entrance export-textured -o data/entrance_tex --wall-tex ...
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -24,6 +25,17 @@ from typing import Any, List, Optional, Tuple
 import numpy as np
 import trimesh
 
+from src.generator.procedural.open3d_preview import (
+    preview_entrance_obj_open3d,
+    preview_entrance_textured_obj_open3d,
+)
+from src.generator.procedural.texturing.entrance_atlas import (
+    concatenate_entrance_uv_meshes,
+    entrance_part_tile_index,
+    make_entrance_atlas,
+    scale_uv_to_atlas_tile,
+)
+from src.generator.procedural.unfolding import faceted_triplanar_uv
 from src.generator.procedural.procedural_door import (
     build_french_double_door_parts,
     build_simple_door_slab,
@@ -551,35 +563,143 @@ def export_entrance(
     print(f"[OK] Entrance export: {obj_path}")
 
     if not no_view:
-        _preview_entrance_open3d(obj_path, niche=(style == "niche"))
+        preview_entrance_obj_open3d(obj_path, niche=(style == "niche"))
     return obj_path
 
 
-def _preview_entrance_open3d(obj_path: Path, *, niche: bool = False) -> None:
-    try:
-        import open3d as o3d
-    except ModuleNotFoundError:
-        print("pip install open3d for interactive preview.")
-        return
-    obj_path = obj_path.resolve()
-    if niche:
-        lookat = np.array([0.0, 0.65, 1.05], dtype=np.float64)
-        eye = np.array([0.0, -2.85, 1.32], dtype=np.float64)
-    else:
-        lookat = np.array([0.0, 0.9, 1.0], dtype=np.float64)
-        eye = np.array([0.0, -4.5, 1.45], dtype=np.float64)
-    up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
-    mesh = o3d.io.read_triangle_mesh(str(obj_path), enable_post_processing=True)
-    if len(mesh.vertices):
-        mesh.compute_vertex_normals()
-        o3d.visualization.draw(
-            mesh,
-            title="Entrance",
-            lookat=lookat,
-            eye=eye,
-            up=up,
-            field_of_view=58.0,
+def _collect_entrance_named_parts(merged: dict[str, Any]) -> List[Tuple[str, trimesh.Trimesh]]:
+    """Именованные части подъезда (те же ветки, что export_entrance)."""
+    p = merged
+    style = str(p.get("entrance_style", "canopy")).lower()
+    if style == "niche":
+        dz0, dz1 = p.get("niche_door_z_bottom"), p.get("niche_door_z_top")
+        return build_niche_entrance_meshes(
+            width=float(p["width"]),
+            depth=float(p["depth"]),
+            niche_clear_height=float(p.get("niche_clear_height", 2.5)),
+            niche_ceiling_thickness=float(p.get("niche_ceiling_thickness", 0.16)),
+            niche_floor_z=float(p.get("niche_floor_z", 0.13)),
+            step_front_depth=float(p.get("step_front_depth", 0.35)),
+            plinth_height=float(p.get("plinth_height", 0.13)),
+            double_door=bool(p.get("double_door", True)),
+            niche_door_u0=float(p.get("niche_door_u0", 0.24)),
+            niche_door_u1=float(p.get("niche_door_u1", 0.76)),
+            niche_door_z_bottom=None if dz0 is None else float(dz0),
+            niche_door_z_top=None if dz1 is None else float(dz1),
+            door_frame_depth=float(p.get("door_frame_depth", 0.06)),
+            door_frame_width=float(p.get("door_frame_width", 0.09)),
+            door_leaf_gap=float(p.get("door_leaf_gap", 0.025)),
+            door_midrail_z_frac=float(p.get("door_midrail_z_frac", 0.58)),
+            door_recess_y=float(p.get("door_recess_y", 0.045)),
         )
+    pw_raw = p.get("platform_width")
+    return build_entrance_meshes(
+        width=float(p["width"]),
+        depth=float(p["depth"]),
+        canopy_thickness=float(p["canopy_thickness"]),
+        canopy_z_bottom=float(p["canopy_z_bottom"]),
+        platform_height=float(p["platform_height"]),
+        platform_depth=float(p["platform_depth"]),
+        platform_width=None if pw_raw is None else float(pw_raw),
+        has_left_wall=bool(p.get("has_left_wall", False)),
+        has_right_wall=bool(p.get("has_right_wall", False)),
+        wall_thickness=float(p.get("wall_thickness", 0.2)),
+        partition_thickness=float(p.get("partition_thickness", 0.22)),
+        partitions_x=list(p.get("partitions_x") or []),
+        right_support_pole=bool(p.get("right_support_pole", True)),
+        pole_radius=float(p.get("pole_radius", 0.055)),
+        pole_front_inset=float(p.get("pole_front_inset", 0.12)),
+        pole_side_inset=float(p.get("pole_side_inset", 0.12)),
+        doors=p.get("doors") or [],
+        door_plane_y=float(p.get("door_plane_y", 0.04)),
+        door_plane_thickness=float(p.get("door_plane_thickness", 0.03)),
+    )
+
+
+def export_entrance_textured(
+    out_dir: Path | None = None,
+    *,
+    no_view: bool = False,
+    atlas_tile: int = 256,
+    wall_tex: str | Path | None = None,
+    roof_tex: str | Path | None = None,
+    door_tex: str | Path | None = None,
+    wall_tex_color: Any = None,
+    roof_tex_color: Any = None,
+    door_tex_color: Any = None,
+    **kwargs: Any,
+) -> Path:
+    """
+    Экспорт OBJ+MTL+PNG: атлас из трёх текстур (стены / крыша / дверь).
+    ``**kwargs`` — те же параметры, что у ``export_entrance`` (width, depth, entrance_style, …).
+    """
+    out_dir = Path(out_dir or (_REPO_ROOT / "data" / "entrance_textured_export"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    merged = {**USER_ENTRANCE, **kwargs}
+    if str(merged.get("entrance_style", "canopy")).lower() == "niche":
+        merged = {**USER_ENTRANCE, **ENTRANCE_NICHE_PRESET, **kwargs}
+
+    parts = _collect_entrance_named_parts(merged)
+    mesh_blocks: List[trimesh.Trimesh] = []
+    for name, m in parts:
+        if m is None or len(m.faces) == 0:
+            continue
+        m2, uv = faceted_triplanar_uv(m)
+        ti = entrance_part_tile_index(name)
+        uv_t = scale_uv_to_atlas_tile(uv, ti)
+        m2.visual = trimesh.visual.texture.TextureVisuals(uv=uv_t)
+        mesh_blocks.append(m2)
+
+    if not mesh_blocks:
+        raise RuntimeError("export_entrance_textured: empty mesh")
+
+    atlas_img = make_entrance_atlas(
+        tile=atlas_tile,
+        wall_tex=wall_tex,
+        roof_tex=roof_tex,
+        door_tex=door_tex,
+        wall_tex_color=wall_tex_color,
+        roof_tex_color=roof_tex_color,
+        door_tex_color=door_tex_color,
+    )
+    work = concatenate_entrance_uv_meshes(mesh_blocks)
+    uv_all = np.asarray(work.visual.uv, dtype=np.float64)
+    work.visual = trimesh.visual.texture.TextureVisuals(uv=uv_all, image=atlas_img)
+
+    tex_name = "entrance_atlas.png"
+    tex_path = out_dir / tex_name
+    atlas_img.save(str(tex_path))
+
+    obj_path = out_dir / "entrance.obj"
+    work.export(str(obj_path), include_texture=True)
+
+    mtl_path = out_dir / "material.mtl"
+    if mtl_path.is_file():
+        txt = mtl_path.read_text(encoding="utf-8")
+        txt = txt.replace("map_Kd material_0.png", f"map_Kd {tex_name}")
+        txt = txt.replace("map_Kd material_0.jpg", f"map_Kd {tex_name}")
+        txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
+        txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
+        txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        mtl_path.write_text(txt, encoding="utf-8")
+
+    print(f"[OK] Entrance (textured): {obj_path}")
+    print(f"     Atlas: {tex_path}")
+
+    if not no_view:
+        preview_entrance_textured_obj_open3d(obj_path)
+    return obj_path
+
+
+def _parse_optional_tex_rgb(s: str | None) -> Any:
+    """CLI: ``r,g,b`` → список из трёх float для ``parse_texture_color_tint``; пустая строка → None."""
+    if s is None or not str(s).strip():
+        return None
+    parts = [p.strip() for p in str(s).split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("ожидается r,g,b из трёх чисел через запятую")
+    return [float(parts[0]), float(parts[1]), float(parts[2])]
 
 
 def _parse_door_cli(s: str) -> dict:
@@ -595,8 +715,16 @@ def _parse_door_cli(s: str) -> dict:
 
 
 def _build_cli() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="Экспорт процедурного подъезда (OBJ): canopy или niche.")
-    ap.add_argument("command", nargs="?", default="export", choices=("export",), help="Команда")
+    ap = argparse.ArgumentParser(
+        description="Экспорт процедурного подъезда (OBJ): canopy или niche; export-textured — атлас 3 в ряд (стена|крыша|дверь).",
+    )
+    ap.add_argument(
+        "command",
+        nargs="?",
+        default="export",
+        choices=("export", "export-textured"),
+        help="export — без текстур; export-textured — OBJ+MTL+atlas (стены|крыша|дверь)",
+    )
     ap.add_argument("-o", "--output", type=str, default=None, help="Папка вывода")
     ap.add_argument("--no-view", action="store_true", help="Не открывать Open3D")
     ap.add_argument(
@@ -639,6 +767,36 @@ def _build_cli() -> argparse.ArgumentParser:
         default=None,
         metavar="U0,U1,ZB,ZT",
         help="Проём двери: доли u0,u1 по ширине и z_bottom,z_top (м)",
+    )
+    ap.add_argument(
+        "--atlas-tile",
+        type=int,
+        default=256,
+        help="(export-textured) размер одного тайла атласа (px)",
+    )
+    ap.add_argument("--wall-tex", type=str, default=None, help="(export-textured) PNG/JPG стен")
+    ap.add_argument("--roof-tex", type=str, default=None, help="(export-textured) крыша / потолок / козырёк")
+    ap.add_argument("--door-tex", type=str, default=None, help="(export-textured) дверь")
+    ap.add_argument(
+        "--wall-tex-color",
+        type=_parse_optional_tex_rgb,
+        default=None,
+        metavar="R,G,B",
+        help="(export-textured) тинт diffuse для тайла стены: три числа 0–255 или 0–1",
+    )
+    ap.add_argument(
+        "--roof-tex-color",
+        type=_parse_optional_tex_rgb,
+        default=None,
+        metavar="R,G,B",
+        help="(export-textured) тинт для тайла крыши/потолка/козырька",
+    )
+    ap.add_argument(
+        "--door-tex-color",
+        type=_parse_optional_tex_rgb,
+        default=None,
+        metavar="R,G,B",
+        help="(export-textured) тинт для тайла двери",
     )
     return ap
 
@@ -693,7 +851,21 @@ def main(argv: List[str] | None = None) -> None:
         kw["doors"] = [_parse_door_cli(s) for s in args.door]
 
     out = Path(args.output).resolve() if args.output else None
-    export_entrance(out, no_view=args.no_view, **kw)
+    if args.command == "export-textured":
+        export_entrance_textured(
+            out,
+            no_view=args.no_view,
+            atlas_tile=int(args.atlas_tile),
+            wall_tex=args.wall_tex,
+            roof_tex=args.roof_tex,
+            door_tex=args.door_tex,
+            wall_tex_color=args.wall_tex_color,
+            roof_tex_color=args.roof_tex_color,
+            door_tex_color=args.door_tex_color,
+            **kw,
+        )
+    else:
+        export_entrance(out, no_view=args.no_view, **kw)
 
 
 if __name__ == "__main__":

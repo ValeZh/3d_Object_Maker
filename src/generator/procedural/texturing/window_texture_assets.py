@@ -11,17 +11,28 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
 
+from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
+
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[4]
 
 
 def default_textures_dir() -> Path:
     return _repo_root() / "data" / "textures"
+
+
+def resolve_texture_path(path: str | Path | None) -> Path | None:
+    """Абсолютный путь к существующему файлу или None."""
+    if path is None:
+        return None
+    r = Path(path).expanduser().resolve()
+    return r if r.is_file() else None
 
 
 def make_window_frame_texture(size: int = 512) -> Image.Image:
@@ -89,7 +100,6 @@ def _boost_dark_glass_visible(img: Image.Image, luminance_threshold: float = 72.
     )
     if lum >= luminance_threshold:
         return img
-    # gain + сдвиг к «светло-стеклянному» серому
     gain = 1.0 + (luminance_threshold - lum) / 100.0
     bias = (luminance_threshold - lum) * 0.45
     b = np.clip(a * gain + bias, 0.0, 255.0).astype(np.uint8)
@@ -101,12 +111,61 @@ def make_atlas_from_sources(
     frame_path: Path | str | None = None,
     glass_path: Path | str | None = None,
     half_size: int = 512,
+    frame_color: Any = None,
+    glass_color: Any = None,
 ) -> Image.Image:
     """
     Атлас для UV: слева [0,0.5] — рама, справа [0.5,1] — стекло.
     Для каждой стороны: если путь задан и файл есть — картинка (масштаб под квадрат half×half),
     иначе процедурная текстура.
+
+    ``frame_color`` / ``glass_color`` — опциональный тинт RGB: ``[r,g,b]`` (0–255) или 0–1,
+    см. ``parse_texture_color_tint``.
     """
+    half = max(int(half_size), 64)
+    try:
+        resample = Image.Resampling.LANCZOS
+    except AttributeError:
+        resample = Image.LANCZOS
+
+    fp = Path(frame_path).expanduser().resolve() if frame_path else None
+    gp = Path(glass_path).expanduser().resolve() if glass_path else None
+
+    fc = parse_texture_color_tint(frame_color)
+    gc = parse_texture_color_tint(glass_color)
+
+    if fp is not None and fp.is_file():
+        fr = apply_texture_color_tint(_open_image_rgb(fp).resize((half, half), resample), fc)
+    else:
+        fr = apply_texture_color_tint(make_window_frame_texture(half), fc)
+
+    if gp is not None and gp.is_file():
+        gl = _boost_dark_glass_visible(_open_image_rgb(gp).resize((half, half), resample))
+        gl = apply_texture_color_tint(gl, gc)
+    else:
+        gl = apply_texture_color_tint(make_window_glass_texture(half), gc)
+
+    atlas = Image.new("RGB", (half * 2, half))
+    atlas.paste(fr, (0, 0))
+    atlas.paste(gl, (half, 0))
+    return atlas
+
+
+def make_normal_atlas_from_sources(
+    *,
+    frame_path: Path | str | None = None,
+    glass_path: Path | str | None = None,
+    half_size: int = 512,
+) -> Image.Image:
+    """
+    Атлас карт нормалей под те же UV, что у ``make_atlas_from_sources`` (слева рама, справа стекло).
+    Если файл не найден: рама — процедурная нормалка; стекло — плоская однотонная (без рельефа).
+    """
+    from src.generator.procedural.procedural_texture_maps.normal_map import (
+        make_fine_noise_normal_map,
+        make_neutral_flat_normal_map,
+    )
+
     half = max(int(half_size), 64)
     try:
         resample = Image.Resampling.LANCZOS
@@ -119,18 +178,48 @@ def make_atlas_from_sources(
     if fp is not None and fp.is_file():
         fr = _open_image_rgb(fp).resize((half, half), resample)
     else:
-        fr = make_window_frame_texture(half)
+        fr = make_fine_noise_normal_map(half, strength=10.0, seed=41)
 
     if gp is not None and gp.is_file():
         gl = _open_image_rgb(gp).resize((half, half), resample)
-        gl = _boost_dark_glass_visible(gl)
     else:
-        gl = make_window_glass_texture(half)
+        gl = make_neutral_flat_normal_map(half)
 
     atlas = Image.new("RGB", (half * 2, half))
     atlas.paste(fr, (0, 0))
     atlas.paste(gl, (half, 0))
     return atlas
+
+
+def make_window_roughness_atlas(
+    half_size: int,
+    *,
+    frame_roughness: float = 0.86,
+    glass_roughness: float = 0.08,
+    frame_spatial_variation: float = 0.05,
+    seed: int = 11,
+) -> Image.Image:
+    """
+    Атлас шероховатости под UV окна (слева рама | справа стекло), для PBR (Open3D ``roughness_img``).
+
+    Светлее — шершавее, темнее — глаже (высокий / низкий roughness в [0, 1]).
+    """
+    half = max(int(half_size), 64)
+    w = half * 2
+    rng = np.random.default_rng(seed)
+    fr = np.clip(
+        float(frame_roughness)
+        + rng.normal(0.0, float(frame_spatial_variation), (half, half)).astype(np.float64),
+        0.0,
+        1.0,
+    )
+    gl = np.full((half, half), float(glass_roughness), dtype=np.float64)
+    rr = np.zeros((half, w), dtype=np.float64)
+    rr[:, 0:half] = fr
+    rr[:, half:w] = gl
+    g8 = (np.clip(rr, 0.0, 1.0) * 255.0).astype(np.uint8)
+    rgb = np.stack([g8, g8, g8], axis=-1)
+    return Image.fromarray(rgb, mode="RGB")
 
 
 def ensure_window_textures(
