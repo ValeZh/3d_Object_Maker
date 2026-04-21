@@ -15,6 +15,7 @@ Config must be a JSON object (dictionary) with optional sections:
 - entrance
 - entrance_textured
 - window
+- wall
 - wall_window
 
 Each section is optional. If section is missing, it is skipped.
@@ -192,7 +193,23 @@ Note:
 - export_window_demo() has no no_view in its signature; procedural_batch_runner strips no_view and calls preview separately.
 
 
-7) Section: wall_window
+7) Section: wall
+----------------
+Export function:
+- export_wall(out_dir=..., wall_length=..., wall_thickness=..., wall_height=..., wall_texture=..., wall_texture_color=...)
+
+Required arguments (must be provided when section enabled):
+- wall_length: float
+- wall_thickness: float
+- wall_height: float
+
+Optional arguments:
+- wall_texture: string path or null
+- wall_texture_color (optional RGB array as above)
+- no_view: bool (batch runner only; default true). If false, Open3D preview after export.
+
+
+8) Section: wall_window
 -----------------------
 Export function:
 - export_wall_with_window(out_dir=..., required wall params..., optional window params..., textures..., atlas_half_size=...)
@@ -223,7 +240,7 @@ Optional arguments:
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export.
 
 
-8) Minimal config example
+9) Minimal config example
 -------------------------
 {
   "balcony": {

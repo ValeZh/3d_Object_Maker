@@ -15,6 +15,23 @@ import numpy as np
 import trimesh
 
 
+def build_solid_wall_mesh(
+    wall_length: float,
+    wall_thickness: float,
+    wall_height: float,
+) -> trimesh.Trimesh:
+    """Сплошная стена без проёма (центр по X=0, низ по Z=0)."""
+    L = max(float(wall_length), 0.05)
+    T = max(float(wall_thickness), 0.02)
+    H = max(float(wall_height), 0.05)
+    wall = trimesh.creation.box(extents=[L, T, H])
+    wall.apply_translation([0.0, 0.0, H * 0.5])
+    wall.fix_normals()
+    rgba = np.tile(np.array([175.0, 168.0, 158.0, 255.0], dtype=np.float64), (len(wall.faces), 1))
+    wall.visual = trimesh.visual.ColorVisuals(face_colors=rgba.astype(np.uint8))
+    return wall
+
+
 def _append_quad(
     verts: List[Tuple[float, float, float]],
     faces: List[Tuple[int, int, int]],
