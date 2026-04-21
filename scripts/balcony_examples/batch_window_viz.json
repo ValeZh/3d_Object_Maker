@@ -1,0 +1,15 @@
+{
+"wall_window": {
+  "enabled": true,
+  "out_dir": "data/out_batch/wall_window",
+  "no_view": false,
+  "wall_length": 3.0,
+  "wall_thickness": 0.25,
+  "wall_height": 3.0,
+  "window_center_x": 0.0,
+  "window_sill_z": 1.0,
+  "width": 1.1,
+  "height": 1.4,
+  "mullions_vertical": 1
+}
+  }

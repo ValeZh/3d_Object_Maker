@@ -18,16 +18,34 @@
   python -m src.generator.procedural.procedural_window export -o ./out
 
 Числа и списки ниже (USER_*) можно править вручную — они подхватываются при вызове
-build_window_mesh() / preview_windows_open3d() без аргументов и в run_window_demo.
+build_window_mesh() / preview_windows_open3d() без аргументов; экспорт — python -m … procedural_window export.
 """
 from __future__ import annotations
 
 import math
+import re
+import shutil
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, List, Literal, Tuple
 
 import numpy as np
 import trimesh
+from PIL import Image
+
+from src.generator.procedural.open3d_preview import (
+    preview_window_obj_open3d,
+    require_open3d,
+    trimesh_to_open3d_mesh,
+)
+from src.generator.procedural.texturing import (
+    ensure_window_textures,
+    make_atlas_from_sources,
+    make_normal_atlas_from_sources,
+    resolve_texture_path,
+)
+from src.generator.procedural.unfolding import faceted_triplanar_uv, frame_glass_atlas_uv_mesh
 
 Profile = Literal["rect", "arch", "round"]
 Kind = Literal["fixed", "double_hung", "casement", "french"]
@@ -392,6 +410,253 @@ def _rect_glass(inner_w: float, inner_h: float, glass_y: float, glass_t: float, 
     gp.append(trimesh.Trimesh(vertices=pts_lo, faces=fac_in, process=False, validate=False))
 
 
+@dataclass(frozen=True)
+class WindowFrameGlassParams:
+    """Размеры и сетка окна из USER_WINDOW_MESH (или переданного user) плюс переопределения."""
+
+    width: float
+    height: float
+    depth: float
+    profile: Profile
+    kind: Kind
+    mullions_vertical: int
+    mullions_horizontal: int
+    mullion_offset_x: float
+    mullion_offset_z: float
+    partial_horizontal_bars: List[Tuple[int, float]]
+
+
+def resolve_window_frame_glass_params(
+    *,
+    width: float | None = None,
+    height: float | None = None,
+    depth: float | None = None,
+    profile: str | None = None,
+    kind: str | None = None,
+    mullions_vertical: int | None = None,
+    mullions_horizontal: int | None = None,
+    mullion_offset_x: float | None = None,
+    mullion_offset_z: float | None = None,
+    partial_horizontal_bars: Any | None = None,
+    user: dict[str, Any] | None = None,
+) -> WindowFrameGlassParams:
+    """Общий разбор полей для build_window_frame_glass_meshes (экспорт окна, стена+окно, CLI)."""
+    u = user if user is not None else USER_WINDOW_MESH
+    w = float(width if width is not None else u["width"])
+    h = float(height if height is not None else u["height"])
+    d = float(depth if depth is not None else u["depth"])
+    prof = profile if profile is not None else str(u["profile"])
+    knd = kind if kind is not None else str(u["kind"])
+    nv = _pick_nonneg_int(mullions_vertical, u.get("mullions_vertical", 0))
+    nh = _pick_nonneg_int(mullions_horizontal, u.get("mullions_horizontal", 0))
+    ox = _pick_float_param(mullion_offset_x, u.get("mullion_offset_x", 0.0))
+    oz = _pick_float_param(mullion_offset_z, u.get("mullion_offset_z", 0.0))
+    ph_raw = partial_horizontal_bars if partial_horizontal_bars is not None else u.get("partial_horizontal_bars")
+    partial_bars = _normalize_partial_horizontal_bars(ph_raw)
+    pf = _pick_profile(prof, str(u.get("profile", "rect")))
+    kd = _pick_kind(knd, str(u.get("kind", "fixed")))
+    return WindowFrameGlassParams(
+        width=w,
+        height=h,
+        depth=d,
+        profile=pf,
+        kind=kd,
+        mullions_vertical=nv,
+        mullions_horizontal=nh,
+        mullion_offset_x=ox,
+        mullion_offset_z=oz,
+        partial_horizontal_bars=partial_bars,
+    )
+
+
+_DEFAULT_WINDOW_OBJ_EXPORT_DIR = Path(__file__).resolve().parents[3] / "data" / "window_export"
+
+
+def export_window_demo(
+    out_dir: Path | None = None,
+    *,
+    width: float | None = None,
+    height: float | None = None,
+    depth: float | None = None,
+    profile: str | None = None,
+    kind: str | None = None,
+    mullions_vertical: int | None = None,
+    mullions_horizontal: int | None = None,
+    mullion_offset_x: float | None = None,
+    mullion_offset_z: float | None = None,
+    partial_horizontal_bars: list | None = None,
+    frame_texture: str | Path | None = None,
+    glass_texture: str | Path | None = None,
+    frame_texture_color: Any = None,
+    glass_texture_color: Any = None,
+    atlas_half_size: int = 512,
+) -> Path:
+    """Экспорт window.obj + MTL + атлас (для батча и CLI export)."""
+    p = resolve_window_frame_glass_params(
+        width=width,
+        height=height,
+        depth=depth,
+        profile=profile,
+        kind=kind,
+        mullions_vertical=mullions_vertical,
+        mullions_horizontal=mullions_horizontal,
+        mullion_offset_x=mullion_offset_x,
+        mullion_offset_z=mullion_offset_z,
+        partial_horizontal_bars=partial_horizontal_bars,
+    )
+
+    out_dir = Path(out_dir or _DEFAULT_WINDOW_OBJ_EXPORT_DIR).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    tex_name = "window_atlas.png"
+    tex_path = out_dir / tex_name
+    fp = resolve_texture_path(frame_texture)
+    gp = resolve_texture_path(glass_texture)
+    if frame_texture is not None and fp is None:
+        print(f"[warn] frame_texture missing, procedural frame: {frame_texture}")
+    if glass_texture is not None and gp is None:
+        print(f"[warn] glass_texture missing, procedural glass: {glass_texture}")
+
+    if fp is not None or gp is not None:
+        atlas_img = make_atlas_from_sources(
+            frame_path=fp,
+            glass_path=gp,
+            half_size=max(atlas_half_size, 64),
+            frame_color=frame_texture_color,
+            glass_color=glass_texture_color,
+        )
+        atlas_img.save(tex_path)
+        src_note = "custom image(s) + procedural fallback if side omitted"
+    else:
+        tex_dir = Path(__file__).resolve().parents[3] / "data" / "textures"
+        paths = ensure_window_textures(tex_dir)
+        shutil.copyfile(paths["atlas"], tex_path)
+        src_note = f"{paths['frame'].name} + {paths['glass'].name} (data/textures)"
+
+    ft = _frame_thickness(p.width, p.height)
+    glass_t = max(p.depth * 0.12, 0.004)
+
+    mf, mg = build_window_frame_glass_meshes(
+        width=p.width,
+        height=p.height,
+        depth=p.depth,
+        profile=p.profile,
+        kind=p.kind,
+        mullions_vertical=p.mullions_vertical,
+        mullions_horizontal=p.mullions_horizontal,
+        mullion_offset_x=p.mullion_offset_x,
+        mullion_offset_z=p.mullion_offset_z,
+        partial_horizontal_bars=p.partial_horizontal_bars,
+        ft=ft,
+        glass_t=glass_t,
+        glass_y=0.0,
+    )
+
+    work, uv = frame_glass_atlas_uv_mesh(mf, mg)
+
+    img = Image.open(tex_path)
+    work.visual = trimesh.visual.texture.TextureVisuals(uv=uv, image=img)
+
+    obj_path = out_dir / "window.obj"
+    work.export(str(obj_path), include_texture=True)
+
+    mtl_path = out_dir / "material.mtl"
+    if mtl_path.is_file():
+        txt = mtl_path.read_text(encoding="utf-8")
+        txt = txt.replace("map_Kd material_0.png", f"map_Kd {tex_name}")
+        txt = txt.replace("map_Kd material_0.jpg", f"map_Kd {tex_name}")
+        txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
+        txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
+        txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        mtl_path.write_text(txt, encoding="utf-8")
+
+    print(f"[OK] Window export: {obj_path}")
+    print(f"     Atlas (frame|glass): {tex_path}")
+    print(f"     Textures: {src_note}")
+    return obj_path
+
+
+def export_window_demo_with_procedural_texture_maps(
+    out_dir: Path | None = None,
+    *,
+    atlas_half_size: int = 512,
+    material_preset: str = "plaster",
+    **kwargs: Any,
+) -> Path:
+    """
+    Процедурные diffuse и normal (``procedural_texture_maps``), экспорт ``window.obj`` + атлас;
+    в ``material.mtl`` — ``map_Bump`` на ``window_normal_atlas.png``.
+
+    ``material_preset``: ``"plaster"`` или ``"wood"``. Нормали: рельеф только на раме; для стекла —
+    плоская однотонная нормаль (без «бугорков»).
+    ``kwargs`` — как у ``export_window_demo``, кроме ``frame_texture`` / ``glass_texture`` (игнорируются).
+    """
+    from src.generator.procedural.procedural_texture_maps.normal_map import (
+        make_fine_noise_normal_map,
+        make_neutral_flat_normal_map,
+        make_wood_grain_normal_map,
+    )
+    from src.generator.procedural.procedural_texture_maps.procedural_color_texture import (
+        make_plaster_facade_texture,
+        make_uniform_noise_texture,
+        make_wood_plank_color_texture,
+    )
+
+    out_dir = Path(out_dir or _DEFAULT_WINDOW_OBJ_EXPORT_DIR).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    half = max(int(atlas_half_size), 64)
+    preset = str(material_preset).lower().strip()
+    if preset not in ("plaster", "wood"):
+        preset = "plaster"
+
+    pf = out_dir / "proc_window_frame_rgb.png"
+    pg = out_dir / "proc_window_glass_rgb.png"
+    pfn = out_dir / "proc_window_frame_normal.png"
+    pgn = out_dir / "proc_window_glass_normal.png"
+    if preset == "wood":
+        make_wood_plank_color_texture(half, plank_width_px=max(12, half // 18), seed=21).save(pf)
+        make_uniform_noise_texture(
+            half,
+            base_rgb=(118, 128, 138),
+            noise_sigma=4.0,
+            seed=33,
+        ).save(pg)
+        make_wood_grain_normal_map(half, plank_width_px=max(12, half // 18), seed=41).save(pfn)
+        make_neutral_flat_normal_map(half).save(pgn)
+    else:
+        make_plaster_facade_texture(half, seed=21).save(pf)
+        make_uniform_noise_texture(half, base_rgb=(128, 136, 148), noise_sigma=5.0, seed=33).save(pg)
+        make_fine_noise_normal_map(half, strength=12.0, seed=41).save(pfn)
+        make_neutral_flat_normal_map(half).save(pgn)
+
+    kw = dict(kwargs)
+    kw.pop("frame_texture", None)
+    kw.pop("glass_texture", None)
+    obj_path = export_window_demo(
+        out_dir,
+        frame_texture=pf,
+        glass_texture=pg,
+        atlas_half_size=half,
+        **kw,
+    )
+    natlas = make_normal_atlas_from_sources(
+        frame_path=pfn,
+        glass_path=pgn,
+        half_size=half,
+    )
+    norm_name = "window_normal_atlas.png"
+    natlas.save(out_dir / norm_name)
+    mtl_path = out_dir / "material.mtl"
+    if mtl_path.is_file():
+        txt = mtl_path.read_text(encoding="utf-8")
+        low = txt.lower()
+        if "map_bump" not in low and "map_kn" not in low:
+            txt = txt.rstrip() + f"\nmap_Bump {norm_name}\n"
+        mtl_path.write_text(txt, encoding="utf-8")
+    print(f"     Procedural normal atlas: {out_dir / norm_name}")
+    return obj_path
+
+
 def build_window_mesh(
     width: float | None = None,
     height: float | None = None,
@@ -404,19 +669,21 @@ def build_window_mesh(
     mullion_offset_z: float | None = None,
     partial_horizontal_bars: Any | None = None,
 ) -> trimesh.Trimesh:
-    u = USER_WINDOW_MESH
-    width = max(float(width if width is not None else u["width"]), 0.05)
-    height = max(float(height if height is not None else u["height"]), 0.05)
-    depth = max(float(depth if depth is not None else u["depth"]), 0.02)
-    profile = _pick_profile(profile, str(u.get("profile", "rect")))
-    kind = _pick_kind(kind, str(u.get("kind", "fixed")))
-    nv = _pick_nonneg_int(mullions_vertical, u.get("mullions_vertical", 0))
-    nh = _pick_nonneg_int(mullions_horizontal, u.get("mullions_horizontal", 0))
-    ox = _pick_float_param(mullion_offset_x, u.get("mullion_offset_x", 0.0))
-    oz = _pick_float_param(mullion_offset_z, u.get("mullion_offset_z", 0.0))
-    ph_raw = partial_horizontal_bars if partial_horizontal_bars is not None else u.get("partial_horizontal_bars")
-    partial_bars = _normalize_partial_horizontal_bars(ph_raw)
-
+    p = resolve_window_frame_glass_params(
+        width=width,
+        height=height,
+        depth=depth,
+        profile=profile,
+        kind=kind,
+        mullions_vertical=mullions_vertical,
+        mullions_horizontal=mullions_horizontal,
+        mullion_offset_x=mullion_offset_x,
+        mullion_offset_z=mullion_offset_z,
+        partial_horizontal_bars=partial_horizontal_bars,
+    )
+    width = max(p.width, 0.05)
+    height = max(p.height, 0.05)
+    depth = max(p.depth, 0.02)
     ft = _frame_thickness(width, height)
     glass_t = max(depth * 0.12, 0.004)
     glass_y = 0.0
@@ -425,13 +692,13 @@ def build_window_mesh(
         width=width,
         height=height,
         depth=depth,
-        profile=profile,
-        kind=kind,
-        mullions_vertical=nv,
-        mullions_horizontal=nh,
-        mullion_offset_x=ox,
-        mullion_offset_z=oz,
-        partial_horizontal_bars=partial_bars,
+        profile=p.profile,
+        kind=p.kind,
+        mullions_vertical=p.mullions_vertical,
+        mullions_horizontal=p.mullions_horizontal,
+        mullion_offset_x=p.mullion_offset_x,
+        mullion_offset_z=p.mullion_offset_z,
+        partial_horizontal_bars=p.partial_horizontal_bars,
         ft=ft,
         glass_t=glass_t,
         glass_y=glass_y,
@@ -676,42 +943,6 @@ def _round_window_parts(
 # ==========================================================
 # 📌 Обзор меша в Open3D (аналог reconstruct_meshes.py)
 # ==========================================================
-def _require_open3d():
-    """Импорт open3d с понятным сообщением, если пакет не установлен."""
-    try:
-        import open3d as o3d
-
-        return o3d
-    except ModuleNotFoundError:
-        print(
-            "Команда preview требует пакет open3d.\n"
-            "  pip install open3d\n"
-            "Без Open3D можно только экспортировать меш:\n"
-            "  python -m src.generator.procedural.procedural_window export -o ./out",
-            file=sys.stderr,
-        )
-        raise SystemExit(1) from None
-
-
-def trimesh_to_open3d_mesh(
-    mesh: trimesh.Trimesh,
-    color_rgb: Tuple[float, float, float] | List[float] | None = None,
-):
-    """Конвертация trimesh → o3d.TriangleMesh с нормалями и цветом."""
-    o3d = _require_open3d()
-
-    v = np.asarray(mesh.vertices, dtype=np.float64)
-    f = np.asarray(mesh.faces, dtype=np.int32)
-    o3d_mesh = o3d.geometry.TriangleMesh()
-    o3d_mesh.vertices = o3d.utility.Vector3dVector(v)
-    o3d_mesh.triangles = o3d.utility.Vector3iVector(f)
-    o3d_mesh.compute_vertex_normals()
-    if color_rgb is None:
-        color_rgb = (0.65, 0.72, 1.0)
-    o3d_mesh.paint_uniform_color(list(color_rgb))
-    return o3d_mesh
-
-
 def preview_windows_open3d(
     profiles: List[Profile] | str | None = None,
     kind: Kind | str | None = None,
@@ -732,7 +963,7 @@ def preview_windows_open3d(
     Если все опции None и use_user_config=True — берётся USER_PREVIEW_OPEN3D.
     Явно переданные аргументы перекрывают словарь.
     """
-    o3d = _require_open3d()
+    o3d = require_open3d()
 
     cfg = USER_PREVIEW_OPEN3D if use_user_config else {}
 
@@ -824,6 +1055,16 @@ def _add_window_build_args(p: Any) -> None:
     )
 
 
+def _parse_optional_tex_rgb_cli(value: str | None) -> Any:
+    """CLI ``r,g,b`` для JSON-совместимого тинта текстур (см. ``parse_texture_color_tint``)."""
+    if value is None or not str(value).strip():
+        return None
+    parts = [p.strip() for p in str(value).split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("ожидается r,g,b из трёх чисел через запятую")
+    return [float(parts[0]), float(parts[1]), float(parts[2])]
+
+
 def _parse_partial_h_tokens(tokens: List[str]) -> List[Tuple[int, float]]:
     out: List[Tuple[int, float]] = []
     for t in tokens:
@@ -852,6 +1093,8 @@ def _build_arg_parser() -> Any:
   python -m src.generator.procedural.procedural_window export -o ./out --width 1.4 --mullions-vertical 2
   python -m src.generator.procedural.procedural_window export --mullions-vertical 2 --partial-h 2:0.78 -o ./out
   python -m src.generator.procedural.procedural_window export --frame-tex wood.jpg --glass-tex frosted.png -o ./out
+  python -m src.generator.procedural.procedural_window export -o data/window_proc_maps --procedural-maps --texture-size 512 --no-view
+  python -m src.generator.procedural.procedural_window export -o data/window_wood --procedural-wood --texture-size 512 --no-view
 """.strip(),
     )
     sub = p.add_subparsers(dest="command", required=True)
@@ -904,12 +1147,38 @@ def _build_arg_parser() -> Any:
         help="Изображение текстуры стекла",
     )
     ex.add_argument(
+        "--frame-tex-color",
+        type=_parse_optional_tex_rgb_cli,
+        default=None,
+        metavar="R,G,B",
+        dest="frame_texture_color",
+        help="Опциональный тинт diffuse для рамы (и процедурной рамы при сборке атласа)",
+    )
+    ex.add_argument(
+        "--glass-tex-color",
+        type=_parse_optional_tex_rgb_cli,
+        default=None,
+        metavar="R,G,B",
+        dest="glass_texture_color",
+        help="Опциональный тинт для стекла",
+    )
+    ex.add_argument(
         "--texture-size",
         type=int,
         default=512,
         metavar="N",
         dest="texture_half_size",
         help="Сторона квадрата половины атласа при сборке из файлов",
+    )
+    ex.add_argument(
+        "--procedural-maps",
+        action="store_true",
+        help="Штукатурка+стекло: diffuse+normal из procedural_texture_maps, map_Bump в MTL (игнор --frame-tex/--glass-tex)",
+    )
+    ex.add_argument(
+        "--procedural-wood",
+        action="store_true",
+        help="Деревянная рама (diffuse+normal) и матовое стекло; map_Bump в MTL (приоритет над --procedural-maps)",
     )
     ex.add_argument(
         "--no-view",
@@ -947,31 +1216,48 @@ def _cli_preview(args: Any) -> None:
 
 
 def _cli_export(args: Any) -> None:
-    from pathlib import Path
-
-    from src.generator.procedural.run_window_demo import export_window_demo, preview_window_obj_open3d
-
     partial_kw: List[Tuple[int, float]] | None = None
     if args.partial_h is not None:
         partial_kw = _parse_partial_h_tokens(args.partial_h)
 
     out = Path(args.output).resolve() if args.output else None
-    obj_path = export_window_demo(
-        out,
-        width=args.width,
-        height=args.height,
-        depth=args.depth,
-        profile=args.profile,
-        kind=args.kind,
-        mullions_vertical=args.mullions_vertical,
-        mullions_horizontal=args.mullions_horizontal,
-        mullion_offset_x=args.mullion_offset_x,
-        mullion_offset_z=args.mullion_offset_z,
-        partial_horizontal_bars=partial_kw,
-        frame_texture=args.frame_texture,
-        glass_texture=args.glass_texture,
-        atlas_half_size=max(getattr(args, "texture_half_size", 512), 64),
-    )
+    half = max(getattr(args, "texture_half_size", 512), 64)
+    common_kw: dict[str, Any] = {
+        "width": args.width,
+        "height": args.height,
+        "depth": args.depth,
+        "profile": args.profile,
+        "kind": args.kind,
+        "mullions_vertical": args.mullions_vertical,
+        "mullions_horizontal": args.mullions_horizontal,
+        "mullion_offset_x": args.mullion_offset_x,
+        "mullion_offset_z": args.mullion_offset_z,
+        "partial_horizontal_bars": partial_kw,
+        "atlas_half_size": half,
+    }
+    if getattr(args, "procedural_wood", False):
+        if args.frame_texture or args.glass_texture:
+            print("[warn] --procedural-wood: --frame-tex / --glass-tex ignored")
+        if getattr(args, "procedural_maps", False):
+            print("[warn] --procedural-wood overrides --procedural-maps")
+        obj_path = export_window_demo_with_procedural_texture_maps(
+            out,
+            material_preset="wood",
+            **common_kw,
+        )
+    elif getattr(args, "procedural_maps", False):
+        if args.frame_texture or args.glass_texture:
+            print("[warn] --procedural-maps: --frame-tex / --glass-tex ignored")
+        obj_path = export_window_demo_with_procedural_texture_maps(out, **common_kw)
+    else:
+        obj_path = export_window_demo(
+            out,
+            frame_texture=args.frame_texture,
+            glass_texture=args.glass_texture,
+            frame_texture_color=getattr(args, "frame_texture_color", None),
+            glass_texture_color=getattr(args, "glass_texture_color", None),
+            **common_kw,
+        )
     if not args.no_view:
         preview_window_obj_open3d(obj_path)
 

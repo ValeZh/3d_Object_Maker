@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+from src.generator.procedural.open3d_preview import preview_window_obj_open3d
 from src.generator.procedural.procedural_balcony import export_balcony
-from src.generator.procedural.procedural_entrance import export_entrance
-from src.generator.procedural.procedural_entrance_textured import export_entrance_textured
+from src.generator.procedural.procedural_entrance import export_entrance, export_entrance_textured
 from src.generator.procedural.procedural_wall_window import export_wall_with_window
-from src.generator.procedural.run_window_demo import export_window_demo
+from src.generator.procedural.procedural_window import export_window_demo
 
 
 def _prepare_call(
@@ -27,6 +27,9 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     Оркестратор: только вызовы экспорт-функций процедурных генераторов.
     Ожидает словарь конфигурации с ключами:
       balcony, entrance, entrance_textured, window, wall_window
+
+    Секции window и wall_window: опционально no_view (по умолчанию true — без Open3D).
+    При no_view: false после экспорта вызывается preview_window_obj_open3d (нужен pip install open3d).
     """
     out: dict[str, Path] = {}
 
@@ -56,12 +59,20 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     if isinstance(window_cfg, dict) and window_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(window_cfg, default_out_root=default_out_root, default_name="window")
         kwargs.pop("enabled", None)
-        out["window"] = export_window_demo(out_dir=out_dir, **kwargs)
+        no_view = bool(kwargs.pop("no_view", True))
+        obj_path = export_window_demo(out_dir=out_dir, **kwargs)
+        out["window"] = obj_path
+        if not no_view:
+            preview_window_obj_open3d(obj_path)
 
     wall_window_cfg = config.get("wall_window")
     if isinstance(wall_window_cfg, dict) and wall_window_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(wall_window_cfg, default_out_root=default_out_root, default_name="wall_window")
         kwargs.pop("enabled", None)
-        out["wall_window"] = export_wall_with_window(out_dir=out_dir, **kwargs)
+        no_view = bool(kwargs.pop("no_view", True))
+        obj_path = export_wall_with_window(out_dir=out_dir, **kwargs)
+        out["wall_window"] = obj_path
+        if not no_view:
+            preview_window_obj_open3d(obj_path)
 
     return out

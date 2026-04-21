@@ -13,7 +13,7 @@
 Для profile arch / round вырез остаётся прямоугольным по bounding box рамы (в углах свода
 могут остаться куски стены; для точного контура используйте rect).
 
-Геометрия стены с проёмом: модуль procedural_wall_mesh (build_wall_mesh_rect_opening, wall_mesh_expanded_uv).
+Геометрия стены: procedural_wall_mesh.build_wall_mesh_rect_opening; UV — unfolding.wall_mesh_expanded_uv; OBJ/MTL — texturing.
 
 Запуск (одна строка — так надёжно в PowerShell; символ ^ из cmd не использовать в PS):
   python -m src.generator.procedural.procedural_wall_window export -o data/wall_win --wall-length 4 --wall-thickness 0.35 --wall-height 3 --window-center-x 0.8 --window-sill-z 0.95
@@ -37,104 +37,26 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.generator.procedural.open3d_preview import preview_window_obj_open3d
+from src.generator.procedural.procedural_wall_mesh import build_wall_mesh_rect_opening
 from src.generator.procedural.procedural_window import (
-    USER_WINDOW_MESH,
-    _normalize_partial_horizontal_bars,
-    _pick_float_param,
-    _pick_kind,
-    _pick_nonneg_int,
-    _pick_profile,
     build_window_frame_glass_meshes,
+    resolve_window_frame_glass_params,
     _add_window_build_args,
-    _parse_partial_h_tokens,
     _frame_thickness,
+    _parse_partial_h_tokens,
 )
-from src.generator.procedural.run_window_demo import (
-    _faceted_triplanar_uv,
-    _resolve_texture_path,
-    preview_window_obj_open3d,
+from src.generator.procedural.texturing import (
+    ensure_window_textures,
+    make_atlas_from_sources,
+    resolve_texture_path,
+    write_wall_window_mtl,
+    write_wall_window_obj,
 )
-from src.generator.procedural.window_texture_assets import ensure_window_textures, make_atlas_from_sources
-from src.generator.procedural.procedural_wall_mesh import build_wall_mesh_rect_opening, wall_mesh_expanded_uv
+from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
+from src.generator.procedural.unfolding import frame_glass_atlas_uv_mesh, wall_mesh_expanded_uv
 
 _DEFAULT_WALL_WIN_DIR = _REPO_ROOT / "data" / "wall_window_export"
-
-
-def _write_wall_window_obj(
-    obj_path: Path,
-    mtl_name: str,
-    wall_v: np.ndarray,
-    wall_f: np.ndarray,
-    wall_uv: np.ndarray | None,
-    win_v: np.ndarray,
-    win_f: np.ndarray,
-    win_uv: np.ndarray,
-) -> None:
-    """OBJ: стена с usemtl wall (без map_Kd, без vt) или с vt; окно с отдельным usemtl window + vt."""
-    lines: List[str] = ["# wall + window (procedural_wall_window)", f"mtllib {mtl_name}", ""]
-    nv_wall = int(len(wall_v))
-
-    lines.append("o wall")
-    lines.append("usemtl wall")
-    for row in wall_v:
-        lines.append(f"v {row[0]:.8f} {row[1]:.8f} {row[2]:.8f}")
-    if wall_uv is not None:
-        for row in wall_uv:
-            lines.append(f"vt {row[0]:.8f} {row[1]:.8f}")
-        n_vt_wall = int(len(wall_uv))
-        for tri in wall_f:
-            a, b, c = int(tri[0]) + 1, int(tri[1]) + 1, int(tri[2]) + 1
-            ta, tb, tc = int(tri[0]) + 1, int(tri[1]) + 1, int(tri[2]) + 1
-            lines.append(f"f {a}/{ta} {b}/{tb} {c}/{tc}")
-    else:
-        for tri in wall_f:
-            a, b, c = int(tri[0]) + 1, int(tri[1]) + 1, int(tri[2]) + 1
-            lines.append(f"f {a} {b} {c}")
-
-    lines.append("")
-    lines.append("o window")
-    lines.append("usemtl window")
-    base_v = nv_wall
-    for row in win_v:
-        lines.append(f"v {row[0]:.8f} {row[1]:.8f} {row[2]:.8f}")
-    for row in win_uv:
-        lines.append(f"vt {row[0]:.8f} {row[1]:.8f}")
-    vt_base = int(len(wall_uv)) if wall_uv is not None else 0
-    for tri in win_f:
-        a, b, c = int(tri[0]) + base_v + 1, int(tri[1]) + base_v + 1, int(tri[2]) + base_v + 1
-        ta, tb, tc = int(tri[0]) + vt_base + 1, int(tri[1]) + vt_base + 1, int(tri[2]) + vt_base + 1
-        lines.append(f"f {a}/{ta} {b}/{tb} {c}/{tc}")
-
-    obj_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _write_wall_window_mtl(
-    mtl_path: Path,
-    *,
-    window_atlas: str,
-    wall_tex: str | None,
-) -> None:
-    lines = [
-        "# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt",
-        "newmtl wall",
-        "Ka 1 1 1",
-        "Kd 0.69 0.66 0.62",
-        "Ks 0 0 0",
-    ]
-    if wall_tex:
-        lines.append(f"map_Kd {wall_tex}")
-    lines.extend(
-        [
-            "",
-            "newmtl window",
-            "Ka 1 1 1",
-            "Kd 1 1 1",
-            "Ks 0 0 0",
-            f"map_Kd {window_atlas}",
-            "",
-        ]
-    )
-    mtl_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 @dataclass
@@ -166,42 +88,39 @@ def build_wall_with_window(
     mullion_offset_z: float | None = None,
     partial_horizontal_bars: List[Tuple[int, float]] | None = None,
 ) -> WallWindowBuild:
-    u = USER_WINDOW_MESH
-    w = float(width if width is not None else u["width"])
-    h = float(height if height is not None else u["height"])
-    d = float(depth if depth is not None else u["depth"])
-    prof = profile if profile is not None else str(u["profile"])
-    knd = kind if kind is not None else str(u["kind"])
-    nv = _pick_nonneg_int(mullions_vertical, u.get("mullions_vertical", 0))
-    nh = _pick_nonneg_int(mullions_horizontal, u.get("mullions_horizontal", 0))
-    ox = _pick_float_param(mullion_offset_x, u.get("mullion_offset_x", 0.0))
-    oz = _pick_float_param(mullion_offset_z, u.get("mullion_offset_z", 0.0))
-    ph_raw = partial_horizontal_bars if partial_horizontal_bars is not None else u.get("partial_horizontal_bars")
-    partial_bars = _normalize_partial_horizontal_bars(ph_raw)
-    pf = _pick_profile(prof, str(u.get("profile", "rect")))
-    kd = _pick_kind(knd, str(u.get("kind", "fixed")))
-
-    ft = _frame_thickness(w, h)
-    glass_t = max(d * 0.12, 0.004)
+    p = resolve_window_frame_glass_params(
+        width=width,
+        height=height,
+        depth=depth,
+        profile=profile,
+        kind=kind,
+        mullions_vertical=mullions_vertical,
+        mullions_horizontal=mullions_horizontal,
+        mullion_offset_x=mullion_offset_x,
+        mullion_offset_z=mullion_offset_z,
+        partial_horizontal_bars=partial_horizontal_bars,
+    )
+    ft = _frame_thickness(p.width, p.height)
+    glass_t = max(p.depth * 0.12, 0.004)
 
     mf, mg = build_window_frame_glass_meshes(
-        width=w,
-        height=h,
-        depth=d,
-        profile=pf,
-        kind=kd,
-        mullions_vertical=nv,
-        mullions_horizontal=nh,
-        mullion_offset_x=ox,
-        mullion_offset_z=oz,
-        partial_horizontal_bars=partial_bars,
+        width=p.width,
+        height=p.height,
+        depth=p.depth,
+        profile=p.profile,
+        kind=p.kind,
+        mullions_vertical=p.mullions_vertical,
+        mullions_horizontal=p.mullions_horizontal,
+        mullion_offset_x=p.mullion_offset_x,
+        mullion_offset_z=p.mullion_offset_z,
+        partial_horizontal_bars=p.partial_horizontal_bars,
         ft=ft,
         glass_t=glass_t,
         glass_y=0.0,
         with_glass=True,
     )
 
-    tz = float(window_sill_z) + h * 0.5
+    tz = float(window_sill_z) + p.height * 0.5
     tvec = np.array([float(window_center_x), 0.0, tz], dtype=np.float64)
     mf_w = mf.copy()
     mg_w = mg.copy()
@@ -222,24 +141,7 @@ def build_wall_with_window(
         opening_zmax,
     )
 
-    mf_uv, uv_f = _faceted_triplanar_uv(mf)
-    mg_uv, uv_g = _faceted_triplanar_uv(mg)
-    uv_f = np.asarray(uv_f, dtype=np.float64).copy()
-    uv_g = np.asarray(uv_g, dtype=np.float64).copy()
-    uv_f[:, 0] = uv_f[:, 0] * 0.5
-    uv_g[:, 0] = uv_g[:, 0] * 0.5 + 0.5
-    uv = np.vstack([uv_f, uv_g]) if len(uv_f) + len(uv_g) else np.zeros((0, 2))
-
-    if len(mf_uv.faces) == 0 and len(mg_uv.faces) == 0:
-        wt = trimesh.Trimesh()
-    elif len(mf_uv.faces) == 0:
-        wt = mg_uv
-        uv = uv_g
-    elif len(mg_uv.faces) == 0:
-        wt = mf_uv
-        uv = uv_f
-    else:
-        wt = trimesh.util.concatenate([mf_uv, mg_uv])
+    wt, uv = frame_glass_atlas_uv_mesh(mf, mg)
     wt.apply_translation(tvec)
 
     return WallWindowBuild(
@@ -272,6 +174,9 @@ def export_wall_with_window(
     frame_texture: str | Path | None = None,
     glass_texture: str | Path | None = None,
     wall_texture: str | Path | None = None,
+    frame_texture_color: Any = None,
+    glass_texture_color: Any = None,
+    wall_texture_color: Any = None,
     atlas_half_size: int = 512,
 ) -> Path:
     """Экспорт wall_window.obj + wall_window.mtl + window_atlas.png (стена без атласа; окно с атласом)."""
@@ -279,15 +184,21 @@ def export_wall_with_window(
     out_dir.mkdir(parents=True, exist_ok=True)
     tex_name = "window_atlas.png"
     tex_path = out_dir / tex_name
-    fp = _resolve_texture_path(frame_texture)
-    gp = _resolve_texture_path(glass_texture)
+    fp = resolve_texture_path(frame_texture)
+    gp = resolve_texture_path(glass_texture)
     if frame_texture is not None and fp is None:
         print(f"[warn] frame_texture missing, procedural frame: {frame_texture}")
     if glass_texture is not None and gp is None:
         print(f"[warn] glass_texture missing, procedural glass: {glass_texture}")
 
     if fp is not None or gp is not None:
-        make_atlas_from_sources(frame_path=fp, glass_path=gp, half_size=max(atlas_half_size, 64)).save(tex_path)
+        make_atlas_from_sources(
+            frame_path=fp,
+            glass_path=gp,
+            half_size=max(atlas_half_size, 64),
+            frame_color=frame_texture_color,
+            glass_color=glass_texture_color,
+        ).save(tex_path)
     else:
         paths = ensure_window_textures(_REPO_ROOT / "data" / "textures")
         shutil.copyfile(paths["atlas"], tex_path)
@@ -314,13 +225,17 @@ def export_wall_with_window(
     win_export.visual = trimesh.visual.texture.TextureVisuals(uv=b.window_uv, image=Image.open(tex_path))
 
     hx = float(wall_length) * 0.5
-    wp = _resolve_texture_path(wall_texture)
+    wp = resolve_texture_path(wall_texture)
     if wall_texture is not None and wp is None:
         print(f"[warn] wall_texture missing, wall without map: {wall_texture}")
     wall_tex_name: str | None = None
     if wp is not None:
         wall_tex_name = f"wall_diffuse{wp.suffix.lower()}"
-        shutil.copyfile(wp, out_dir / wall_tex_name)
+        wt = parse_texture_color_tint(wall_texture_color)
+        wim = Image.open(wp).convert("RGB")
+        if wt is not None:
+            wim = apply_texture_color_tint(wim, wt)
+        wim.save(out_dir / wall_tex_name)
         wv, wf, wuv = wall_mesh_expanded_uv(
             b.wall,
             hx=hx,
@@ -340,8 +255,8 @@ def export_wall_with_window(
     mtl_name = "wall_window.mtl"
     mtl_path = out_dir / mtl_name
     obj_path = out_dir / "wall_window.obj"
-    _write_wall_window_mtl(mtl_path, window_atlas=tex_name, wall_tex=wall_tex_name)
-    _write_wall_window_obj(obj_path, mtl_name, wv, wf, wuv, win_v, win_f, win_uv)
+    write_wall_window_mtl(mtl_path, window_atlas=tex_name, wall_tex=wall_tex_name)
+    write_wall_window_obj(obj_path, mtl_name, wv, wf, wuv, win_v, win_f, win_uv)
 
     stale = out_dir / "material.mtl"
     if stale.is_file():
@@ -353,6 +268,15 @@ def export_wall_with_window(
     print(f"[OK] Wall+window: {obj_path}")
     print(f"     Atlas: {tex_path}")
     return obj_path
+
+
+def _parse_optional_tex_rgb_cli(value: str | None) -> Any:
+    if value is None or not str(value).strip():
+        return None
+    parts = [p.strip() for p in str(value).split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("ожидается r,g,b из трёх чисел через запятую")
+    return [float(parts[0]), float(parts[1]), float(parts[2])]
 
 
 def _cli_export(args: Any) -> None:
@@ -380,6 +304,9 @@ def _cli_export(args: Any) -> None:
         frame_texture=args.frame_texture,
         glass_texture=args.glass_texture,
         wall_texture=getattr(args, "wall_texture", None),
+        frame_texture_color=getattr(args, "frame_texture_color", None),
+        glass_texture_color=getattr(args, "glass_texture_color", None),
+        wall_texture_color=getattr(args, "wall_texture_color", None),
         atlas_half_size=max(getattr(args, "texture_half_size", 512), 64),
     )
     if not args.no_view:
@@ -448,6 +375,30 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         dest="wall_texture",
         help="Опционально: текстура стены (копируется как wall_diffuse.*; triplanar UV)",
+    )
+    ex.add_argument(
+        "--frame-tex-color",
+        type=_parse_optional_tex_rgb_cli,
+        default=None,
+        metavar="R,G,B",
+        dest="frame_texture_color",
+        help="Тинт diffuse для текстуры рамы",
+    )
+    ex.add_argument(
+        "--glass-tex-color",
+        type=_parse_optional_tex_rgb_cli,
+        default=None,
+        metavar="R,G,B",
+        dest="glass_texture_color",
+        help="Тинт для текстуры стекла",
+    )
+    ex.add_argument(
+        "--wall-tex-color",
+        type=_parse_optional_tex_rgb_cli,
+        default=None,
+        metavar="R,G,B",
+        dest="wall_texture_color",
+        help="Тинт для текстуры стены",
     )
     ex.add_argument(
         "--texture-size",
