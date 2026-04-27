@@ -12,7 +12,7 @@
   "entrance_textured": {
     "enabled": false,
     "out_dir": "data/out_batch/entrance_tint_demo",
-    "no_view": true,
+    "no_view": false,
     "wall_tex": "data/textures/window_frame.png",
     "roof_tex": "data/textures/window_glass.png",
     "door_tex": "data/textures/window_frame.png",

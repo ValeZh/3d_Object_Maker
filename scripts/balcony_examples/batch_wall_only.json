@@ -6,7 +6,6 @@
     "wall_length": 4.0,
     "wall_thickness": 0.25,
     "wall_height": 3.0,
-    "wall_texture": "data/textures/window_frame.png",
-    "wall_texture_color": [45, 130, 65]
+    "wall_texture": "data/textures/wall_cracked_albedo.png"
   }
 }

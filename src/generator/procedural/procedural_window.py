@@ -43,8 +43,10 @@ from src.generator.procedural.texturing import (
     ensure_window_textures,
     make_atlas_from_sources,
     make_normal_atlas_from_sources,
+    make_window_roughness_atlas,
     resolve_texture_path,
 )
+from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import faceted_triplanar_uv, frame_glass_atlas_uv_mesh
 
 Profile = Literal["rect", "arch", "round"]
@@ -490,6 +492,10 @@ def export_window_demo(
     frame_texture_color: Any = None,
     glass_texture_color: Any = None,
     atlas_half_size: int = 512,
+    frame_normal_texture: str | Path | None = None,
+    glass_normal_texture: str | Path | None = None,
+    generate_normal_atlas: bool = True,
+    generate_roughness_atlas: bool = True,
 ) -> Path:
     """Экспорт window.obj + MTL + атлас (для батча и CLI export)."""
     p = resolve_window_frame_glass_params(
@@ -533,6 +539,25 @@ def export_window_demo(
         shutil.copyfile(paths["atlas"], tex_path)
         src_note = f"{paths['frame'].name} + {paths['glass'].name} (data/textures)"
 
+    norm_name = "window_normal_atlas.png"
+    rough_name = "window_roughness_atlas.png"
+    norm_path = out_dir / norm_name
+    rough_path = out_dir / rough_name
+    if generate_normal_atlas:
+        fn = resolve_texture_path(frame_normal_texture)
+        gn = resolve_texture_path(glass_normal_texture)
+        if fn is not None or gn is not None:
+            make_normal_atlas_from_sources(frame_path=fn, glass_path=gn, half_size=max(atlas_half_size, 64)).save(norm_path)
+        else:
+            make_normal_map_from_albedo(Image.open(tex_path).convert("RGB"), strength=3.8).save(norm_path)
+    if generate_roughness_atlas:
+        if fp is not None or gp is not None:
+            make_roughness_map_from_albedo(
+                Image.open(tex_path).convert("RGB"), min_roughness=0.25, max_roughness=0.9
+            ).save(rough_path)
+        else:
+            make_window_roughness_atlas(max(atlas_half_size, 64)).save(rough_path)
+
     ft = _frame_thickness(p.width, p.height)
     glass_t = max(p.depth * 0.12, 0.004)
 
@@ -568,6 +593,11 @@ def export_window_demo(
         txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
         txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        low = txt.lower()
+        if generate_normal_atlas and "map_bump" not in low and "map_kn" not in low:
+            txt = txt.rstrip() + f"\nmap_Bump -bm 0.700 {norm_name}\n"
+        if generate_roughness_atlas and "map_pr" not in low:
+            txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")
 
     print(f"[OK] Window export: {obj_path}")

@@ -59,7 +59,12 @@ def write_wall_window_mtl(
     *,
     window_atlas: str,
     wall_tex: str | None,
+    wall_normal_tex: str | None = None,
+    wall_roughness_tex: str | None = None,
+    window_normal_tex: str | None = None,
+    window_roughness_tex: str | None = None,
 ) -> None:
+    bump_scale = 0.7
     lines = [
         "# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt",
         "newmtl wall",
@@ -69,6 +74,11 @@ def write_wall_window_mtl(
     ]
     if wall_tex:
         lines.append(f"map_Kd {wall_tex}")
+    if wall_normal_tex:
+        lines.append(f"map_Bump -bm {bump_scale:.3f} {wall_normal_tex}")
+        lines.append(f"bump -bm {bump_scale:.3f} {wall_normal_tex}")
+    if wall_roughness_tex:
+        lines.append(f"map_Pr {wall_roughness_tex}")
     lines.extend(
         [
             "",
@@ -77,6 +87,12 @@ def write_wall_window_mtl(
             "Kd 1 1 1",
             "Ks 0 0 0",
             f"map_Kd {window_atlas}",
+            *(
+                [f"map_Bump -bm {bump_scale:.3f} {window_normal_tex}", f"bump -bm {bump_scale:.3f} {window_normal_tex}"]
+                if window_normal_tex
+                else []
+            ),
+            *([f"map_Pr {window_roughness_tex}"] if window_roughness_tex else []),
             "",
         ]
     )

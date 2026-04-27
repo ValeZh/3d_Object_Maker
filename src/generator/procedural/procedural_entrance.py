@@ -40,6 +40,7 @@ from src.generator.procedural.procedural_door import (
     build_french_double_door_parts,
     build_simple_door_slab,
 )
+from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
@@ -627,6 +628,8 @@ def export_entrance_textured(
     wall_tex_color: Any = None,
     roof_tex_color: Any = None,
     door_tex_color: Any = None,
+    generate_normal_map: bool = True,
+    generate_roughness_map: bool = True,
     **kwargs: Any,
 ) -> Path:
     """
@@ -670,6 +673,12 @@ def export_entrance_textured(
     tex_name = "entrance_atlas.png"
     tex_path = out_dir / tex_name
     atlas_img.save(str(tex_path))
+    normal_name = "entrance_normal_atlas.png"
+    rough_name = "entrance_roughness_atlas.png"
+    if generate_normal_map:
+        make_normal_map_from_albedo(atlas_img, strength=3.0).save(out_dir / normal_name)
+    if generate_roughness_map:
+        make_roughness_map_from_albedo(atlas_img, min_roughness=0.3, max_roughness=0.9).save(out_dir / rough_name)
 
     obj_path = out_dir / "entrance.obj"
     work.export(str(obj_path), include_texture=True)
@@ -682,6 +691,11 @@ def export_entrance_textured(
         txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
         txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        low = txt.lower()
+        if generate_normal_map and "map_bump" not in low and "map_kn" not in low:
+            txt = txt.rstrip() + f"\nmap_Bump -bm 0.700 {normal_name}\n"
+        if generate_roughness_map and "map_pr" not in low:
+            txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")
 
     print(f"[OK] Entrance (textured): {obj_path}")
