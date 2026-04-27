@@ -58,6 +58,7 @@ from src.generator.procedural.procedural_window import (
     _pick_nonneg_int,
 )
 from src.generator.procedural.texturing import make_window_frame_texture, make_window_glass_texture
+from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import faceted_triplanar_uv
 
 
@@ -2465,6 +2466,9 @@ def export_balcony(
     side_basket_tex: str | Path | None = None,
     side_jamb_tex: str | Path | None = None,
     side_separator_tex: str | Path | None = None,
+    generate_normal_map: bool = True,
+    generate_roughness_map: bool = True,
+    bump_strength: float = 0.7,
     **kwargs: Any,
 ) -> Path:
     out_dir = out_dir or (_repo_root() / "data" / "balcony_export")
@@ -2554,6 +2558,12 @@ def export_balcony(
     tex_name = "balcony_atlas.png"
     tex_path = out_dir / tex_name
     atlas_img.save(tex_path)
+    normal_name = "balcony_normal_atlas.png"
+    rough_name = "balcony_roughness_atlas.png"
+    if generate_normal_map:
+        make_normal_map_from_albedo(atlas_img, strength=3.4).save(out_dir / normal_name)
+    if generate_roughness_map:
+        make_roughness_map_from_albedo(atlas_img, min_roughness=0.3, max_roughness=0.92).save(out_dir / rough_name)
 
     mesh_blocks: List[trimesh.Trimesh] = []
 
@@ -2616,6 +2626,12 @@ def export_balcony(
         txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
         txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        low = txt.lower()
+        if generate_normal_map and "map_bump" not in low and "map_kn" not in low:
+            bm = float(max(0.0, bump_strength))
+            txt = txt.rstrip() + f"\nmap_Bump -bm {bm:.3f} {normal_name}\n"
+        if generate_roughness_map and "map_pr" not in low:
+            txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")
 
     print(f"[OK] Balcony export: {obj_path}")

@@ -29,6 +29,59 @@ def _no_view_from_json(raw: Any, *, default: bool = True) -> bool:
     return bool(raw)
 
 
+def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
+    """
+    Вложенный объект ``texture`` в JSON-секции → плоские аргументы экспортёров.
+
+    Пример::
+
+        "texture": {
+          "bump_strength": 0.7,
+          "generate_normal": true,
+          "generate_roughness": true
+        }
+
+    ``bump_strength`` — сила normal map в MTL (``-bm``, аналог Strength в Blender).
+    ``normal_strength`` — синоним для ``bump_strength``.
+    """
+    tex = kwargs.pop("texture", None)
+    if not isinstance(tex, dict):
+        return
+    bs = tex.get("bump_strength", tex.get("normal_strength"))
+    if bs is not None:
+        kwargs["bump_strength"] = float(bs)
+
+    def _to_bool(v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return bool(v)
+        if isinstance(v, str):
+            return v.strip().lower() in ("1", "true", "yes", "on")
+        return bool(v)
+
+    if "generate_normal" in tex:
+        gn = _to_bool(tex["generate_normal"])
+        if section == "window":
+            kwargs["generate_normal_atlas"] = gn
+        elif section == "wall_window":
+            kwargs["generate_normal_maps"] = gn
+        elif section == "entrance_textured":
+            kwargs["generate_normal_map"] = gn
+        elif section == "balcony":
+            kwargs["generate_normal_map"] = gn
+    if "generate_roughness" in tex:
+        gr = _to_bool(tex["generate_roughness"])
+        if section == "window":
+            kwargs["generate_roughness_atlas"] = gr
+        elif section == "wall_window":
+            kwargs["generate_roughness_maps"] = gr
+        elif section == "entrance_textured":
+            kwargs["generate_roughness_map"] = gr
+        elif section == "balcony":
+            kwargs["generate_roughness_map"] = gr
+
+
 def _prepare_call(
     payload: Dict[str, Any],
     *,
@@ -56,6 +109,7 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     if isinstance(balcony_cfg, dict) and balcony_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(balcony_cfg, default_out_root=default_out_root, default_name="balcony")
         kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="balcony")
         out["balcony"] = export_balcony(out_dir=out_dir, **kwargs)
 
     entrance_cfg = config.get("entrance")
@@ -72,12 +126,14 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
             default_name="entrance_textured",
         )
         kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="entrance_textured")
         out["entrance_textured"] = export_entrance_textured(out_dir=out_dir, **kwargs)
 
     window_cfg = config.get("window")
     if isinstance(window_cfg, dict) and window_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(window_cfg, default_out_root=default_out_root, default_name="window")
         kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="window")
         no_view = _no_view_from_json(kwargs.pop("no_view", True))
         obj_path = export_window_demo(out_dir=out_dir, **kwargs)
         out["window"] = obj_path
@@ -88,6 +144,7 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     if isinstance(wall_window_cfg, dict) and wall_window_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(wall_window_cfg, default_out_root=default_out_root, default_name="wall_window")
         kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="wall_window")
         no_view = _no_view_from_json(kwargs.pop("no_view", True))
         obj_path = export_wall_with_window(out_dir=out_dir, **kwargs)
         out["wall_window"] = obj_path
@@ -98,6 +155,7 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     if isinstance(wall_cfg, dict) and wall_cfg.get("enabled", True):
         out_dir, kwargs = _prepare_call(wall_cfg, default_out_root=default_out_root, default_name="wall")
         kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="wall")
         no_view = _no_view_from_json(kwargs.pop("no_view", True))
         obj_path = export_wall(out_dir=out_dir, **kwargs)
         out["wall"] = obj_path

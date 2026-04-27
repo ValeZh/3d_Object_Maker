@@ -29,6 +29,7 @@ from src.generator.procedural.texturing.window_texture_assets import (
     make_window_atlas,
     make_window_frame_texture,
     make_window_glass_texture,
+    make_window_roughness_atlas,
     resolve_texture_path,
 )
 
@@ -54,6 +55,7 @@ __all__ = [
     "make_window_atlas",
     "make_window_frame_texture",
     "make_window_glass_texture",
+    "make_window_roughness_atlas",
     "resolve_texture_path",
     "write_wall_window_mtl",
     "write_wall_window_obj",
