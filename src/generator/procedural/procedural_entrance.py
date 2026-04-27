@@ -630,6 +630,7 @@ def export_entrance_textured(
     door_tex_color: Any = None,
     generate_normal_map: bool = True,
     generate_roughness_map: bool = True,
+    bump_strength: float = 0.7,
     **kwargs: Any,
 ) -> Path:
     """
@@ -693,7 +694,8 @@ def export_entrance_textured(
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
         low = txt.lower()
         if generate_normal_map and "map_bump" not in low and "map_kn" not in low:
-            txt = txt.rstrip() + f"\nmap_Bump -bm 0.700 {normal_name}\n"
+            bm = float(max(0.0, bump_strength))
+            txt = txt.rstrip() + f"\nmap_Bump -bm {bm:.3f} {normal_name}\n"
         if generate_roughness_map and "map_pr" not in low:
             txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")

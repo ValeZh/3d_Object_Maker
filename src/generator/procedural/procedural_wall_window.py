@@ -186,6 +186,7 @@ def export_wall_with_window(
     atlas_half_size: int = 512,
     generate_normal_maps: bool = True,
     generate_roughness_maps: bool = True,
+    bump_strength: float = 0.7,
 ) -> Path:
     """Экспорт wall_window.obj + wall_window.mtl + window_atlas.png (стена без атласа; окно с атласом)."""
     out_dir = Path(out_dir or _DEFAULT_WALL_WIN_DIR).resolve()
@@ -316,6 +317,7 @@ def export_wall_with_window(
         wall_roughness_tex=wall_roughness_name,
         window_normal_tex=window_normal_name,
         window_roughness_tex=window_roughness_name,
+        bump_strength=bump_strength,
     )
     write_wall_window_obj(obj_path, mtl_name, wv, wf, wuv, win_v, win_f, win_uv)
 

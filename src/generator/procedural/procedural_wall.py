@@ -52,8 +52,9 @@ def _write_wall_mtl_with_maps(
     wall_tex: str | None,
     wall_normal_tex: str | None,
     wall_roughness_tex: str | None,
+    bump_strength: float = 0.7,
 ) -> None:
-    bump_scale = 0.7
+    bump_scale = float(max(0.0, bump_strength))
     lines = [
         "newmtl wall",
         "Ka 1 1 1",
@@ -94,6 +95,7 @@ def export_wall(
     wall_normal_texture: str | Path | None = None,
     wall_roughness_texture: str | Path | None = None,
     wall_texture_color: Any = None,
+    bump_strength: float = 0.7,
 ) -> Path:
     out_dir = Path(out_dir or _DEFAULT_WALL_DIR).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -145,6 +147,7 @@ def export_wall(
         wall_tex=wall_tex_name,
         wall_normal_tex=wall_normal_name,
         wall_roughness_tex=wall_roughness_name,
+        bump_strength=bump_strength,
     )
     _write_wall_obj(obj_path, mtl_name, v, f, uv)
     print(f"[OK] Wall export: {obj_path}")

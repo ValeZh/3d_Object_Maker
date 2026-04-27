@@ -496,6 +496,7 @@ def export_window_demo(
     glass_normal_texture: str | Path | None = None,
     generate_normal_atlas: bool = True,
     generate_roughness_atlas: bool = True,
+    bump_strength: float = 0.7,
 ) -> Path:
     """Экспорт window.obj + MTL + атлас (для батча и CLI export)."""
     p = resolve_window_frame_glass_params(
@@ -595,7 +596,8 @@ def export_window_demo(
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
         low = txt.lower()
         if generate_normal_atlas and "map_bump" not in low and "map_kn" not in low:
-            txt = txt.rstrip() + f"\nmap_Bump -bm 0.700 {norm_name}\n"
+            bm = float(max(0.0, bump_strength))
+            txt = txt.rstrip() + f"\nmap_Bump -bm {bm:.3f} {norm_name}\n"
         if generate_roughness_atlas and "map_pr" not in low:
             txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")

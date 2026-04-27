@@ -32,11 +32,19 @@ Optional diffuse tint for texture map paths (multiplies RGB in the atlas / wall 
 - Use JSON array of three numbers per slot, e.g. ``[220, 200, 180]`` (0–255) or ``[0.86, 0.78, 0.71]`` (0–1).
 - Parsed in code as ``parse_texture_color_tint``; see section-specific key names below (``*_tex_color``, ``frame_texture_color``, etc.).
 
+Optional nested object for PBR/MTL texture settings (read by the orchestrator, not passed through as a raw key):
+- texture: object with optional fields:
+  - bump_strength: float (MTL map_Bump -bm; default in exporters 0.7, Blender-like strength)
+  - normal_strength: alias for bump_strength
+  - generate_normal: bool (section-specific: maps to generate_normal_atlas / generate_normal_maps / generate_normal_map)
+  - generate_roughness: bool (section-specific: maps to generate_roughness_atlas / generate_roughness_maps / generate_roughness_map)
+The ``wall`` section only uses bump_strength from ``texture`` (no procedural generate_* flags; companion maps use file paths or inference).
+
 How common fields work:
 - If enabled=false -> section is skipped
 - If out_dir/output is missing -> default path is used:
   <out_root>/<section_name>
-- All remaining keys in section are passed directly to the export function.
+- All remaining keys in section, except the ``texture`` object (consumed and flattened as above), are passed directly to the export function.
 
 
 3) Section: balcony

@@ -63,8 +63,9 @@ def write_wall_window_mtl(
     wall_roughness_tex: str | None = None,
     window_normal_tex: str | None = None,
     window_roughness_tex: str | None = None,
+    bump_strength: float = 0.7,
 ) -> None:
-    bump_scale = 0.7
+    bump_scale = float(max(0.0, bump_strength))
     lines = [
         "# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt",
         "newmtl wall",
