@@ -8,7 +8,10 @@ from src.generator.procedural.procedural_balcony import export_balcony
 from src.generator.procedural.procedural_entrance import export_entrance, export_entrance_textured
 from src.generator.procedural.procedural_wall import export_wall
 from src.generator.procedural.procedural_wall_window import export_wall_with_window
-from src.generator.procedural.procedural_window import export_window_demo
+from src.generator.procedural.procedural_window import (
+    export_window_demo,
+    export_window_demo_with_procedural_texture_maps,
+)
 
 
 def _no_view_from_json(raw: Any, *, default: bool = True) -> bool:
@@ -81,6 +84,63 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
         elif section == "balcony":
             kwargs["generate_roughness_map"] = gr
 
+    if section == "window":
+        if "use_procedural_maps" in tex:
+            kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])
+        if "material_preset" in tex:
+            kwargs["material_preset"] = str(tex["material_preset"])
+        mapping = {
+            "frame_color_preset": "frame_color_preset",
+            "glass_color_preset": "glass_color_preset",
+            "frame_normal_preset": "frame_normal_preset",
+            "glass_normal_preset": "glass_normal_preset",
+            "tiles_per_side": "procedural_tiles_per_side",
+            "grout_width": "procedural_grout_width",
+        }
+        for src_key, dst_key in mapping.items():
+            if src_key in tex:
+                kwargs[dst_key] = tex[src_key]
+    elif section == "wall":
+        if "use_procedural_maps" in tex:
+            kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])
+        mapping = {
+            "wall_color_preset": "wall_color_preset",
+            "wall_normal_preset": "wall_normal_preset",
+            "tiles_per_side": "procedural_tiles_per_side",
+            "grout_width": "procedural_grout_width",
+        }
+        for src_key, dst_key in mapping.items():
+            if src_key in tex:
+                kwargs[dst_key] = tex[src_key]
+    elif section == "entrance_textured":
+        if "use_procedural_maps" in tex:
+            kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])
+        mapping = {
+            "wall_color_preset": "wall_proc_preset",
+            "roof_color_preset": "roof_proc_preset",
+            "door_color_preset": "door_proc_preset",
+        }
+        for src_key, dst_key in mapping.items():
+            if src_key in tex:
+                kwargs[dst_key] = tex[src_key]
+    elif section == "balcony":
+        if "use_procedural_maps" in tex:
+            kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])
+        mapping = {
+            "wall_lower_color_preset": "wall_lower_proc_preset",
+            "wall_upper_color_preset": "wall_upper_proc_preset",
+            "frame_color_preset": "frame_proc_preset",
+            "glass_color_preset": "glass_proc_preset",
+            "side_basket_color_preset": "side_basket_proc_preset",
+            "side_jamb_color_preset": "side_jamb_proc_preset",
+            "side_separator_color_preset": "side_separator_proc_preset",
+            "tiles_per_side": "procedural_tiles_per_side",
+            "grout_width": "procedural_grout_width",
+        }
+        for src_key, dst_key in mapping.items():
+            if src_key in tex:
+                kwargs[dst_key] = tex[src_key]
+
 
 def _prepare_call(
     payload: Dict[str, Any],
@@ -135,7 +195,11 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
         kwargs.pop("enabled", None)
         _merge_texture_block(kwargs, section="window")
         no_view = _no_view_from_json(kwargs.pop("no_view", True))
-        obj_path = export_window_demo(out_dir=out_dir, **kwargs)
+        use_proc = bool(kwargs.pop("use_procedural_maps", False))
+        if use_proc:
+            obj_path = export_window_demo_with_procedural_texture_maps(out_dir=out_dir, **kwargs)
+        else:
+            obj_path = export_window_demo(out_dir=out_dir, **kwargs)
         out["window"] = obj_path
         if not no_view:
             preview_window_obj_open3d(obj_path)

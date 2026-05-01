@@ -625,9 +625,13 @@ def export_entrance_textured(
     wall_tex: str | Path | None = None,
     roof_tex: str | Path | None = None,
     door_tex: str | Path | None = None,
+    use_procedural_maps: bool = False,
     wall_tex_color: Any = None,
     roof_tex_color: Any = None,
     door_tex_color: Any = None,
+    wall_proc_preset: str | None = None,
+    roof_proc_preset: str | None = None,
+    door_proc_preset: str | None = None,
     generate_normal_map: bool = True,
     generate_roughness_map: bool = True,
     bump_strength: float = 0.7,
@@ -666,6 +670,9 @@ def export_entrance_textured(
         wall_tex_color=wall_tex_color,
         roof_tex_color=roof_tex_color,
         door_tex_color=door_tex_color,
+        wall_proc_preset=wall_proc_preset if use_procedural_maps else None,
+        roof_proc_preset=roof_proc_preset if use_procedural_maps else None,
+        door_proc_preset=door_proc_preset if use_procedural_maps else None,
     )
     work = concatenate_entrance_uv_meshes(mesh_blocks)
     uv_all = np.asarray(work.visual.uv, dtype=np.float64)

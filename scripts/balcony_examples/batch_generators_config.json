@@ -2,7 +2,21 @@
   "balcony": {
     "enabled": true,
     "out_dir": "data/out_batch/balcony",
-    "no_view": true,
+    "no_view": false,
+    "texture": {
+      "use_procedural_maps": true,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "wall_lower_color_preset": "plaster",
+      "wall_upper_color_preset": "vertical_stripes",
+      "frame_color_preset": "wood",
+      "glass_color_preset": "uniform_noise",
+      "side_basket_color_preset": "ceramic_tile",
+      "side_jamb_color_preset": "plaster",
+      "side_separator_color_preset": "wood",
+      "tiles_per_side": 8,
+      "grout_width": 0.06
+    },
     "inner_wall_windows": [
       {
         "u0": 0.04,
@@ -34,12 +48,20 @@
   "entrance": {
     "enabled": false,
     "out_dir": "data/out_batch/entrance",
-    "no_view": true
+    "no_view": false
   },
   "entrance_textured": {
     "enabled": false,
     "out_dir": "data/out_batch/entrance_textured",
-    "no_view": true
+    "no_view": false,
+    "texture": {
+      "use_procedural_maps": true,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "wall_color_preset": "plaster",
+      "roof_color_preset": "wood",
+      "door_color_preset": "ceramic_tile"
+    }
   },
   "window": {
     "enabled": false,
@@ -50,7 +72,15 @@
     "out_dir": "data/out_batch/wall",
     "wall_length": 4.0,
     "wall_thickness": 0.25,
-    "wall_height": 3.0
+    "wall_height": 3.0,
+    "texture": {
+      "use_procedural_maps": true,
+      "wall_color_preset": "ceramic_tile",
+      "wall_normal_preset": "ceramic_tile",
+      "tiles_per_side": 9,
+      "grout_width": 0.055,
+      "bump_strength": 0.8
+    }
   },
   "wall_window": {
     "enabled": false,
