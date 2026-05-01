@@ -60,6 +60,13 @@ from src.generator.procedural.procedural_window import (
 from src.generator.procedural.texturing import make_window_frame_texture, make_window_glass_texture
 from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import faceted_triplanar_uv
+from src.generator.procedural.procedural_texture_maps.procedural_color_texture import (
+    make_ceramic_tile_color_texture,
+    make_plaster_facade_texture,
+    make_uniform_noise_texture,
+    make_vertical_stripes_texture,
+    make_wood_plank_color_texture,
+)
 
 
 # Плитки атласа (слева направо): низ | верх | рама | стекло | бок корзина | бок у окна | перегородка
@@ -421,6 +428,35 @@ def _proc_wall_texture(size: int, base_rgb: Tuple[int, int, int]) -> Image.Image
     return Image.fromarray(np.clip(b, 0, 255).astype(np.uint8), mode="RGB")
 
 
+def _proc_preset_texture(
+    *,
+    size: int,
+    preset: str | None,
+    default_rgb: Tuple[int, int, int],
+    tiles_per_side: int,
+    grout_width: float,
+    seed: int,
+) -> Image.Image:
+    s = max(size, 64)
+    kind = str(preset or "").strip().lower()
+    if kind in ("plaster", "stucco"):
+        return make_plaster_facade_texture(s, base_rgb=default_rgb, seed=seed)
+    if kind in ("uniform_noise", "noise"):
+        return make_uniform_noise_texture(s, base_rgb=default_rgb, noise_sigma=4.0, seed=seed)
+    if kind in ("vertical_stripes", "stripes"):
+        return make_vertical_stripes_texture(s, stripe_period_px=max(8, s // 16), seed=seed)
+    if kind in ("wood", "wood_plank"):
+        return make_wood_plank_color_texture(s, plank_width_px=max(10, s // 18), seed=seed)
+    if kind in ("ceramic", "tile", "ceramic_tile"):
+        return make_ceramic_tile_color_texture(
+            s,
+            tiles_per_side=max(2, int(tiles_per_side)),
+            grout_width_frac=float(max(0.01, min(0.2, grout_width))),
+            seed=seed,
+        )
+    return _proc_wall_texture(s, default_rgb)
+
+
 def make_balcony_atlas(
     *,
     tile: int = 256,
@@ -438,49 +474,115 @@ def make_balcony_atlas(
     side_basket_color: Tuple[int, int, int] | None = None,
     side_jamb_color: Tuple[int, int, int] | None = None,
     side_separator_color: Tuple[int, int, int] | None = None,
+    wall_lower_proc_preset: str | None = None,
+    wall_upper_proc_preset: str | None = None,
+    frame_proc_preset: str | None = None,
+    glass_proc_preset: str | None = None,
+    side_basket_proc_preset: str | None = None,
+    side_jamb_proc_preset: str | None = None,
+    side_separator_proc_preset: str | None = None,
+    procedural_tiles_per_side: int = 8,
+    procedural_grout_width: float = 0.06,
 ) -> Image.Image:
     """Атлас BALCONY_ATLAS_NUM_TILES×1: низ | верх | рама | стекло | бок корзина | бок у окна | перегородка."""
     t = max(tile, 64)
     wl = (
         _open_rgb(Path(wall_lower_path)).resize((t, t), _resample())
         if wall_lower_path and Path(wall_lower_path).expanduser().resolve().is_file()
-        else _proc_wall_texture(t, (168, 158, 148))
+        else _proc_preset_texture(
+            size=t,
+            preset=wall_lower_proc_preset,
+            default_rgb=(168, 158, 148),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=91,
+        )
     )
     wl = apply_texture_color_tint(wl, wall_lower_color)
     wu = (
         _open_rgb(Path(wall_upper_path)).resize((t, t), _resample())
         if wall_upper_path and Path(wall_upper_path).expanduser().resolve().is_file()
-        else _proc_wall_texture(t, (210, 205, 198))
+        else _proc_preset_texture(
+            size=t,
+            preset=wall_upper_proc_preset,
+            default_rgb=(210, 205, 198),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=93,
+        )
     )
     wu = apply_texture_color_tint(wu, wall_upper_color)
     fr = (
         _open_rgb(Path(frame_path)).resize((t, t), _resample())
         if frame_path and Path(frame_path).expanduser().resolve().is_file()
-        else make_window_frame_texture(t)
+        else (
+            make_window_frame_texture(t)
+            if frame_proc_preset is None
+            else _proc_preset_texture(
+                size=t,
+                preset=frame_proc_preset,
+                default_rgb=(225, 225, 225),
+                tiles_per_side=procedural_tiles_per_side,
+                grout_width=procedural_grout_width,
+                seed=95,
+            )
+        )
     )
     fr = apply_texture_color_tint(fr, frame_color)
     gl = (
         _open_rgb(Path(glass_path)).resize((t, t), _resample())
         if glass_path and Path(glass_path).expanduser().resolve().is_file()
-        else make_window_glass_texture(t)
+        else (
+            make_window_glass_texture(t)
+            if glass_proc_preset is None
+            else _proc_preset_texture(
+                size=t,
+                preset=glass_proc_preset,
+                default_rgb=(136, 146, 158),
+                tiles_per_side=procedural_tiles_per_side,
+                grout_width=procedural_grout_width,
+                seed=97,
+            )
+        )
     )
     gl = apply_texture_color_tint(gl, glass_color)
     sb = (
         _open_rgb(Path(side_basket_path)).resize((t, t), _resample())
         if side_basket_path and Path(side_basket_path).expanduser().resolve().is_file()
-        else wl.copy()
+        else _proc_preset_texture(
+            size=t,
+            preset=side_basket_proc_preset,
+            default_rgb=(168, 158, 148),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=101,
+        )
     )
     sb = apply_texture_color_tint(sb, side_basket_color)
     sj = (
         _open_rgb(Path(side_jamb_path)).resize((t, t), _resample())
         if side_jamb_path and Path(side_jamb_path).expanduser().resolve().is_file()
-        else wl.copy()
+        else _proc_preset_texture(
+            size=t,
+            preset=side_jamb_proc_preset,
+            default_rgb=(168, 158, 148),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=103,
+        )
     )
     sj = apply_texture_color_tint(sj, side_jamb_color)
     sep = (
         _open_rgb(Path(side_separator_path)).resize((t, t), _resample())
         if side_separator_path and Path(side_separator_path).expanduser().resolve().is_file()
-        else _proc_wall_texture(t, (140, 136, 130))
+        else _proc_preset_texture(
+            size=t,
+            preset=side_separator_proc_preset,
+            default_rgb=(140, 136, 130),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=107,
+        )
     )
     sep = apply_texture_color_tint(sep, side_separator_color)
     n = BALCONY_ATLAS_NUM_TILES
@@ -2466,6 +2568,16 @@ def export_balcony(
     side_basket_tex: str | Path | None = None,
     side_jamb_tex: str | Path | None = None,
     side_separator_tex: str | Path | None = None,
+    use_procedural_maps: bool = False,
+    wall_lower_proc_preset: str | None = None,
+    wall_upper_proc_preset: str | None = None,
+    frame_proc_preset: str | None = None,
+    glass_proc_preset: str | None = None,
+    side_basket_proc_preset: str | None = None,
+    side_jamb_proc_preset: str | None = None,
+    side_separator_proc_preset: str | None = None,
+    procedural_tiles_per_side: int = 8,
+    procedural_grout_width: float = 0.06,
     generate_normal_map: bool = True,
     generate_roughness_map: bool = True,
     bump_strength: float = 0.7,
@@ -2554,6 +2666,15 @@ def export_balcony(
         side_basket_color=sb_c,
         side_jamb_color=sj_c,
         side_separator_color=sep_c,
+        wall_lower_proc_preset=wall_lower_proc_preset if use_procedural_maps else None,
+        wall_upper_proc_preset=wall_upper_proc_preset if use_procedural_maps else None,
+        frame_proc_preset=frame_proc_preset if use_procedural_maps else None,
+        glass_proc_preset=glass_proc_preset if use_procedural_maps else None,
+        side_basket_proc_preset=side_basket_proc_preset if use_procedural_maps else None,
+        side_jamb_proc_preset=side_jamb_proc_preset if use_procedural_maps else None,
+        side_separator_proc_preset=side_separator_proc_preset if use_procedural_maps else None,
+        procedural_tiles_per_side=procedural_tiles_per_side,
+        procedural_grout_width=procedural_grout_width,
     )
     tex_name = "balcony_atlas.png"
     tex_path = out_dir / tex_name

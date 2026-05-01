@@ -11,6 +11,13 @@ import trimesh
 from PIL import Image
 
 from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
+from src.generator.procedural.procedural_texture_maps.procedural_color_texture import (
+    make_ceramic_tile_color_texture,
+    make_plaster_facade_texture,
+    make_uniform_noise_texture,
+    make_vertical_stripes_texture,
+    make_wood_plank_color_texture,
+)
 
 ENTRANCE_ATLAS_NUM_TILES = 3
 TILE_WALL = 0
@@ -43,6 +50,22 @@ def _proc_tile_rgb(tile_i: int, rgb: Tuple[int, int, int], size: int) -> Image.I
     return Image.fromarray(np.clip(b, 0, 255).astype(np.uint8), mode="RGB")
 
 
+def _proc_tile_preset(tile_i: int, preset: str | None, size: int, default_rgb: Tuple[int, int, int]) -> Image.Image:
+    s = max(int(size), 64)
+    kind = str(preset or "").strip().lower()
+    if kind in ("plaster", "stucco"):
+        return make_plaster_facade_texture(s, base_rgb=default_rgb, seed=41 + tile_i * 17)
+    if kind in ("uniform_noise", "noise"):
+        return make_uniform_noise_texture(s, base_rgb=default_rgb, noise_sigma=6.0, seed=53 + tile_i * 19)
+    if kind in ("vertical_stripes", "stripes"):
+        return make_vertical_stripes_texture(s, stripe_period_px=max(8, s // 16), seed=67 + tile_i * 13)
+    if kind in ("wood", "wood_plank"):
+        return make_wood_plank_color_texture(s, plank_width_px=max(10, s // 18), seed=71 + tile_i * 11)
+    if kind in ("ceramic", "tile", "ceramic_tile"):
+        return make_ceramic_tile_color_texture(s, tiles_per_side=max(6, s // 64), grout_width_frac=0.06, seed=89 + tile_i * 7)
+    return _proc_tile_rgb(tile_i, default_rgb, s)
+
+
 def _open_rgb_resize(path: Path | str, size: int) -> Image.Image:
     im = Image.open(path)
     if im.mode not in ("RGB", "RGBA"):
@@ -67,6 +90,9 @@ def make_entrance_atlas(
     wall_tex_color: Any = None,
     roof_tex_color: Any = None,
     door_tex_color: Any = None,
+    wall_proc_preset: str | None = None,
+    roof_proc_preset: str | None = None,
+    door_proc_preset: str | None = None,
 ) -> Image.Image:
     """Горизонтальный атлас: [стена | крыша | дверь].
 
@@ -77,6 +103,7 @@ def make_entrance_atlas(
     paths = (wall_tex, roof_tex, door_tex)
     color_specs = (wall_tex_color, roof_tex_color, door_tex_color)
     defaults = ((150, 142, 132), (120, 128, 140), (92, 72, 58))
+    presets = (wall_proc_preset, roof_proc_preset, door_proc_preset)
     tints = tuple(parse_texture_color_tint(c) for c in color_specs)
     tiles: List[Image.Image] = []
     for i, (p, rgb) in enumerate(zip(paths, defaults)):
@@ -85,7 +112,7 @@ def make_entrance_atlas(
             if pp.is_file():
                 tiles.append(apply_texture_color_tint(_open_rgb_resize(pp, t), tints[i]))
                 continue
-        tiles.append(apply_texture_color_tint(_proc_tile_rgb(i, rgb, t), tints[i]))
+        tiles.append(apply_texture_color_tint(_proc_tile_preset(i, presets[i], t, rgb), tints[i]))
     w = t * ENTRANCE_ATLAS_NUM_TILES
     out = Image.new("RGB", (w, t))
     for i, im in enumerate(tiles):

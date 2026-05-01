@@ -1,0 +1,28 @@
+{
+  "window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/window_proc_maps_demo",
+    "no_view": false,
+    "width": 1.45,
+    "height": 1.62,
+    "depth": 0.24,
+    "profile": "rect",
+    "kind": "fixed",
+    "mullions_vertical": 2,
+    "mullions_horizontal": 1,
+    "atlas_half_size": 384,
+    "texture": {
+      "use_procedural_maps": true,
+      "bump_strength": 0.8,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "material_preset": "plaster",
+      "frame_color_preset": "ceramic_tile",
+      "glass_color_preset": "uniform_noise",
+      "frame_normal_preset": "ceramic_tile",
+      "glass_normal_preset": "soft_frosted",
+      "tiles_per_side": 9,
+      "grout_width": 0.055
+    }
+  }
+}
