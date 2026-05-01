@@ -32,11 +32,43 @@ Optional diffuse tint for texture map paths (multiplies RGB in the atlas / wall 
 - Use JSON array of three numbers per slot, e.g. ``[220, 200, 180]`` (0–255) or ``[0.86, 0.78, 0.71]`` (0–1).
 - Parsed in code as ``parse_texture_color_tint``; see section-specific key names below (``*_tex_color``, ``frame_texture_color``, etc.).
 
+Optional nested object for PBR/MTL texture settings (read by the orchestrator, not passed through as a raw key):
+- texture: object with optional fields:
+  - bump_strength: float (MTL map_Bump -bm; default in exporters 0.7, Blender-like strength)
+  - normal_strength: alias for bump_strength
+  - generate_normal: bool (section-specific: maps to generate_normal_atlas / generate_normal_maps / generate_normal_map)
+  - generate_roughness: bool (section-specific: maps to generate_roughness_atlas / generate_roughness_maps / generate_roughness_map)
+- Additional ``window``-only procedural map fields:
+  - use_procedural_maps: bool (if true, batch calls ``export_window_demo_with_procedural_texture_maps``)
+  - material_preset: string (quick alias: ``"plaster"`` or ``"wood"``)
+  - frame_color_preset: string (``plaster`` | ``uniform_noise`` | ``vertical_stripes`` | ``wood`` | ``ceramic_tile``)
+  - glass_color_preset: string (same accepted values as frame color preset)
+  - frame_normal_preset: string (``fine_noise`` | ``stucco_like`` | ``wood_grain`` | ``ceramic_tile`` | ``flat`` | ``soft_frosted``)
+  - glass_normal_preset: string (same accepted values as frame normal preset)
+  - tiles_per_side: int (for ``ceramic_tile`` presets)
+  - grout_width: float in [0.01..0.2] (for ``ceramic_tile`` presets)
+- Additional ``wall`` procedural map fields:
+  - use_procedural_maps: bool (if true and ``wall_texture`` missing -> procedural diffuse/normal/roughness are generated)
+  - wall_color_preset: string (``plaster`` | ``uniform_noise`` | ``vertical_stripes`` | ``wood`` | ``ceramic_tile``)
+  - wall_normal_preset: string (``stucco_like`` | ``fine_noise`` | ``wood_grain`` | ``ceramic_tile``)
+  - tiles_per_side / grout_width: ceramic tuning (same meaning as above)
+- Additional ``entrance_textured`` procedural fields:
+  - use_procedural_maps: bool (enables preset selection for missing wall/roof/door texture slots)
+  - wall_color_preset / roof_color_preset / door_color_preset:
+    ``plaster`` | ``uniform_noise`` | ``vertical_stripes`` | ``wood`` | ``ceramic_tile``
+- Additional ``balcony`` procedural fields:
+  - use_procedural_maps: bool (enables preset selection for missing atlas texture slots)
+  - wall_lower_color_preset, wall_upper_color_preset, frame_color_preset, glass_color_preset,
+    side_basket_color_preset, side_jamb_color_preset, side_separator_color_preset
+    (same accepted values as entrance/window color presets)
+  - tiles_per_side / grout_width: ceramic tuning for slots using ``ceramic_tile``
+For ``wall``, ``entrance_textured`` and ``balcony`` the nested ``texture`` block now also supports procedural preset keys listed above.
+
 How common fields work:
 - If enabled=false -> section is skipped
 - If out_dir/output is missing -> default path is used:
   <out_root>/<section_name>
-- All remaining keys in section are passed directly to the export function.
+- All remaining keys in section, except the ``texture`` object (consumed and flattened as above), are passed directly to the export function.
 
 
 3) Section: balcony
@@ -188,6 +220,11 @@ Supported arguments:
 - frame_texture_color, glass_texture_color (optional RGB arrays)
 - atlas_half_size: int
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export (pip install open3d).
+- texture (optional nested object, see §2). For window this can also switch procedural map mode:
+  - ``texture.use_procedural_maps: true`` enables procedural diffuse/normal maps from ``procedural_texture_maps``.
+  - You can choose per-side presets with ``frame_color_preset`` / ``glass_color_preset`` and
+    ``frame_normal_preset`` / ``glass_normal_preset``.
+  - Ceramic presets can be tuned with ``tiles_per_side`` and ``grout_width``.
 
 Note:
 - export_window_demo() has no no_view in its signature; procedural_batch_runner strips no_view and calls preview separately.
@@ -206,6 +243,8 @@ Required arguments (must be provided when section enabled):
 Optional arguments:
 - wall_texture: string path or null
 - wall_texture_color (optional RGB array as above)
+- texture (optional nested object, see §2). ``texture.use_procedural_maps=true`` allows wall export without external PNG:
+  choose ``wall_color_preset`` + ``wall_normal_preset`` and optional ceramic tuning (``tiles_per_side``, ``grout_width``).
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export.
 
 
@@ -237,11 +276,68 @@ Optional arguments:
 - wall_texture: string path or null
 - frame_texture_color, glass_texture_color, wall_texture_color (optional RGB arrays)
 - atlas_half_size: int
+- texture (optional nested object, see §2): supports only common PBR flags here
+  (``bump_strength``, ``generate_normal``, ``generate_roughness``); no dedicated preset keys yet.
 - no_view: bool (batch runner only; default true). If false, Open3D preview after export.
 
 
-9) Minimal config example
--------------------------
+9) Procedural textures (modules vs batch JSON)
+----------------------------------------------
+Two code areas produce or assemble textures:
+
+A) ``src/generator/procedural/texturing``
+   - Window assets (``window_texture_assets.py``): procedural ``window_frame.png`` / ``window_glass.png`` / horizontal atlas
+     (left half UV = frame, right half = glass). Optional user images via ``make_atlas_from_sources``; optional RGB tint
+     (``parse_texture_color_tint`` / ``apply_texture_color_tint``). Normal atlas: ``make_normal_atlas_from_sources`` (uses
+     ``procedural_texture_maps`` for default frame normal; flat normal for default glass). Roughness atlas:
+     ``make_window_roughness_atlas`` (matte frame, smooth glass).
+   - Surface PBR packs (``surface_texture_assets.py``): procedural albedo + normal + roughness for ``wall_rough``,
+     ``wall_cracked``, ``wall_plaster``, ``roof_shingles``, ``tile_ceramic`` written as ``<name>_{albedo,normal,roughness}.png``
+     under ``data/textures/``. Not wired into the batch orchestrator by name; run as a separate CLI to pre-generate files,
+     then point ``wall_texture`` / balcony paths at those PNGs if needed.
+   - Entrance atlas (``entrance_atlas.py``): single horizontal texture [wall | roof | door]; if a path is missing or not a file,
+     that tile is filled with a simple procedural RGB patch (noise on a default color), still with optional ``*_tex_color`` tint.
+   - Wall+window export helpers: ``wall_window_obj_export.py`` (OBJ/MTL), ``pbr_map_utils.py`` (approximate normal/roughness
+     from albedo luminance), ``height_map_paths.py`` (resolve height/displacement PNG paths under ``assets/height_maps`` or
+     ``data/textures/height_maps``).
+
+B) ``src/generator/procedural/procedural_texture_maps``
+   - Pure generators: RGB (plaster, noise, stripes, wood plank color, ceramic tile) and tangent-space normal maps
+     (stucco-like, fine noise, wood grain, frosted glass, flat, ceramic tile) built in memory without saving a height map
+     as the main product. See package ``__init__.py``
+     for the exported symbol list.
+   - Used indirectly by window normal atlas defaults and by window procedural mode
+     ``export_window_demo_with_procedural_texture_maps`` in ``procedural_window.py`` (CLI flags ``--procedural-maps`` /
+     ``--procedural-wood`` and JSON key ``window.texture.use_procedural_maps`` in batch).
+
+Batch / orchestrator behavior (no extra JSON keys required for “default procedural”):
+- ``window`` / ``wall_window``: omit ``frame_texture`` and ``glass_texture`` (or use paths that do not exist) → exporter falls
+  back to procedural window PNGs from ``data/textures`` (via ``ensure_window_textures``) or mixed procedural + user images in
+  ``make_atlas_from_sources``. Optional nested ``texture`` object still controls ``generate_normal`` → ``generate_normal_atlas``
+  / ``generate_normal_maps`` and ``generate_roughness`` → ``generate_roughness_atlas`` / ``generate_roughness_maps`` (see §2).
+- ``window`` (extended): set ``texture.use_procedural_maps=true`` to build frame/glass diffuse+normal from
+  ``procedural_texture_maps`` with JSON-controlled presets (``*_color_preset``, ``*_normal_preset``); ceramic presets
+  can be tuned with ``tiles_per_side`` and ``grout_width``.
+- ``entrance_textured``: omit ``wall_tex`` / ``roof_tex`` / ``door_tex`` where you want the built-in procedural tile for that
+  slot; valid file paths override the procedural tile.
+  With ``texture.use_procedural_maps=true`` you can choose procedural color presets per slot:
+  ``wall_color_preset`` / ``roof_color_preset`` / ``door_color_preset``.
+- ``wall``: ``wall_texture`` optional; if set, companion ``*_normal.png`` / ``*_roughness.png`` can be inferred from filename
+  (see ``procedural_wall``).
+  With ``texture.use_procedural_maps=true`` wall diffuse/normal/roughness can be generated in-place
+  from ``procedural_texture_maps`` presets, without external files.
+- ``balcony``: texture paths are all optional; missing slots use procedural fallbacks inside ``export_balcony`` (per module logic).
+  ``texture.generate_normal`` / ``generate_roughness`` map to companion maps for the atlas where implemented.
+  With ``texture.use_procedural_maps=true`` you can select per-slot procedural color presets for missing textures.
+
+CLI pre-generation (optional):
+- ``python -m src.generator.procedural.texturing.window_texture_assets [--force]`` — ensure default window PNGs under
+  ``data/textures``.
+- ``python -m src.generator.procedural.texturing.surface_texture_assets [--size N] [--force] ...`` — regenerate surface PBR packs.
+
+
+10) Minimal config example
+--------------------------
 {
   "balcony": {
     "enabled": true,
@@ -259,3 +355,5 @@ Optional arguments:
 Ready-made example with texture tint keys (paths under data/textures/):
 - scripts/balcony_examples/batch_texture_tint_demo.json
   Run ``python -m src.generator.procedural.texturing.window_texture_assets`` once from repo root if PNGs are missing.
+Ready-made example with procedural presets in JSON:
+- scripts/balcony_examples/batch_procedural_texture_maps_demo.json

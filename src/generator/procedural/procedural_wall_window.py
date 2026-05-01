@@ -49,11 +49,13 @@ from src.generator.procedural.procedural_window import (
 from src.generator.procedural.texturing import (
     ensure_window_textures,
     make_atlas_from_sources,
+    make_window_roughness_atlas,
     resolve_texture_path,
     write_wall_window_mtl,
     write_wall_window_obj,
 )
 from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
+from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import frame_glass_atlas_uv_mesh, wall_mesh_expanded_uv
 
 _DEFAULT_WALL_WIN_DIR = _REPO_ROOT / "data" / "wall_window_export"
@@ -174,10 +176,17 @@ def export_wall_with_window(
     frame_texture: str | Path | None = None,
     glass_texture: str | Path | None = None,
     wall_texture: str | Path | None = None,
+    wall_normal_texture: str | Path | None = None,
+    wall_roughness_texture: str | Path | None = None,
+    frame_normal_texture: str | Path | None = None,
+    glass_normal_texture: str | Path | None = None,
     frame_texture_color: Any = None,
     glass_texture_color: Any = None,
     wall_texture_color: Any = None,
     atlas_half_size: int = 512,
+    generate_normal_maps: bool = True,
+    generate_roughness_maps: bool = True,
+    bump_strength: float = 0.7,
 ) -> Path:
     """Экспорт wall_window.obj + wall_window.mtl + window_atlas.png (стена без атласа; окно с атласом)."""
     out_dir = Path(out_dir or _DEFAULT_WALL_WIN_DIR).resolve()
@@ -202,6 +211,29 @@ def export_wall_with_window(
     else:
         paths = ensure_window_textures(_REPO_ROOT / "data" / "textures")
         shutil.copyfile(paths["atlas"], tex_path)
+
+    window_normal_name: str | None = None
+    window_roughness_name: str | None = None
+    if generate_normal_maps:
+        window_normal_name = "window_normal_atlas.png"
+        fn = resolve_texture_path(frame_normal_texture)
+        gn = resolve_texture_path(glass_normal_texture)
+        wn_path = out_dir / window_normal_name
+        if fn is not None or gn is not None:
+            from src.generator.procedural.texturing import make_normal_atlas_from_sources
+
+            make_normal_atlas_from_sources(frame_path=fn, glass_path=gn, half_size=max(atlas_half_size, 64)).save(wn_path)
+        else:
+            make_normal_map_from_albedo(Image.open(tex_path).convert("RGB"), strength=3.6).save(wn_path)
+    if generate_roughness_maps:
+        window_roughness_name = "window_roughness_atlas.png"
+        wr_path = out_dir / window_roughness_name
+        if fp is not None or gp is not None:
+            make_roughness_map_from_albedo(Image.open(tex_path).convert("RGB"), min_roughness=0.25, max_roughness=0.9).save(
+                wr_path
+            )
+        else:
+            make_window_roughness_atlas(max(atlas_half_size, 64)).save(wr_path)
 
     b = build_wall_with_window(
         wall_length=wall_length,
@@ -229,6 +261,8 @@ def export_wall_with_window(
     if wall_texture is not None and wp is None:
         print(f"[warn] wall_texture missing, wall without map: {wall_texture}")
     wall_tex_name: str | None = None
+    wall_normal_name: str | None = None
+    wall_roughness_name: str | None = None
     if wp is not None:
         wall_tex_name = f"wall_diffuse{wp.suffix.lower()}"
         wt = parse_texture_color_tint(wall_texture_color)
@@ -243,6 +277,26 @@ def export_wall_with_window(
             T=float(wall_thickness),
             H=float(wall_height),
         )
+        wn = resolve_texture_path(wall_normal_texture)
+        wr = resolve_texture_path(wall_roughness_texture)
+        if wn is None and wp.stem.endswith("_albedo"):
+            cand = wp.with_name(wp.stem[: -len("_albedo")] + "_normal" + wp.suffix)
+            wn = cand if cand.is_file() else None
+        if wr is None and wp.stem.endswith("_albedo"):
+            cand = wp.with_name(wp.stem[: -len("_albedo")] + "_roughness" + wp.suffix)
+            wr = cand if cand.is_file() else None
+        if generate_normal_maps and wn is not None:
+            wall_normal_name = f"wall_normal{wn.suffix.lower()}"
+            Image.open(wn).convert("RGB").save(out_dir / wall_normal_name)
+        elif generate_normal_maps:
+            wall_normal_name = "wall_normal.png"
+            make_normal_map_from_albedo(wim, strength=3.2).save(out_dir / wall_normal_name)
+        if generate_roughness_maps and wr is not None:
+            wall_roughness_name = f"wall_roughness{wr.suffix.lower()}"
+            Image.open(wr).convert("RGB").save(out_dir / wall_roughness_name)
+        elif generate_roughness_maps:
+            wall_roughness_name = "wall_roughness.png"
+            make_roughness_map_from_albedo(wim, min_roughness=0.35, max_roughness=0.92).save(out_dir / wall_roughness_name)
     else:
         wv = np.asarray(b.wall.vertices, dtype=np.float64)
         wf = np.asarray(b.wall.faces, dtype=np.int64)
@@ -255,7 +309,16 @@ def export_wall_with_window(
     mtl_name = "wall_window.mtl"
     mtl_path = out_dir / mtl_name
     obj_path = out_dir / "wall_window.obj"
-    write_wall_window_mtl(mtl_path, window_atlas=tex_name, wall_tex=wall_tex_name)
+    write_wall_window_mtl(
+        mtl_path,
+        window_atlas=tex_name,
+        wall_tex=wall_tex_name,
+        wall_normal_tex=wall_normal_name,
+        wall_roughness_tex=wall_roughness_name,
+        window_normal_tex=window_normal_name,
+        window_roughness_tex=window_roughness_name,
+        bump_strength=bump_strength,
+    )
     write_wall_window_obj(obj_path, mtl_name, wv, wf, wuv, win_v, win_f, win_uv)
 
     stale = out_dir / "material.mtl"

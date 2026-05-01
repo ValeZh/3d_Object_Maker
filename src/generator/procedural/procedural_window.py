@@ -43,8 +43,10 @@ from src.generator.procedural.texturing import (
     ensure_window_textures,
     make_atlas_from_sources,
     make_normal_atlas_from_sources,
+    make_window_roughness_atlas,
     resolve_texture_path,
 )
+from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import faceted_triplanar_uv, frame_glass_atlas_uv_mesh
 
 Profile = Literal["rect", "arch", "round"]
@@ -490,6 +492,11 @@ def export_window_demo(
     frame_texture_color: Any = None,
     glass_texture_color: Any = None,
     atlas_half_size: int = 512,
+    frame_normal_texture: str | Path | None = None,
+    glass_normal_texture: str | Path | None = None,
+    generate_normal_atlas: bool = True,
+    generate_roughness_atlas: bool = True,
+    bump_strength: float = 0.7,
 ) -> Path:
     """Экспорт window.obj + MTL + атлас (для батча и CLI export)."""
     p = resolve_window_frame_glass_params(
@@ -533,6 +540,25 @@ def export_window_demo(
         shutil.copyfile(paths["atlas"], tex_path)
         src_note = f"{paths['frame'].name} + {paths['glass'].name} (data/textures)"
 
+    norm_name = "window_normal_atlas.png"
+    rough_name = "window_roughness_atlas.png"
+    norm_path = out_dir / norm_name
+    rough_path = out_dir / rough_name
+    if generate_normal_atlas:
+        fn = resolve_texture_path(frame_normal_texture)
+        gn = resolve_texture_path(glass_normal_texture)
+        if fn is not None or gn is not None:
+            make_normal_atlas_from_sources(frame_path=fn, glass_path=gn, half_size=max(atlas_half_size, 64)).save(norm_path)
+        else:
+            make_normal_map_from_albedo(Image.open(tex_path).convert("RGB"), strength=3.8).save(norm_path)
+    if generate_roughness_atlas:
+        if fp is not None or gp is not None:
+            make_roughness_map_from_albedo(
+                Image.open(tex_path).convert("RGB"), min_roughness=0.25, max_roughness=0.9
+            ).save(rough_path)
+        else:
+            make_window_roughness_atlas(max(atlas_half_size, 64)).save(rough_path)
+
     ft = _frame_thickness(p.width, p.height)
     glass_t = max(p.depth * 0.12, 0.004)
 
@@ -568,6 +594,12 @@ def export_window_demo(
         txt = re.sub(r"(?m)^Ka\s+.*$", "Ka 1 1 1", txt)
         txt = re.sub(r"(?m)^Kd\s+.*$", "Kd 1 1 1", txt)
         txt = re.sub(r"(?m)^Ks\s+.*$", "Ks 0 0 0", txt)
+        low = txt.lower()
+        if generate_normal_atlas and "map_bump" not in low and "map_kn" not in low:
+            bm = float(max(0.0, bump_strength))
+            txt = txt.rstrip() + f"\nmap_Bump -bm {bm:.3f} {norm_name}\n"
+        if generate_roughness_atlas and "map_pr" not in low:
+            txt = txt.rstrip() + f"\nmap_Pr {rough_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")
 
     print(f"[OK] Window export: {obj_path}")
@@ -581,24 +613,37 @@ def export_window_demo_with_procedural_texture_maps(
     *,
     atlas_half_size: int = 512,
     material_preset: str = "plaster",
+    frame_color_preset: str | None = None,
+    glass_color_preset: str | None = None,
+    frame_normal_preset: str | None = None,
+    glass_normal_preset: str | None = None,
+    procedural_tiles_per_side: int = 8,
+    procedural_grout_width: float = 0.06,
     **kwargs: Any,
 ) -> Path:
     """
     Процедурные diffuse и normal (``procedural_texture_maps``), экспорт ``window.obj`` + атлас;
     в ``material.mtl`` — ``map_Bump`` на ``window_normal_atlas.png``.
 
-    ``material_preset``: ``"plaster"`` или ``"wood"``. Нормали: рельеф только на раме; для стекла —
-    плоская однотонная нормаль (без «бугорков»).
+    ``material_preset``: короткий preset-алиас:
+      - ``"plaster"`` => frame(plaster/fine_noise), glass(uniform_noise/flat)
+      - ``"wood"`` => frame(wood/wood_grain), glass(uniform_noise/flat)
+      Любой явный ``*_preset`` имеет приоритет над ``material_preset``.
     ``kwargs`` — как у ``export_window_demo``, кроме ``frame_texture`` / ``glass_texture`` (игнорируются).
     """
     from src.generator.procedural.procedural_texture_maps.normal_map import (
+        make_ceramic_tile_normal_map,
         make_fine_noise_normal_map,
         make_neutral_flat_normal_map,
+        make_soft_frosted_glass_normal_map,
+        make_stucco_like_normal_map,
         make_wood_grain_normal_map,
     )
     from src.generator.procedural.procedural_texture_maps.procedural_color_texture import (
+        make_ceramic_tile_color_texture,
         make_plaster_facade_texture,
         make_uniform_noise_texture,
+        make_vertical_stripes_texture,
         make_wood_plank_color_texture,
     )
 
@@ -609,25 +654,86 @@ def export_window_demo_with_procedural_texture_maps(
     if preset not in ("plaster", "wood"):
         preset = "plaster"
 
+    def _pick(name: str | None, default: str) -> str:
+        s = str(name).lower().strip() if name is not None else default
+        return s or default
+
+    if preset == "wood":
+        def_frame_color = "wood"
+        def_glass_color = "uniform_noise"
+        def_frame_normal = "wood_grain"
+        def_glass_normal = "flat"
+    else:
+        def_frame_color = "plaster"
+        def_glass_color = "uniform_noise"
+        def_frame_normal = "fine_noise"
+        def_glass_normal = "flat"
+
+    frame_color_kind = _pick(frame_color_preset, def_frame_color)
+    glass_color_kind = _pick(glass_color_preset, def_glass_color)
+    frame_normal_kind = _pick(frame_normal_preset, def_frame_normal)
+    glass_normal_kind = _pick(glass_normal_preset, def_glass_normal)
+    n_tiles = max(2, int(procedural_tiles_per_side))
+    grout_w = float(max(0.01, min(0.2, procedural_grout_width)))
+
     pf = out_dir / "proc_window_frame_rgb.png"
     pg = out_dir / "proc_window_glass_rgb.png"
     pfn = out_dir / "proc_window_frame_normal.png"
     pgn = out_dir / "proc_window_glass_normal.png"
-    if preset == "wood":
-        make_wood_plank_color_texture(half, plank_width_px=max(12, half // 18), seed=21).save(pf)
-        make_uniform_noise_texture(
-            half,
-            base_rgb=(118, 128, 138),
-            noise_sigma=4.0,
-            seed=33,
-        ).save(pg)
-        make_wood_grain_normal_map(half, plank_width_px=max(12, half // 18), seed=41).save(pfn)
-        make_neutral_flat_normal_map(half).save(pgn)
-    else:
-        make_plaster_facade_texture(half, seed=21).save(pf)
-        make_uniform_noise_texture(half, base_rgb=(128, 136, 148), noise_sigma=5.0, seed=33).save(pg)
-        make_fine_noise_normal_map(half, strength=12.0, seed=41).save(pfn)
-        make_neutral_flat_normal_map(half).save(pgn)
+    def _make_color(kind: str, *, for_glass: bool) -> Image.Image:
+        if kind == "plaster":
+            return make_plaster_facade_texture(half, seed=21 if not for_glass else 31)
+        if kind == "uniform_noise":
+            return make_uniform_noise_texture(
+                half,
+                base_rgb=(128, 136, 148) if for_glass else (152, 148, 138),
+                noise_sigma=5.0 if for_glass else 4.0,
+                seed=33 if for_glass else 23,
+            )
+        if kind == "vertical_stripes":
+            return make_vertical_stripes_texture(
+                half,
+                stripe_period_px=max(8, half // 16),
+                rgb_a=(122, 116, 108),
+                rgb_b=(148, 140, 131),
+                seed=27 if not for_glass else 37,
+            )
+        if kind == "wood":
+            return make_wood_plank_color_texture(half, plank_width_px=max(12, half // 18), seed=21 if not for_glass else 35)
+        if kind in ("ceramic", "tile", "ceramic_tile"):
+            return make_ceramic_tile_color_texture(
+                half,
+                tiles_per_side=n_tiles,
+                grout_width_frac=grout_w,
+                tile_rgb=(188, 194, 202),
+                grout_rgb=(126, 126, 124),
+                seed=73 if not for_glass else 83,
+            )
+        return make_plaster_facade_texture(half, seed=21 if not for_glass else 31)
+
+    def _make_normal(kind: str) -> Image.Image:
+        if kind in ("flat", "neutral"):
+            return make_neutral_flat_normal_map(half)
+        if kind in ("frosted", "soft_frosted"):
+            return make_soft_frosted_glass_normal_map(half, strength=1.8, seed=201)
+        if kind in ("stucco", "stucco_like"):
+            return make_stucco_like_normal_map(half, strength=3.2, coarse_grid=16, seed=19)
+        if kind in ("wood", "wood_grain"):
+            return make_wood_grain_normal_map(half, plank_width_px=max(12, half // 18), seed=41)
+        if kind in ("ceramic", "tile", "ceramic_tile"):
+            return make_ceramic_tile_normal_map(
+                half,
+                tiles_per_side=n_tiles,
+                grout_width_frac=grout_w,
+                slope_strength=7.5,
+                seed=97,
+            )
+        return make_fine_noise_normal_map(half, strength=12.0, seed=41)
+
+    _make_color(frame_color_kind, for_glass=False).save(pf)
+    _make_color(glass_color_kind, for_glass=True).save(pg)
+    _make_normal(frame_normal_kind).save(pfn)
+    _make_normal(glass_normal_kind).save(pgn)
 
     kw = dict(kwargs)
     kw.pop("frame_texture", None)
@@ -654,6 +760,11 @@ def export_window_demo_with_procedural_texture_maps(
             txt = txt.rstrip() + f"\nmap_Bump {norm_name}\n"
         mtl_path.write_text(txt, encoding="utf-8")
     print(f"     Procedural normal atlas: {out_dir / norm_name}")
+    print(
+        "     Procedural presets: "
+        f"frame={frame_color_kind}/{frame_normal_kind}, "
+        f"glass={glass_color_kind}/{glass_normal_kind}"
+    )
     return obj_path
 
 

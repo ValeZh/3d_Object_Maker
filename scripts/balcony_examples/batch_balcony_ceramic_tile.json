@@ -1,0 +1,62 @@
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/balcony_ceramic_tile",
+    "no_view": false,
+    "window_mode": "none",
+    "front_window_mode": "with_glass",
+    "mullions_vertical": 2,
+    "mullions_horizontal": 0,
+    "mullion_offset_x": 0.0,
+    "mullion_offset_z": 0.0,
+    "window_depth": 0.14,
+    "window_kind": "fixed",
+    "texture": {
+      "use_procedural_maps": true,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "bump_strength": 0.65,
+      "wall_lower_color_preset": "ceramic_tile",
+      "wall_upper_color_preset": "ceramic_tile",
+      "frame_color_preset": "wood",
+      "glass_color_preset": "uniform_noise",
+      "side_basket_color_preset": "ceramic_tile",
+      "side_jamb_color_preset": "ceramic_tile",
+      "side_separator_color_preset": "ceramic_tile",
+      "tiles_per_side": 10,
+      "grout_width": 0.055
+    },
+    "inner_wall_windows": [
+      {
+        "u0": 0.06,
+        "u1": 0.24,
+        "z_bottom": 1.45,
+        "z_top": 1.95,
+        "window_mode": "with_glass",
+        "mullions_vertical": 1,
+        "mullions_horizontal": 0,
+        "window_depth": 0.14,
+        "window_kind": "fixed"
+      }
+    ],
+    "inner_wall_doors": [
+      {
+        "u0": 0.32,
+        "u1": 0.68,
+        "z_bottom": 0.02,
+        "z_top": 2.12,
+        "style": "french",
+        "frame_width": 0.09,
+        "frame_depth": 0.08,
+        "leaf_gap": 0.025,
+        "midrail_z_frac": 0.58,
+        "y_outer": 0.06
+      }
+    ]
+  },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false }
+}

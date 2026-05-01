@@ -123,3 +123,48 @@ def make_wood_plank_color_texture(
     rgb[..., 2] += grain * 20.0 + grain2 * 16.0
     rgb += rng.normal(0.0, 2.2, (s, s, 3)).astype(np.float64)
     return Image.fromarray(np.clip(rgb, 0.0, 255.0).astype(np.uint8), mode="RGB")
+
+
+def make_ceramic_tile_color_texture(
+    size: int = 512,
+    *,
+    tiles_per_side: int = 8,
+    grout_width_frac: float = 0.06,
+    tile_rgb: Tuple[int, int, int] = (188, 194, 202),
+    grout_rgb: Tuple[int, int, int] = (126, 126, 124),
+    tile_variation: float = 10.0,
+    seed: int = 73,
+) -> Image.Image:
+    """Керамическая плитка: сетка тайлов, швы-затирка и небольшой шум внутри плитки."""
+    s = _ensure_size(size)
+    rng = np.random.default_rng(seed)
+    n = max(2, int(tiles_per_side))
+    gw = float(np.clip(grout_width_frac, 0.01, 0.24))
+
+    yy, xx = np.mgrid[0:s, 0:s]
+    fx = (xx / max(s - 1, 1)) * n
+    fy = (yy / max(s - 1, 1)) * n
+    frac_x = fx - np.floor(fx)
+    frac_y = fy - np.floor(fy)
+    edge_x = np.minimum(frac_x, 1.0 - frac_x)
+    edge_y = np.minimum(frac_y, 1.0 - frac_y)
+    edge = np.minimum(edge_x, edge_y)
+    in_grout = edge < (gw * 0.5)
+
+    tile = np.array(tile_rgb, dtype=np.float64).reshape(1, 1, 3)
+    grout = np.array(grout_rgb, dtype=np.float64).reshape(1, 1, 3)
+    rgb = np.broadcast_to(tile, (s, s, 3)).copy()
+
+    # Subtle per-tile brightness offset for less repetitive look.
+    tile_id_x = np.floor(fx).astype(np.int32)
+    tile_id_y = np.floor(fy).astype(np.int32)
+    tile_jitter = ((tile_id_x * 92821 + tile_id_y * 68917 + int(seed) * 313) % 97) / 96.0 - 0.5
+    rgb += tile_jitter[:, :, None] * float(tile_variation)
+
+    # Soft highlight in tile centers to mimic slight curvature/glaze.
+    center_shape = 1.0 - np.clip((edge / 0.5) * 2.0, 0.0, 1.0)
+    rgb += center_shape[:, :, None] * 5.5
+
+    rgb += rng.normal(0.0, 2.0, (s, s, 3)).astype(np.float64)
+    rgb[in_grout] = grout
+    return Image.fromarray(np.clip(rgb, 0.0, 255.0).astype(np.uint8), mode="RGB")

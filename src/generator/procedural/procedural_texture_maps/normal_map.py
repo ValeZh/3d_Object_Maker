@@ -159,6 +159,58 @@ def make_wood_grain_normal_map(
     return normals_from_scalar_slopes(h, strength=float(slope_strength), invert_green=invert_green)
 
 
+def make_ceramic_tile_normal_map(
+    size: int = 512,
+    *,
+    tiles_per_side: int = 8,
+    grout_width_frac: float = 0.06,
+    grout_depth: float = 0.62,
+    edge_bevel: float = 0.12,
+    micro_noise: float = 0.018,
+    slope_strength: float = 7.5,
+    seed: int = 97,
+    invert_green: bool = True,
+) -> Image.Image:
+    """
+    Нормали под керамическую плитку: углублённые швы + лёгкая фаска по краям + мелкий микрорельеф.
+
+    Высотная карта используется только как промежуточное поле в памяти; на диск не сохраняется.
+    """
+    s = _ensure_size(size)
+    rng = np.random.default_rng(seed)
+    n = max(2, int(tiles_per_side))
+    gw = float(np.clip(grout_width_frac, 0.01, 0.24))
+    depth = float(max(0.0, grout_depth))
+    bevel = float(max(0.0, edge_bevel))
+
+    yy, xx = np.mgrid[0:s, 0:s]
+    fx = (xx / max(s - 1, 1)) * n
+    fy = (yy / max(s - 1, 1)) * n
+    frac_x = fx - np.floor(fx)
+    frac_y = fy - np.floor(fy)
+    edge = np.minimum(np.minimum(frac_x, 1.0 - frac_x), np.minimum(frac_y, 1.0 - frac_y))
+
+    # Base tile level with shallow center crown.
+    h = np.full((s, s), 1.0, dtype=np.float64)
+    center = np.clip((edge - gw * 0.5) / max(0.5 - gw * 0.5, 1e-6), 0.0, 1.0)
+    h += (center * center) * 0.055
+
+    # Grout valley (smooth transition to avoid jagged normals at seam borders).
+    seam_band = np.clip((gw * 0.5 - edge) / max(gw * 0.5, 1e-6), 0.0, 1.0)
+    seam_smooth = seam_band * seam_band * (3.0 - 2.0 * seam_band)
+    h -= seam_smooth * depth
+
+    # Slight bevel near tile border.
+    bevel_zone = np.clip((gw * 0.5 + bevel - edge) / max(bevel, 1e-6), 0.0, 1.0)
+    h -= bevel_zone * 0.08
+
+    # Subtle micro-roughness over tile faces (less inside grout).
+    noise = _value_noise_2d(s, max(20, n * 6), rng)
+    noise -= float(np.mean(noise))
+    h += noise * float(micro_noise) * (1.0 - seam_smooth * 0.75)
+    return normals_from_scalar_slopes(h, strength=float(slope_strength), invert_green=invert_green)
+
+
 def make_soft_frosted_glass_normal_map(
     size: int = 512,
     *,

@@ -243,8 +243,11 @@ def preview_entrance_textured_obj_open3d(obj_path: Path | str) -> None:
 
 def preview_balcony_obj_open3d(obj_path: Path | str) -> None:
     """
-    Балкон: TriangleMesh + UV чаще корректнее тянет map_Kd из MTL, чем read_triangle_model;
-    без UV — TriangleMeshModel. Для mesh enable_post_processing=False, чтобы не сшивать вершины на кромках.
+    Балкон: загрузка через ``read_triangle_mesh`` (UV + MTL текстуры из папки OBJ).
+
+    На Windows новый рендер ``visualization.draw`` (Filament) часто **мгновенно закрывает окно** или падает
+    из‑за OpenGL/драйвера — по умолчанию используется **legacy** ``draw_geometries`` (окно висит до закрытия).
+    Если нужно старый Filament-превью: ``OPEN3D_BALCONY_PREVIEW_DRAW=1`` в окружении.
     """
     o3d = try_import_open3d()
     if o3d is None:
@@ -255,24 +258,70 @@ def preview_balcony_obj_open3d(obj_path: Path | str) -> None:
     eye = np.array([3.6, -4.0, 1.35], dtype=np.float64)
     up = np.array([0.0, 0.0, 1.0], dtype=np.float64)
     mesh = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
-    if len(mesh.vertices) and mesh.has_triangle_uvs():
-        mesh.compute_vertex_normals()
-        o3d.visualization.draw(
-            mesh,
+
+    force_filament = os.environ.get("OPEN3D_BALCONY_PREVIEW_DRAW", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+    def _filament_preview(geom: Any) -> None:
+        draw_kw: dict[str, Any] = dict(
             title="Balcony",
             lookat=lookat,
             eye=eye,
             up=up,
             field_of_view=58.0,
             ibl_intensity=1.15,
+            show_skybox=False,
         )
-    else:
-        model = o3d.io.read_triangle_model(str(path))
-        o3d.visualization.draw(
-            model,
-            title="Balcony",
-            lookat=lookat,
-            eye=eye,
-            up=up,
-            field_of_view=58.0,
-        )
+        try:
+            o3d.visualization.draw(geom, **draw_kw)
+        except TypeError:
+            draw_kw.pop("show_skybox", None)
+            o3d.visualization.draw(geom, **draw_kw)
+
+    if len(mesh.vertices) == 0:
+        print(f"[warn] Open3D: пустой меш для {path}")
+        try:
+            model = o3d.io.read_triangle_model(str(path))
+            _filament_preview(model)
+        except Exception as e:
+            print(f"[warn] Open3D balcony preview failed: {e}")
+        return
+
+    mesh.compute_vertex_normals()
+
+    if not force_filament:
+        try:
+            o3d.visualization.draw_geometries(
+                [mesh],
+                window_name="Balcony",
+                width=1400,
+                height=900,
+                mesh_show_back_face=True,
+            )
+            return
+        except TypeError:
+            try:
+                o3d.visualization.draw_geometries(
+                    [mesh],
+                    window_name="Balcony",
+                    width=1400,
+                    height=900,
+                )
+                return
+            except Exception as e:
+                print(f"[warn] draw_geometries balcony: {e}, пробуем Filament draw…")
+        except Exception as e:
+            print(f"[warn] draw_geometries balcony: {e}, пробуем Filament draw…")
+
+    try:
+        _filament_preview(mesh)
+    except Exception as e:
+        print(f"[warn] balcony Filament preview: {e}")
+        try:
+            model = o3d.io.read_triangle_model(str(path))
+            _filament_preview(model)
+        except Exception as e2:
+            print(f"[warn] balcony triangle_model fallback: {e2}")
