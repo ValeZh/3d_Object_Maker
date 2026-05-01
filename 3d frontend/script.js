@@ -471,6 +471,14 @@ function clearSceneMeshes() {
 
   currentMesh = null;
   interactiveObjects = [];
+
+  const objectsToRemove = [];
+  scene.children.forEach((child) => {
+    if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
+      objectsToRemove.push(child);
+    }
+  });
+  objectsToRemove.forEach(obj => scene.remove(obj));
 }
 
 function frameObject(mesh, padding = DEFAULTS.camera.padding) {
@@ -1393,7 +1401,7 @@ function renderSavedModules() {
       if (!mod) return;
       applyModuleParams(mod);
       renderModulePreview(mod);
-      setActiveTab("modules");
+      setActiveTab("modulePage");
     };
   });
 
@@ -1613,38 +1621,42 @@ function renderModulePreview(data) {
   const depth = p.depth || DEFAULTS.module.wall.depth;
   const color = p.color || DEFAULTS.colors.wall;
 
-  const bodyMaterial = createMaterialVariant(
-    getSharedMaterial(`module_body_${color}`, () => {
-      return new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.03 });
-    })
-  );
+  const material = new THREE.MeshStandardMaterial({
+    color: color,
+    roughness: 0.8,
+    metalness: 0.1
+  });
 
-  const windowMaterial = createMaterialVariant(
-    getSharedMaterial("module_window_default", () => {
-      return new THREE.MeshStandardMaterial({ color: DEFAULTS.colors.window, roughness: 0.5, metalness: 0.08 });
-    })
-  );
+  const moduleColor = color || DEFAULTS.colors.wall;
 
-  const doorMaterial = createMaterialVariant(
-    getSharedMaterial("module_door_default", () => {
-      return new THREE.MeshStandardMaterial({ color: DEFAULTS.colors.door, roughness: 0.8 });
-    })
-  );
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: moduleColor,
+    roughness: 0.9,
+    metalness: 0.03
+  });
 
-  const balconyMaterial = createMaterialVariant(
-    getSharedMaterial("module_balcony_default", () => {
-      return new THREE.MeshStandardMaterial({ color: DEFAULTS.colors.balcony, roughness: 0.75 });
-    })
-  );
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: DEFAULTS.colors.window,
+    roughness: 0.5,
+    metalness: 0.08
+  });
 
-  const roofMaterial = createMaterialVariant(
-    getSharedMaterial("module_roof_default", () => {
-      return new THREE.MeshStandardMaterial({ color: DEFAULTS.colors.roof, roughness: 0.85 });
-    }),
-    p.is_roof_piece ? color : null
-  );
+  const doorMaterial = new THREE.MeshStandardMaterial({
+    color: DEFAULTS.colors.door,
+    roughness: 0.8
+  });
 
-  const body = createBox(width, height, depth, bodyMaterial);
+  const balconyMaterial = new THREE.MeshStandardMaterial({
+    color: DEFAULTS.colors.balcony,
+    roughness: 0.75
+  });
+
+  const roofMaterial = new THREE.MeshStandardMaterial({
+    color: DEFAULTS.colors.roof,
+    roughness: 0.85
+  });
+
+  const body = createBox(width, height, depth, material);
   body.position.y = height / 2;
   group.add(body);
 
@@ -2387,7 +2399,16 @@ generateModuleBtn?.addEventListener("click", async () => {
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
 
-    showToast(`Module saved: ${data.module_name}`, "success");
+    showToast(`Module generated: ${data.module_name}`, "success");
+
+    // === ЗАГРУЖАЕМ РЕАЛЬНЫЙ OBJ ФАЙЛ В THREE.JS ===
+    if (data.obj_url) {
+      await loadObjInPreview(data.obj_url);
+    } else if (data.module_id) {
+      // Если нет прямого URL, строим его
+      const objUrl = `/modules/${moduleType}/${data.module_id}/${moduleType}.obj`;
+      await loadObjInPreview(objUrl);
+    }
 
     // Только очищаем description, name оставляем
     moduleDescription.value = '';
@@ -2399,6 +2420,71 @@ generateModuleBtn?.addEventListener("click", async () => {
     generateModuleBtn.textContent = "Generate Module";
   }
 });
+
+// === ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ OBJ В THREE.JS ===
+async function loadObjInPreview(objUrl) {
+  return new Promise((resolve, reject) => {
+    const objectsToRemove = [];
+    scene.children.forEach((child) => {
+      if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
+        objectsToRemove.push(child);
+      }
+    });
+    objectsToRemove.forEach(obj => scene.remove(obj));
+
+    const loader = new window.THREE.OBJLoader();
+
+    loader.load(
+      objUrl,
+      (obj) => {
+        console.log(`✓ OBJ загружен: ${objUrl}`);
+
+        if (!scene) {
+          console.warn("Scene не инициализирована");
+          resolve();
+          return;
+        }
+
+        // Удаляем старые объекты (кроме grid и groundPlane)
+        const objectsToRemove = [];
+        scene.children.forEach((child) => {
+          if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
+            objectsToRemove.push(child);
+          }
+        });
+        objectsToRemove.forEach(obj => scene.remove(obj));
+
+        // Добавляем новый OBJ
+        scene.add(obj);
+
+        // Центрируем камеру на объект
+        const box = new THREE.Box3().setFromObject(obj);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+        camera.position.copy(center);
+        camera.position.z += cameraZ * 1.5;
+        camera.lookAt(center);
+
+        controls.target.copy(center);
+        controls.update();
+
+        console.log(`✓ Объект добавлен в сцену`);
+        resolve();
+      },
+      undefined,
+      (error) => {
+        console.error(`Ошибка загрузки OBJ: ${error}`);
+        showToast(`Failed to load 3D model: ${error.message}`, "error");
+        reject(error);
+      }
+    );
+  });
+}
 
 saveModuleBtn?.addEventListener("click", async () => {
   const text = moduleDescription.value.trim();
@@ -2426,10 +2512,10 @@ saveModuleBtn?.addEventListener("click", async () => {
       showToast(`Module saved: ${data.module_name}`, "success");
       moduleDescription.value = '';
 
+      // Обновляем список модулей в библиотеке и селекторах
+      await loadSavedModules();
       renderSavedModules();
       populateModuleSelectors();
-      await loadModulesLibrary();  // Обновляем библиотеку
-      renderSavedModules();
       setActiveTab("library");
     } catch (err) {
       showToast(`Save failed: ${err.message}`, "error");

@@ -120,74 +120,150 @@ def save_houses_registry(houses: List[Dict[str, Any]]):
 # ======================= ФУНКЦИИ ГЕНЕРАЦИИ МОДУЛЕЙ =======================
 
 def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str) -> Optional[Path]:
-    """Генерирует модуль через batch JSON parser"""
+    """Генерирует модуль используя procedural_batch_runner согласно документации"""
     try:
         output_dir = MODULES_DIR / module_type / module_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"🔨 Генерация {module_type}_{module_id}...")
 
-        # Конфиг для batch генератора
-        config = {}
+        # Загружаем JSON конфиг
+        config_file = PROJECT_ROOT / "scripts" / "balcony_examples" / "batch_generators_config.json"
+        if not config_file.exists():
+            raise FileNotFoundError(f"Config not found: {config_file}")
 
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+
+        # Обновляем конфиг в зависимости от типа модуля
         if module_type == "wall":
+            # Документация 7: wall requires wall_length, wall_thickness, wall_height
             config["wall"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
-                "wall_length": params.get("width", 2.0),
-                "wall_height": params.get("height", 3.0),
+                "wall_length": params.get("width", 2.0),      # width → wall_length
                 "wall_thickness": params.get("thickness", 0.3),
+                "wall_height": params.get("height", 3.0),     # height → wall_height
+                "no_view": True,
             }
+            # Отключаем остальные
+            for key in ["window", "wall_window", "balcony", "entrance", "entrance_textured"]:
+                if key in config:
+                    config[key]["enabled"] = False
 
-        elif module_type == "window":  # ← ОКНО = СТЕНА С ОКНОМ
-            config["wall_window"] = {
-                "enabled": True,
-                "out_dir": str(output_dir),
-                "wall_length": params.get("width", 2.0),
-                "wall_height": params.get("height", 3.0),
-                "wall_thickness": params.get("thickness", 0.3),
-                "window_center_x": params.get("width", 2.0) / 2,
-                "window_sill_z": params.get("height", 3.0) / 3,
-            }
-
-        elif module_type == "door":
-            config["entrance"] = {
-                "enabled": True,
-                "out_dir": str(output_dir),
-            }
-
-        elif module_type == "balcony":  # ← БАЛКОН + ОКНО
-            config["balcony"] = {
-                "enabled": True,
-                "out_dir": str(output_dir),
-                "width_front": params.get("width", 2.0),
-                "depth": params.get("depth", 1.15),
-            }
+        elif module_type == "window":
+            # Документация 6: window requires width, height, depth, profile, kind
             config["window"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "width": params.get("width", 1.5),
-                "height": 1.2,
+                "height": params.get("height", 1.2),
+                "depth": params.get("depth", 0.12),
+                "profile": "rect",
+                "kind": "fixed",
+                "mullions_vertical": 1,
+                "mullions_horizontal": 0,
+                "atlas_half_size": 256,
+                "no_view": True,
             }
+            # Отключаем остальные
+            for key in ["wall", "wall_window", "balcony", "entrance", "entrance_textured"]:
+                if key in config:
+                    config[key]["enabled"] = False
+
+        elif module_type == "door":
+            # entrance может быть "canopy" или "niche"
+            config["entrance"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "entrance_style": "canopy",
+                "width": params.get("width", 2.0),
+                "depth": params.get("depth", 1.75),
+                "has_left_wall": True,
+                "has_right_wall": True,
+                "doors": [
+                    {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
+                ],
+                "no_view": True,
+            }
+            # Отключаем остальные
+            for key in ["wall", "window", "wall_window", "balcony", "entrance_textured"]:
+                if key in config:
+                    config[key]["enabled"] = False
+
+        elif module_type == "balcony":
+            # Документация 3: balcony параметры
+            config["balcony"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "width_front": params.get("width", 2.0),
+                "width_back": params.get("width", 2.0),
+                "depth": params.get("depth", 1.15),
+                "height": 1.0,
+                "window_mode": "frame_only",
+                "front_window_mode": "with_glass",
+                "window_depth": 0.14,
+                "mullions_vertical": 1,
+                "mullions_horizontal": 0,
+                "no_view": True,
+            }
+            # Отключаем остальные
+            for key in ["wall", "window", "wall_window", "entrance", "entrance_textured"]:
+                if key in config:
+                    config[key]["enabled"] = False
 
         elif module_type == "entrance":
+            # entrance_textured для красивого входа с текстурами
             config["entrance_textured"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
+                "atlas_tile": 256,
+                "no_view": True,
             }
+            # Отключаем остальные
+            for key in ["wall", "window", "wall_window", "balcony", "entrance"]:
+                if key in config:
+                    config[key]["enabled"] = False
 
-        # Вызов batch генератора
-        results = parse_and_run(config, output_dir)
+        else:
+            raise ValueError(f"Unknown module type: {module_type}")
 
-        for key, path in results.items():
-            if path and path.exists():
-                logger.info(f"✓ Модуль сгенерирован: {path}")
-                return path
+        logger.info(f"📋 Config для {module_type}: {json.dumps({k: v for k, v in config.items() if isinstance(v, dict) and v.get('enabled')}, indent=2)}")
 
+        # Вызываем batch генератор
+        results = run_all_generators(config, default_out_root=output_dir)
+
+        # Возвращаем первый найденный результат
+        if results:
+            for key, path in results.items():
+                if path and path.exists():
+                    logger.info(f"✓ Модуль сгенерирован: {path}")
+
+                    # === ПЕРЕИМЕНУЕМ ФАЙЛЫ В ПРАВИЛЬНОЕ ИМЯ ===
+                    correct_filename = module_type + ".obj"
+
+                    if module_type == "door" and path.name == "entrance.obj":
+                        # door → entrance.obj, переименуем в door.obj
+                        new_path = path.parent / "door.obj"
+                        path.rename(new_path)
+                        logger.info(f"✓ Переименовано: entrance.obj → door.obj")
+                        return new_path
+
+                    elif module_type == "entrance" and path.name == "entrance_textured.obj":
+                        # entrance → entrance_textured.obj, переименуем в entrance.obj
+                        new_path = path.parent / "entrance.obj"
+                        path.rename(new_path)
+                        logger.info(f"✓ Переименовано: entrance_textured.obj → entrance.obj")
+                        return new_path
+
+                    # window и balcony уже имеют правильные имена
+                    return path
+
+        logger.warning(f"⚠️ Генератор не вернул файлы для {module_type}")
         return None
 
     except Exception as e:
-        logger.error(f"Ошибка генерации модуля: {e}")
+        logger.error(f"Ошибка генерации модуля: {e}", exc_info=True)
         return None
 
 def create_module_zip(module_id: str, module_type: str, params: Dict[str, Any], obj_path: Optional[Path]) -> Optional[Path]:
@@ -364,6 +440,7 @@ async def generate_module(request: Request):
             "module_type": module_type,
             "module_name": parse_result.module_name,
             "params": params,
+            "obj_url": f"/modules/{module_type}/{module_id}/{module_type}.obj",
             "zip_url": f"/api/modules/{module_id}/download",
             "confidence": parse_result.confidence
         }

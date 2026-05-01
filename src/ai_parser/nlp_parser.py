@@ -41,29 +41,29 @@ class ModuleTextParser:
     # Определение типов по ключевым словам
     MODULE_TYPE_PATTERNS = {
         ModuleType.WALL: [
-            r"стен[аы]",
-            r"панел[ь]?",
-            r"фасад",
-            r"кирпич",
-            r"бетон",
+            r"стен[аы]|wall",
+            r"панел[ь]?|panel",
+            r"фасад|facade",
+            r"кирпич|brick",
+            r"бетон|concrete",
         ],
         ModuleType.WINDOW: [
-            r"окн[оа]",
-            r"стекл[оа]",
+            r"окн[оа]|window",
+            r"стекл[оа]|glass",
             r"окошк[оа]",
         ],
         ModuleType.DOOR: [
-            r"дверь",
-            r"входн[ая]?",
+            r"дверь|door",
+            r"входн[ая]?|entrance",
             r"дверц[аы]",
         ],
         ModuleType.BALCONY: [
-            r"балкон",
-            r"лоджи[я]",
+            r"балкон|balcony",
+            r"лоджи[я]|loggia",
         ],
         ModuleType.ENTRANCE: [
-            r"подъезд",
-            r"входн[ая]?",
+            r"подъезд|entrance",
+            r"входн[ая]?|entry",
         ],
     }
 
@@ -152,20 +152,21 @@ class ModuleTextParser:
         # Регулярные выражения для парсинга параметров
         self.PARAM_PATTERNS = {
             "height": [
-                r"(\d+(?:[.,]\d+)?)\s*(?:м(?:етр)?(?:ов?)?)?\s*высот[аы]",  # 4 высоты или 4м высоты
-                r"высот[аы]\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # высота 4 или высота 4м
+                r"(?:height|высот[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # height 1.75, высота 1.75м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|высот[аы])",
+                # 1.75м height, 1.75 метра высоты
             ],
             "width": [
-                r"(\d+(?:[.,]\d+)?)\s*(?:м(?:етр)?(?:ов?)?)?\s*ширин[аы]",  # 1 ширины или 1м ширины
-                r"ширин[аы]\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # ширина 1 или ширина 1м
+                r"(?:width|ширин[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # width 0.3, ширина 0.3м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:wide|ширин[аы])",  # 0.3м width, 0.3 метра ширины
             ],
             "depth": [
-                r"(\d+(?:[.,]\d+)?)\s*(?:м(?:етр)?(?:ов?)?)?\s*глубин[аы]",
-                r"глубин[аы]\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",
+                r"(?:depth|глубин[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # depth 0.2, глубина 0.2м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:deep|глубин[аы])",  # 0.2м depth
             ],
             "color": [
-                r"цвет[:]?\s+(#?[a-fA-F0-9]{6}|[а-яА-Я]+)",  # hex или название
-                r"(белый|черный|серый|красный|синий|зеленый|желтый|коричневый|оранжевый|фиолетовый|белая|красная|черная|синяя|зеленая|зелёная|желтая)",
+                r"(?:color|цвет)[:]?\s+(#?[a-fA-F0-9]{6}|[а-яА-Я]+|red|blue|green|white|black)",
+                r"(белый|черный|серый|красный|синий|зеленый|желтый|red|blue|green|white|black)",
             ],
         }
 
@@ -192,6 +193,8 @@ class ModuleTextParser:
 
     def _extract_value(self, text: str, param_name: str) -> Optional[float]:
         """Извлекает численное значение параметра"""
+        print(f"🔍 Ищу {param_name} в тексте: '{text}'")
+
         if param_name not in self.PARAM_PATTERNS:
             return None
 
@@ -313,14 +316,17 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.WINDOW:
-            # Для окна: width, height, style
+            # Для окна: width, height, depth, style
             width = self._extract_value(text, "width")
             height = self._extract_value(text, "height")
+            depth = self._extract_value(text, "depth")
 
             if width is not None:
                 params["width"] = width
             if height is not None:
                 params["height"] = height
+            if depth is not None:
+                params["depth"] = depth
 
             style = self._extract_string(text, "style")
             if style:
