@@ -1,106 +1,172 @@
 """
-nlp_parser.py — Парсер текста в численные параметры
-Извлекает из русского текста параметры дома (этажи, размеры, окна, балконы и т.д.)
+nlp_parser.py — Парсер текста в параметры ОТДЕЛЬНЫХ МОДУЛЕЙ
+Извлекает из русского текста параметры стен, окон, дверей, балконов, входов
 """
 
 import re
 from typing import Dict, Optional, Any
 from dataclasses import dataclass, asdict
+from enum import Enum
+
+
+class ModuleType(str, Enum):
+    """Типы модулей"""
+    WALL = "wall"
+    WINDOW = "window"
+    DOOR = "door"
+    BALCONY = "balcony"
+    ENTRANCE = "entrance"
 
 
 @dataclass
-class BuildingParams:
-    """Параметры здания, извлеченные из текста"""
-    floors: int
-    wall_height: float
-    building_length: float
-    building_width: float
-    windows_per_floor: int
-    balconies_per_floor: int
-    entrance_count: int
-    balcony_depth: float
-    balcony_width: float = 2.0
-    parapet_height: float = 1.1
-    door_height: float = 2.1
-    door_width: float = 0.9
+class ModuleParams:
+    """Параметры модуля"""
+    module_type: ModuleType
+    module_name: str
+    params: Dict[str, Any]
+    confidence: float = 1.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return {
+            "module_type": self.module_type.value,
+            "module_name": self.module_name,
+            "params": self.params,
+            "confidence": self.confidence
+        }
 
 
-class BuildingTextParser:
-    """Парсер текста описания дома"""
+class ModuleTextParser:
+    """Парсер текста для модулей"""
 
-    # Значения по умолчанию
-    DEFAULTS = {
-        "floors": 5,
-        "wall_height": 3.0,
-        "building_length": 25.0,
-        "building_width": 12.0,
-        "windows_per_floor": 4,
-        "balconies_per_floor": 2,
-        "entrance_count": 1,
-        "balcony_depth": 1.15,
-        "balcony_width": 2.0,
-        "parapet_height": 1.1,
-        "door_height": 2.1,
-        "door_width": 0.9,
+    # Определение типов по ключевым словам
+    MODULE_TYPE_PATTERNS = {
+        ModuleType.WALL: [
+            r"стен[аы]|wall",
+            r"панел[ь]?|panel",
+            r"фасад|facade",
+            r"кирпич|brick",
+            r"бетон|concrete",
+        ],
+        ModuleType.WINDOW: [
+            r"окн[оа]|window",
+            r"стекл[оа]|glass",
+            r"окошк[оа]",
+        ],
+        ModuleType.DOOR: [
+            r"дверь|door",
+            r"входн[ая]?|entrance",
+            r"дверц[аы]",
+        ],
+        ModuleType.BALCONY: [
+            r"балкон|balcony",
+            r"лоджи[я]|loggia",
+        ],
+        ModuleType.ENTRANCE: [
+            r"подъезд|entrance",
+            r"входн[ая]?|entry",
+        ],
     }
 
-    # Диапазоны допустимых значений
-    RANGES = {
-        "floors": (1, 25),
-        "wall_height": (2.5, 5.0),
-        "building_length": (10.0, 100.0),
-        "building_width": (8.0, 40.0),
-        "windows_per_floor": (1, 12),
-        "balconies_per_floor": (0, 6),
-        "entrance_count": (1, 4),
-        "balcony_depth": (0.8, 2.0),
-        "balcony_width": (1.5, 4.0),
-        "parapet_height": (0.9, 1.5),
-        "door_height": (2.0, 2.3),
-        "door_width": (0.8, 1.0),
+    # Маппинг цветов на HEX коды
+    COLOR_MAP = {
+        "красный": "#c74a4a",
+        "red": "#c74a4a",
+        "синий": "#4a6fc7",
+        "blue": "#4a6fc7",
+        "зелёный": "#4aa36c",
+        "зеленый": "#4aa36c",
+        "green": "#4aa36c",
+        "серый": "#888888",
+        "серая": "#888888",
+        "grey": "#888888",
+        "gray": "#888888",
+        "белый": "#d9d9d9",
+        "белая": "#d9d9d9",
+        "white": "#d9d9d9",
+        "чёрный": "#2a2a2a",
+        "черный": "#2a2a2a",
+        "чёрная": "#2a2a2a",
+        "черная": "#2a2a2a",
+        "black": "#2a2a2a",
+        "коричневый": "#8b6a4e",
+        "коричневая": "#8b6a4e",
+        "brown": "#8b6a4e",
+        "бежевый": "#c9b28f",
+        "бежевая": "#c9b28f",
+        "beige": "#c9b28f",
+        "жёлтый": "#f0ad4e",
+        "желтый": "#f0ad4e",
+        "жёлтая": "#f0ad4e",
+        "желтая": "#f0ad4e",
+        "yellow": "#f0ad4e",
+        "оранжевый": "#ff9800",
+        "оранжевая": "#ff9800",
+        "orange": "#ff9800",
+        "фиолетовый": "#9c27b0",
+        "фиолетовая": "#9c27b0",
+        "purple": "#9c27b0",
+    }
+
+    # Дефолты для каждого типа
+    DEFAULTS = {
+        ModuleType.WALL: {
+            "height": 3.0,
+            "width": 2.0,
+            "color": "#888888",
+            "material": "concrete",
+            "thickness": 0.3,
+        },
+        ModuleType.WINDOW: {
+            "width": 1.5,
+            "height": 1.2,
+            "style": "double",
+            "frame_color": "#444444",
+            "glass_color": "#87CEEB",
+        },
+        ModuleType.DOOR: {
+            "height": 2.1,
+            "width": 0.9,
+            "style": "standard",
+            "material": "wood",
+            "frame_color": "#8B4513",
+        },
+        ModuleType.BALCONY: {
+            "depth": 1.15,
+            "width": 2.0,
+            "style": "open",
+            "parapat_height": 1.1,
+            "color": "#AAAAAA",
+        },
+        ModuleType.ENTRANCE: {
+            "width": 2.0,
+            "height": 2.5,
+            "depth": 1.0,
+            "style": "standard",
+            "color": "#CCCCCC",
+        },
     }
 
     def __init__(self):
         """Инициализация парсера с регулярными выражениями"""
-        self.patterns = {
-            "floors": [
-                r"(\d+)\s*этажа?(?:х)?",  # 3 этажа, 5 этажей
-                r"(\d+)\s*-?\s*эт(?:аж)?",  # 3-этажный
-                r"(\d+)\s*уровн[ей]?",  # 3 уровня
+
+        # Регулярные выражения для парсинга параметров
+        self.PARAM_PATTERNS = {
+            "height": [
+                r"(?:height|высот[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # height 1.75, высота 1.75м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|высот[аы])",
+                # 1.75м height, 1.75 метра высоты
             ],
-            "wall_height": [
-                r"стены?\s+(\d+(?:[,.]\d+)?)\s*м(?:етр)?",  # стены 3м, стены 3.5м
-                r"высот[аы]\s+(?:стен)?\s*(\d+(?:[,.]\d+)?)\s*м",  # высота стен 3м
-                r"(?:высот[аы])?\s+(\d+(?:[,.]\d+)?)\s*м\s+(?:стен)?",  # 3м стен
+            "width": [
+                r"(?:width|ширин[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # width 0.3, ширина 0.3м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:wide|ширин[аы])",  # 0.3м width, 0.3 метра ширины
             ],
-            "building_length": [
-                r"длин[аы]\s+(\d+(?:[,.]\d+)?)\s*м(?:етр)?",  # длина 25м
-                r"протяжен[ность]?\s+(\d+(?:[,.]\d+)?)\s*м",  # протяженность 25м
-                r"(?:здани)?[яе]\s+(\d+(?:[,.]\d+)?)\s*м\s+в\s+длин(?:у|ы)?",  # здания 25м в длину
+            "depth": [
+                r"(?:depth|глубин[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # depth 0.2, глубина 0.2м
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:deep|глубин[аы])",  # 0.2м depth
             ],
-            "building_width": [
-                r"ширин[аы]\s+(\d+(?:[,.]\d+)?)\s*м(?:етр)?",  # ширина 12м
-                r"(?:здани)?[яе]\s+(\d+(?:[,.]\d+)?)\s*м\s+в\s+ширин(?:у|ы)?",  # здания 12м в ширину
-            ],
-            "windows_per_floor": [
-                r"(\d+)\s*окн[аами]?(?:\s+на\s+этаж)?",  # 4 окна, 4 окна на этаж
-                r"по\s+(\d+)\s*окн[аами]?",  # по 4 окна
-            ],
-            "balconies_per_floor": [
-                r"(\d+)\s*балкон[ов]?(?:\s+на\s+этаж)?",  # 2 балкона, 2 балкона на этаж
-                r"по\s+(\d+)\s*балкон[ов]?",  # по 2 балкона
-            ],
-            "entrance_count": [
-                r"(\d+)\s*подъезд[ов]?",  # 2 подъезда
-                r"(\d+)\s*входо?в?",  # 2 входа
-                r"(\d+)\s*раздел[а]?",  # 2 раздела
-            ],
-            "balcony_depth": [
-                r"балкон[ы]?\s+(\d+(?:[,.]\d+)?)\s*м(?:етр)?(?:\s+(?:в|глубин))?",  # балконы 1.2м
-                r"глубин[аы]\s+балкон[а]?\s+(\d+(?:[,.]\d+)?)\s*м",  # глубина балкона 1.2м
+            "color": [
+                r"(?:color|цвет)[:]?\s+(#?[a-fA-F0-9]{6}|[а-яА-Я]+|red|blue|green|white|black)",
+                r"(белый|черный|серый|красный|синий|зеленый|желтый|red|blue|green|white|black)",
             ],
         }
 
@@ -108,12 +174,31 @@ class BuildingTextParser:
         """Преобразует строку с числом в float (заменяет запятую на точку)"""
         return float(text.replace(",", "."))
 
+    def _detect_module_type(self, text: str) -> ModuleType:
+        """Определяет тип модуля по тексту"""
+        text_lower = text.lower()
+
+        # Подсчитываем совпадения для каждого типа
+        scores = {}
+        for module_type, patterns in self.MODULE_TYPE_PATTERNS.items():
+            score = sum(1 for pattern in patterns if re.search(pattern, text_lower))
+            scores[module_type] = score
+
+        # Возвращаем тип с наибольшим количеством совпадений
+        if max(scores.values()) == 0:
+            # Если ничего не найдено, по умолчанию стена
+            return ModuleType.WALL
+
+        return max(scores, key=scores.get)
+
     def _extract_value(self, text: str, param_name: str) -> Optional[float]:
-        """Извлекает значение параметра из текста по регулярным выражениям"""
-        if param_name not in self.patterns:
+        """Извлекает численное значение параметра"""
+        print(f"🔍 Ищу {param_name} в тексте: '{text}'")
+
+        if param_name not in self.PARAM_PATTERNS:
             return None
 
-        for pattern in self.patterns[param_name]:
+        for pattern in self.PARAM_PATTERNS[param_name]:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 try:
@@ -124,106 +209,253 @@ class BuildingTextParser:
 
         return None
 
-    def _clamp_value(self, param_name: str, value: float) -> float:
-        """Ограничивает значение диапазоном допустимых значений"""
-        if param_name not in self.RANGES:
-            return value
+    def _extract_string(self, text: str, param_name: str) -> Optional[str]:
+        """Извлекает строковое значение параметра"""
+        if param_name not in self.PARAM_PATTERNS:
+            return None
 
-        min_val, max_val = self.RANGES[param_name]
-        return max(min_val, min(value, max_val))
+        for pattern in self.PARAM_PATTERNS[param_name]:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                try:
+                    value = match.group(1).lower()
+                    return value
+                except (ValueError, IndexError):
+                    continue
 
-    def parse(self, text: str) -> BuildingParams:
+        return None
+
+    def _get_color_hex(self, color_name: str) -> str:
+        """Преобразует название цвета в HEX код"""
+        if not color_name:
+            return None
+
+        color_lower = color_name.lower().strip()
+
+        # Если уже HEX код
+        if color_lower.startswith("#"):
+            return color_lower
+
+        # Ищем в маппинге
+        if color_lower in self.COLOR_MAP:
+            return self.COLOR_MAP[color_lower]
+
+        # Ищем частичное совпадение
+        for key, hex_code in self.COLOR_MAP.items():
+            if key in color_lower or color_lower in key:
+                return hex_code
+
+        return None
+
+    def _normalize_style(self, style: str) -> str:
+        """Нормализует значение style"""
+        if not style:
+            return None
+
+        style = style.lower().strip()
+
+        # Маппинг синонимов
+        style_map = {
+            "одинарн": "single",
+            "одно": "single",
+            "двойн": "double",
+            "двухи": "double",
+            "стандарт": "standard",
+            "обычн": "standard",
+            "модерн": "modern",
+            "открыт": "open",
+            "закрыт": "enclosed",
+            "остекл": "enclosed",
+            "стекл": "glass",
+        }
+
+        for key, val in style_map.items():
+            if key in style:
+                return val
+
+        return style
+
+    def parse(self, text: str) -> ModuleParams:
         """
-        Парсит текст и возвращает параметры здания
+        Парсит текст описания модуля и возвращает параметры
 
         Args:
-            text: Описание дома на русском языке
+            text: Описание модуля на русском языке
 
         Returns:
-            BuildingParams: Объект с извлеченными параметрами
+            ModuleParams: Объект с извлеченными параметрами
         """
 
+        # Определяем тип модуля
+        module_type = self._detect_module_type(text)
+
+        # Получаем defaults для этого типа
+        defaults = self.DEFAULTS[module_type].copy()
+
+        # Парсим параметры в зависимости от типа
         params = {}
 
-        # Извлекаем каждый параметр
-        for param_name in self.DEFAULTS.keys():
-            value = self._extract_value(text, param_name)
+        if module_type == ModuleType.WALL:
+            # Для стены: height, width, color, material
+            height = self._extract_value(text, "height")
+            width = self._extract_value(text, "width")
 
-            if value is not None:
-                # Ограничиваем диапазоном и применяем целочисленность если нужно
-                value = self._clamp_value(param_name, value)
-                if param_name in ["floors", "windows_per_floor", "balconies_per_floor", "entrance_count"]:
-                    value = int(value)
-                params[param_name] = value
-            else:
-                params[param_name] = self.DEFAULTS[param_name]
+            if height is not None:
+                params["height"] = height
+            if width is not None:
+                params["width"] = width
 
-        return BuildingParams(**params)
+            color = self._extract_string(text, "color")
+            if color:
+                hex_color = self._get_color_hex(color)
+                if hex_color:
+                    params["color"] = hex_color
+
+            material = self._extract_string(text, "material")
+            if material:
+                params["material"] = material
+
+        elif module_type == ModuleType.WINDOW:
+            # Для окна: width, height, depth, style
+            width = self._extract_value(text, "width")
+            height = self._extract_value(text, "height")
+            depth = self._extract_value(text, "depth")
+
+            if width is not None:
+                params["width"] = width
+            if height is not None:
+                params["height"] = height
+            if depth is not None:
+                params["depth"] = depth
+
+            style = self._extract_string(text, "style")
+            if style:
+                params["style"] = self._normalize_style(style)
+
+        elif module_type == ModuleType.DOOR:
+            # Для двери: height, width, style, material
+            height = self._extract_value(text, "height")
+            width = self._extract_value(text, "width")
+
+            if height is not None:
+                params["height"] = height
+            if width is not None:
+                params["width"] = width
+
+            style = self._extract_string(text, "style")
+            if style:
+                params["style"] = self._normalize_style(style)
+
+            material = self._extract_string(text, "material")
+            if material:
+                params["material"] = material
+
+        elif module_type == ModuleType.BALCONY:
+            # Для балкона: depth, width, style
+            depth = self._extract_value(text, "depth")
+            width = self._extract_value(text, "width")
+
+            if depth is not None:
+                params["depth"] = depth
+            if width is not None:
+                params["width"] = width
+
+            style = self._extract_string(text, "style")
+            if style:
+                params["style"] = self._normalize_style(style)
+
+        elif module_type == ModuleType.ENTRANCE:
+            # Для входа: width, height, depth, style
+            width = self._extract_value(text, "width")
+            height = self._extract_value(text, "height")
+            depth = self._extract_value(text, "depth")
+
+            if width is not None:
+                params["width"] = width
+            if height is not None:
+                params["height"] = height
+            if depth is not None:
+                params["depth"] = depth
+
+            style = self._extract_string(text, "style")
+            if style:
+                params["style"] = self._normalize_style(style)
+
+        # Объединяем с defaults
+        final_params = {**defaults, **params}
+
+        # Создаем имя модуля
+        module_name = f"{module_type.value}_{len(str(final_params).encode()) % 10000}"
+
+        # Вычисляем confidence (найдено ли хоть что-то)
+        found_count = sum(1 for k, v in params.items() if v is not None)
+        confidence = min(1.0, 0.5 + (found_count * 0.15))
+
+        return ModuleParams(
+            module_type=module_type,
+            module_name=module_name,
+            params=final_params,
+            confidence=confidence
+        )
+
+    def _get_color_hex(self, color_name: str) -> str:
+        """Преобразует название цвета в HEX код"""
+        if not color_name:
+            return None
+
+        color_lower = color_name.lower().strip()
+
+        if color_lower.startswith("#"):
+            return color_lower
+
+        COLOR_MAP = {
+            "красный": "#c74a4a",
+            "синий": "#4a6fc7",
+            "зелёный": "#4aa36c",
+            "зеленый": "#4aa36c",
+            "серый": "#888888",
+            "белый": "#d9d9d9",
+            "чёрный": "#2a2a2a",
+            "черный": "#2a2a2a",
+            "коричневый": "#8b6a4e",
+            "оранжевый": "#ff9800",
+            "фиолетовый": "#9c27b0",
+        }
+
+        return COLOR_MAP.get(color_lower, None)
 
     def debug_parse(self, text: str) -> Dict[str, Any]:
-        """
-        Парсит текст с подробной информацией о том, что было найдено
-        Полезно для отладки
-        """
-        print(f"\n📝 Парсинг текста: '{text}'\n")
+        """Парсит с подробной информацией для отладки"""
+        print(f"\n📝 Парсинг модуля: '{text}'\n")
 
-        result = {}
-        found_params = []
+        result = self.parse(text)
 
-        for param_name in self.DEFAULTS.keys():
-            value = self._extract_value(text, param_name)
-
-            if value is not None:
-                original_value = value
-                value = self._clamp_value(param_name, value)
-
-                if param_name in ["floors", "windows_per_floor", "balconies_per_floor", "entrance_count"]:
-                    value = int(value)
-
-                found_params.append(f"✓ {param_name}: {original_value} → {value}")
-                result[param_name] = value
-            else:
-                default = self.DEFAULTS[param_name]
-                found_params.append(f"○ {param_name}: используется дефолт {default}")
-                result[param_name] = default
-
-        print("Найденные параметры:")
-        for msg in found_params:
-            print(f"  {msg}")
+        print(f"✓ Тип модуля: {result.module_type.value}")
+        print(f"✓ Уверенность: {result.confidence:.0%}")
+        print(f"✓ Параметры:")
+        for key, val in result.params.items():
+            print(f"    {key}: {val}")
         print()
 
-        return result
+        return result.to_dict()
 
 
 # ============== ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ==============
 
 if __name__ == "__main__":
-    parser = BuildingTextParser()
+    parser = ModuleTextParser()
 
-    # Пример 1: Простой текст
-    text1 = "3 этажа, 4 окна, 2 балкона по 1.2м, стены 3м"
-    params1 = parser.parse(text1)
-    print("Пример 1:")
-    print(f"  Входной текст: '{text1}'")
-    print(f"  Результат: {params1.to_dict()}\n")
+    examples = [
+        "стена 3 метра высоты и 2 метра ширины, красная",
+        "окно 1.2м ширина и 1.5м высота, двойное",
+        "дверь входная 2.1м высота, 0.9м ширина, деревянная",
+        "балкон 1.5м глубина, 2м ширина, открытый",
+        "подъезд 2м ширина, 2.5м высота",
+    ]
 
-    # Пример 2: С ошибками (заведомо неправильный текст)
-    text2 = "дом с 5 окнов и 2 балконов на 4 этажа высотой 3.5 метров"
-    params2 = parser.parse(text2)
-    print("Пример 2:")
-    print(f"  Входной текст: '{text2}'")
-    print(f"  Результат: {params2.to_dict()}\n")
+    print("=" * 70)
+    print("ПРИМЕРЫ ПАРСИНГА МОДУЛЕЙ")
+    print("=" * 70)
 
-    # Пример 3: С деталями
-    text3 = "5 этажей, ширина 15м, длина 30м, по 6 окон на этаж, 3 балкона по 1.5м"
-    params3 = parser.parse(text3)
-    print("Пример 3:")
-    print(f"  Входной текст: '{text3}'")
-    print(f"  Результат: {params3.to_dict()}\n")
-
-    # Пример с отладкой
-    print("=" * 60)
-    print("ОТЛАДКА ПАРСЕРА:")
-    print("=" * 60)
-    parser.debug_parse(text1)
-    parser.debug_parse(text2)
+    for text in examples:
+        parser.debug_parse(text)
