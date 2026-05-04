@@ -120,7 +120,7 @@ def save_houses_registry(houses: List[Dict[str, Any]]):
 # ======================= ФУНКЦИИ ГЕНЕРАЦИИ МОДУЛЕЙ =======================
 
 def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str) -> Optional[Path]:
-    """Генерирует модуль используя procedural_batch_runner согласно документации"""
+    """Генерирует модуль с процедурными текстурами через procedural_batch_runner"""
     try:
         output_dir = MODULES_DIR / module_type / module_id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -137,13 +137,12 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
 
         # Обновляем конфиг в зависимости от типа модуля
         if module_type == "wall":
-            # Документация 7: wall requires wall_length, wall_thickness, wall_height
             config["wall"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
-                "wall_length": params.get("width", 2.0),      # width → wall_length
+                "wall_length": params.get("width", 2.0),
                 "wall_thickness": params.get("thickness", 0.3),
-                "wall_height": params.get("height", 3.0),     # height → wall_height
+                "wall_height": params.get("height", 3.0),
                 "no_view": True,
             }
             # Отключаем остальные
@@ -152,7 +151,6 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "window":
-            # Документация 6: window requires width, height, depth, profile, kind
             config["window"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
@@ -164,6 +162,15 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "mullions_vertical": 1,
                 "mullions_horizontal": 0,
                 "atlas_half_size": 256,
+                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "texture": {
+                    "use_procedural_maps": True,
+                    "frame_color_preset": "plaster",
+                    "glass_color_preset": "uniform_noise",
+                    "frame_normal_preset": "fine_noise",
+                    "generate_normal": True,
+                    "generate_roughness": True,
+                },
                 "no_view": True,
             }
             # Отключаем остальные
@@ -172,7 +179,6 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "door":
-            # entrance может быть "canopy" или "niche"
             config["entrance"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
@@ -184,6 +190,14 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "doors": [
                     {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
                 ],
+                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "texture": {
+                    "use_procedural_maps": True,
+                    "wall_color_preset": "plaster",
+                    "door_color_preset": "wood",
+                    "generate_normal": True,
+                    "generate_roughness": True,
+                },
                 "no_view": True,
             }
             # Отключаем остальные
@@ -192,7 +206,6 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "balcony":
-            # Документация 3: balcony параметры
             config["balcony"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
@@ -205,6 +218,16 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "window_depth": 0.14,
                 "mullions_vertical": 1,
                 "mullions_horizontal": 0,
+                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "texture": {
+                    "use_procedural_maps": True,
+                    "wall_lower_color_preset": "plaster",
+                    "wall_upper_color_preset": "plaster",
+                    "frame_color_preset": "wood",
+                    "glass_color_preset": "uniform_noise",
+                    "generate_normal": True,
+                    "generate_roughness": True,
+                },
                 "no_view": True,
             }
             # Отключаем остальные
@@ -213,11 +236,18 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "entrance":
-            # entrance_textured для красивого входа с текстурами
             config["entrance_textured"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "atlas_tile": 256,
+                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "texture": {
+                    "use_procedural_maps": True,
+                    "wall_color_preset": "plaster",
+                    "door_color_preset": "wood",
+                    "generate_normal": True,
+                    "generate_roughness": True,
+                },
                 "no_view": True,
             }
             # Отключаем остальные
@@ -228,7 +258,8 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
         else:
             raise ValueError(f"Unknown module type: {module_type}")
 
-        logger.info(f"📋 Config для {module_type}: {json.dumps({k: v for k, v in config.items() if isinstance(v, dict) and v.get('enabled')}, indent=2)}")
+        logger.info(
+            f"📋 Config для {module_type}: {json.dumps({k: v for k, v in config.items() if isinstance(v, dict) and v.get('enabled')}, indent=2)}")
 
         # Вызываем batch генератор
         results = run_all_generators(config, default_out_root=output_dir)
@@ -239,24 +270,21 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 if path and path.exists():
                     logger.info(f"✓ Модуль сгенерирован: {path}")
 
-                    # === ПЕРЕИМЕНУЕМ ФАЙЛЫ В ПРАВИЛЬНОЕ ИМЯ ===
+                    # Переименуем файлы в правильное имя
                     correct_filename = module_type + ".obj"
 
                     if module_type == "door" and path.name == "entrance.obj":
-                        # door → entrance.obj, переименуем в door.obj
                         new_path = path.parent / "door.obj"
                         path.rename(new_path)
                         logger.info(f"✓ Переименовано: entrance.obj → door.obj")
                         return new_path
 
                     elif module_type == "entrance" and path.name == "entrance_textured.obj":
-                        # entrance → entrance_textured.obj, переименуем в entrance.obj
                         new_path = path.parent / "entrance.obj"
                         path.rename(new_path)
                         logger.info(f"✓ Переименовано: entrance_textured.obj → entrance.obj")
                         return new_path
 
-                    # window и balcony уже имеют правильные имена
                     return path
 
         logger.warning(f"⚠️ Генератор не вернул файлы для {module_type}")
@@ -265,6 +293,12 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
     except Exception as e:
         logger.error(f"Ошибка генерации модуля: {e}", exc_info=True)
         return None
+
+
+def hex_to_rgb(hex_color: str) -> list:
+    """Конвертирует HEX в RGB (0-255)"""
+    hex_color = hex_color.lstrip('#')
+    return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)]
 
 def create_module_zip(module_id: str, module_type: str, params: Dict[str, Any], obj_path: Optional[Path]) -> Optional[Path]:
     """

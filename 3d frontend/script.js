@@ -1321,7 +1321,30 @@ function getCurrentHouseProject() {
 async function loadSavedModules() {
   try {
     const data = await fetchJson(`${SERVER_URL}/api/modules`);
-    savedModulesData = Array.isArray(data) ? data : [];
+
+    // Преобразуем структуру by_type в плоский массив
+    if (data.by_type) {
+      savedModulesData = [];
+      for (const type in data.by_type) {
+        const modules = data.by_type[type];
+        if (Array.isArray(modules)) {
+          modules.forEach(mod => {
+            savedModulesData.push({
+              id: mod.module_id,
+              name: mod.module_name,
+              type: mod.module_type,
+              created_at: mod.created_at,
+              params: mod.params,
+              zip_file: mod.zip_file,
+            });
+          });
+        }
+      }
+    } else if (Array.isArray(data)) {
+      savedModulesData = data;
+    } else {
+      savedModulesData = [];
+    }
   } catch {
     savedModulesData = [];
   }
@@ -2410,9 +2433,6 @@ generateModuleBtn?.addEventListener("click", async () => {
       await loadObjInPreview(objUrl);
     }
 
-    // Только очищаем description, name оставляем
-    moduleDescription.value = '';
-
   } catch (err) {
     showToast(`Generation failed: ${err.message}`, "error");
   } finally {
@@ -2424,6 +2444,7 @@ generateModuleBtn?.addEventListener("click", async () => {
 // === ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ OBJ В THREE.JS ===
 async function loadObjInPreview(objUrl) {
   return new Promise((resolve, reject) => {
+    // === ОЧИЩАЕМ СЦЕНУ ===
     const objectsToRemove = [];
     scene.children.forEach((child) => {
       if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
@@ -2433,62 +2454,83 @@ async function loadObjInPreview(objUrl) {
     objectsToRemove.forEach(obj => scene.remove(obj));
 
     const loader = new window.THREE.OBJLoader();
+    const mtlLoader = new window.THREE.MTLLoader();  // ← ДОБАВЬ
 
-    loader.load(
-      objUrl,
-      (obj) => {
-        console.log(`✓ OBJ загружен: ${objUrl}`);
+    // Берём путь к папке модуля
+    const objDir = objUrl.substring(0, objUrl.lastIndexOf('/'));
+    const mtlUrl = objDir + '/wall.mtl';  // или балкон/window/etc
 
-        if (!scene) {
-          console.warn("Scene не инициализирована");
-          resolve();
-          return;
-        }
+    // Загружаем MTL первым
+    mtlLoader.load(
+      mtlUrl,
+      (mtl) => {
+        mtl.preload();
+        loader.setMaterials(mtl);
 
-        // Удаляем старые объекты (кроме grid и groundPlane)
-        const objectsToRemove = [];
-        scene.children.forEach((child) => {
-          if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
-            objectsToRemove.push(child);
-          }
-        });
-        objectsToRemove.forEach(obj => scene.remove(obj));
-
-        // Добавляем новый OBJ
-        scene.add(obj);
-
-        // Центрируем камеру на объект
-        const box = new THREE.Box3().setFromObject(obj);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = camera.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-
-        camera.position.copy(center);
-        camera.position.z += cameraZ * 1.5;
-        camera.lookAt(center);
-
-        controls.target.copy(center);
-        controls.update();
-
-        console.log(`✓ Объект добавлен в сцену`);
-        resolve();
+        // Теперь загружаем OBJ с материалами
+        loader.load(objUrl, handleObjectLoaded, undefined, reject);
       },
       undefined,
-      (error) => {
-        console.error(`Ошибка загрузки OBJ: ${error}`);
-        showToast(`Failed to load 3D model: ${error.message}`, "error");
-        reject(error);
+      () => {
+        // Если MTL не загрузился - загружаем OBJ без MTL
+        loader.load(objUrl, handleObjectLoaded, undefined, reject);
       }
     );
-  });
+
+    function handleObjectLoaded(obj) {
+    console.log(`✓ OBJ загружен: ${objUrl}`);
+
+    if (!scene) {
+      console.warn("Scene не инициализирована");
+      resolve();
+      return;
+    }
+
+    // === ДОБАВЬ МАТЕРИАЛ НА СЛУЧАЙ ЕСЛИ MTL НЕ ЗАГРУЗИЛСЯ ===
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x888888,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh && !child.material) {
+        child.material = material;
+      }
+    });
+
+    // === ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ (поворот на -90° по X оси) ===
+    obj.rotateOnWorldAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    // ===
+
+    scene.add(obj);
+
+    // Центрируем камеру на объект
+    const box = new THREE.Box3().setFromObject(obj);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+    camera.position.copy(center);
+    camera.position.z += cameraZ * 1.5;
+    camera.lookAt(center);
+
+    controls.target.copy(center);
+    controls.update();
+
+    console.log(`✓ Объект добавлен в сцену`);
+    resolve();
+  }
+});
 }
 
 saveModuleBtn?.addEventListener("click", async () => {
   const text = moduleDescription.value.trim();
   const moduleType = $("moduleType").value;
+  const moduleName = $("moduleName").value.trim();
 
   if (!text) {
     showToast("Enter module description first.", "error");
@@ -2502,18 +2544,26 @@ saveModuleBtn?.addEventListener("click", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: text,
-          module_type: moduleType
+          module_type: moduleType,
+          module_name: moduleName
         })
       });
 
       const data = await result.json();
       if (!result.ok) throw new Error(data.error);
 
-      showToast(`Module saved: ${data.module_name}`, "success");
-      moduleDescription.value = '';
+      // === ДОБАВЛЯЕМ МОДУЛЬ В ЛОКАЛЬНЫЙ МАССИВ ===
+      savedModulesData.push({
+        id: data.module_id,
+        name: moduleName || data.module_name,  // ← ИСПОЛЬЗУЙ moduleName ЕСЛ ЕСТЬ
+        type: data.module_type,
+        created_at: new Date().toISOString(),
+        params: data.params,
+        zip_file: `${data.module_type}_${data.module_id}.zip`
+      });
 
-      // Обновляем список модулей в библиотеке и селекторах
-      await loadSavedModules();
+      showToast(`Module saved: ${data.module_name}`, "success");
+
       renderSavedModules();
       populateModuleSelectors();
       setActiveTab("library");
@@ -2522,6 +2572,7 @@ saveModuleBtn?.addEventListener("click", async () => {
     }
   });
 });
+
 
 analyzeHouseBtn?.addEventListener("click", async () => {
   const text = houseDescription.value.trim();
@@ -2776,7 +2827,6 @@ function onPointerMove(event) {
 (async () => {
   await initScene();
   updateHouseRangeLabels();
-  await loadFacadeTextures();
   await loadSavedModules();
   renderSavedHouses();
   setActiveTab("modules");
