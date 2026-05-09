@@ -1,4 +1,9 @@
 {
+  "balcony": { "enabled": false },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false },
   "window": {
     "enabled": true,
     "out_dir": "data/out_batch/window_proc_maps_demo",
