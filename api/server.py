@@ -416,6 +416,7 @@ async def generate_module(request: Request):
         "module_id": "uuid",
         "module_type": "wall",
         "params": {...},
+        "dimensions": {"width": 2.0, "height": 3.0},
         "zip_url": "/files/wall_uuid.zip"
     }
     """
@@ -452,14 +453,22 @@ async def generate_module(request: Request):
                 status_code=500
             )
 
-        # === 4️⃣ Сохранение в реестр ===
+        # === 4️⃣ СОХРАНЯЕМ РАЗМЕРЫ МОДУЛЯ ===
+        module_width = params.get("width", 4.0)
+        module_height = params.get("height", 3.0)
+
+        # === 5️⃣ Сохранение в реестр ===
         module_record = {
             "module_id": module_id,
             "module_type": module_type,
             "module_name": parse_result.module_name,
             "params": params,
             "zip_file": zip_path.name,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
+            "dimensions": {  # ← ДОБАВЛЕНО
+                "width": module_width,
+                "height": module_height
+            }
         }
 
         modules = load_modules_registry()
@@ -467,6 +476,7 @@ async def generate_module(request: Request):
         save_modules_registry(modules)
 
         logger.info(f"✓ Модуль сохранен: {module_id}")
+        logger.info(f"✓ Размеры: {module_width}м (ширина) × {module_height}м (высота)")
 
         return {
             "status": "success",
@@ -474,6 +484,10 @@ async def generate_module(request: Request):
             "module_type": module_type,
             "module_name": parse_result.module_name,
             "params": params,
+            "dimensions": {  # ← ВОЗВРАЩАЕМ
+                "width": module_width,
+                "height": module_height
+            },
             "obj_url": f"/modules/{module_type}/{module_id}/{module_type}.obj",
             "zip_url": f"/api/modules/{module_id}/download",
             "confidence": parse_result.confidence
@@ -619,60 +633,50 @@ async def delete_module(module_id: str):
 
 
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
-
 @app.post("/api/generate-house")
 async def generate_house(request: Request):
-    """
-    🔹 ВКЛАДКА 3: СБОРКА ДОМА ИЗ МОДУЛЕЙ
-
-    Входные данные:
-    {
-        "house_name": "Мой дом",
-        "floors": 5,
-        "sections": 3,
-        "width": 18,
-        "depth": 20,
-        "wall_module_id": "uuid",
-        "window_module_id": "uuid",
-        "door_module_id": "uuid",
-        "balcony_module_id": "uuid",
-        "entrance_module_id": "uuid"
-    }
-    """
     try:
         payload = await request.json()
         house_name = payload.get("house_name", "Дом")
 
-        logger.info(f"🏗️ Создание дома: {house_name}")
+        house_id = str(uuid.uuid4())[:8]
+        house_dir = MODULES_DIR / "houses" / house_id
+        house_dir.mkdir(parents=True, exist_ok=True)
 
-        # Получаем модули
-        modules = load_modules_registry()
+        # === НОВЫЙ АССЕМБЛЕР С СЕТКОЙ ФАСАДОВ ===
+        from src.generator.assembler import assemble_building
 
-        house_params = {
-            "house_name": house_name,
+        # Параметры для нового ассемблера
+        building_params = {
             "floors": payload.get("floors", 5),
+            "columns": payload.get("width", 18),
             "sections": payload.get("sections", 3),
-            "width": payload.get("width", 18),
-            "depth": payload.get("depth", 20),
-            "modules": {
-                "wall": payload.get("wall_module_id"),
-                "window": payload.get("window_module_id"),
-                "door": payload.get("door_module_id"),
-                "balcony": payload.get("balcony_module_id"),
-                "entrance": payload.get("entrance_module_id"),
-            }
+            "module_width": 4.0,
+            "module_height": 3.0,
+            "depth": payload.get("depth", 2),
+            "texture_scale": payload.get("texture_scale", 1),
         }
 
-        logger.info(f"Параметры дома: {house_params}")
+        logger.info(f"🏗️ Параметры здания: {building_params}")
 
-        # TODO: Интегрировать с assembler.py для сборки дома из модулей
+        # Вызываем ассемблер
+        output_path = house_dir / "house.obj"
+        success = assemble_building(
+            building_params,
+            MODULES_DIR,
+            output_path
+        )
 
-        # Сохраняем в реестр домов
-        house_id = str(uuid.uuid4())[:8]
+        if not success:
+            raise Exception("Ошибка сборки дома")
+
+        logger.info(f"✓ Дом собран: {house_id}")
+
         house_record = {
             "house_id": house_id,
             "house_name": house_name,
-            "params": house_params,
+            "params": building_params,
+            "obj_url": f"/modules/houses/{house_id}/house.obj",
             "created_at": datetime.now().isoformat()
         }
 
@@ -680,22 +684,16 @@ async def generate_house(request: Request):
         houses.append(house_record)
         save_houses_registry(houses)
 
-        logger.info(f"✓ Дом сохранен: {house_id}")
-
         return {
             "status": "success",
             "house_id": house_id,
             "house_name": house_name,
-            "message": "Дом создан (интеграция с assembler.py в разработке)"
+            "obj_url": f"/modules/houses/{house_id}/house.obj"
         }
 
     except Exception as e:
         logger.error(f"Ошибка создания дома: {e}", exc_info=True)
-        return JSONResponse(
-            {"error": str(e)},
-            status_code=500
-        )
-
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/houses")
 async def get_all_houses():

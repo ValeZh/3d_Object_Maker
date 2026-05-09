@@ -559,6 +559,16 @@ def export_entrance(
     if not meshes:
         raise RuntimeError("entrance: empty mesh")
     combined = trimesh.util.concatenate(meshes)
+
+    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
+    combined.apply_transform(
+        trimesh.transformations.rotation_matrix(
+            -np.pi / 2,  # -90° по X
+            [1, 0, 0]
+        )
+    )
+    # === КОНЕЦ ===
+
     obj_path = out_dir / "entrance.obj"
     combined.export(str(obj_path))
     print(f"[OK] Entrance export: {obj_path}")
@@ -687,6 +697,15 @@ def export_entrance_textured(
         make_normal_map_from_albedo(atlas_img, strength=3.0).save(out_dir / normal_name)
     if generate_roughness_map:
         make_roughness_map_from_albedo(atlas_img, min_roughness=0.3, max_roughness=0.9).save(out_dir / rough_name)
+
+    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
+    work.apply_transform(
+        trimesh.transformations.rotation_matrix(
+            -np.pi / 2,  # -90° по X
+            [1, 0, 0]
+        )
+    )
+    # === КОНЕЦ ===
 
     obj_path = out_dir / "entrance.obj"
     work.export(str(obj_path), include_texture=True)

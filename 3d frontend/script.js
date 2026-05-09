@@ -1324,29 +1324,30 @@ async function loadSavedModules() {
 
     // Преобразуем структуру by_type в плоский массив
     if (data.by_type) {
-      savedModulesData = [];
+
       for (const type in data.by_type) {
         const modules = data.by_type[type];
         if (Array.isArray(modules)) {
           modules.forEach(mod => {
-            savedModulesData.push({
-              id: mod.module_id,
-              name: mod.module_name,
-              type: mod.module_type,
-              created_at: mod.created_at,
-              params: mod.params,
-              zip_file: mod.zip_file,
-            });
+            // Проверяем не добавлен ли уже
+            if (!savedModulesData.find(m => m.id === mod.module_id)) {
+              savedModulesData.push({
+                id: mod.module_id,
+                name: mod.module_name,
+                type: mod.module_type,
+                created_at: mod.created_at,
+                params: mod.params,
+                zip_file: mod.zip_file,
+              });
+            }
           });
         }
       }
     } else if (Array.isArray(data)) {
       savedModulesData = data;
-    } else {
-      savedModulesData = [];
-    }
+    }  // ← ДОБАВЬ ЭТУ СКОБКУ
   } catch {
-    savedModulesData = [];
+    // ничего не делаем
   }
 
   renderSavedModules();
@@ -1644,18 +1645,17 @@ function renderModulePreview(data) {
   const depth = p.depth || DEFAULTS.module.wall.depth;
   const color = p.color || DEFAULTS.colors.wall;
 
-  const material = new THREE.MeshStandardMaterial({
+  // === ПАРСИМ ЦВЕТ ===
+  let colorValue = p.color || DEFAULTS.colors.wall;
+  // Если это HEX строка - конвертируем в THREE.Color
+  if (typeof colorValue === 'string') {
+    colorValue = new THREE.Color(colorValue);
+  }
+
+  const bodyMaterial = new THREE.MeshPhongMaterial({
     color: color,
-    roughness: 0.8,
-    metalness: 0.1
-  });
-
-  const moduleColor = color || DEFAULTS.colors.wall;
-
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: moduleColor,
-    roughness: 0.9,
-    metalness: 0.03
+    emissive: 0x222222,  // ← чтобы было видно
+    shininess: 100
   });
 
   const windowMaterial = new THREE.MeshStandardMaterial({
@@ -1679,7 +1679,9 @@ function renderModulePreview(data) {
     roughness: 0.85
   });
 
-  const body = createBox(width, height, depth, material);
+  const body = createBox(width, height, depth, bodyMaterial);
+  body.castShadow = true;
+  body.receiveShadow = true;
   body.position.y = height / 2;
   group.add(body);
 
@@ -2426,7 +2428,8 @@ generateModuleBtn?.addEventListener("click", async () => {
 
     // === ЗАГРУЖАЕМ РЕАЛЬНЫЙ OBJ ФАЙЛ В THREE.JS ===
     if (data.obj_url) {
-      await loadObjInPreview(data.obj_url);
+      console.log('Color from params:', data.params?.color);
+      await loadObjInPreview(data.obj_url, data.params?.color, data.module_type);
     } else if (data.module_id) {
       // Если нет прямого URL, строим его
       const objUrl = `/modules/${moduleType}/${data.module_id}/${moduleType}.obj`;
@@ -2442,9 +2445,8 @@ generateModuleBtn?.addEventListener("click", async () => {
 });
 
 // === ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ OBJ В THREE.JS ===
-async function loadObjInPreview(objUrl) {
+async function loadObjInPreview(objUrl, moduleColor = null, moduleType = 'wall') {  // ← добавь параметр
   return new Promise((resolve, reject) => {
-    // === ОЧИЩАЕМ СЦЕНУ ===
     const objectsToRemove = [];
     scene.children.forEach((child) => {
       if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
@@ -2454,77 +2456,85 @@ async function loadObjInPreview(objUrl) {
     objectsToRemove.forEach(obj => scene.remove(obj));
 
     const loader = new window.THREE.OBJLoader();
-    const mtlLoader = new window.THREE.MTLLoader();  // ← ДОБАВЬ
+    const mtlLoader = new window.THREE.MTLLoader();
 
-    // Берём путь к папке модуля
     const objDir = objUrl.substring(0, objUrl.lastIndexOf('/'));
-    const mtlUrl = objDir + '/wall.mtl';  // или балкон/window/etc
+    const mtlFileName = moduleType + '.mtl';  // ← ДИНАМИЧНО!
+    const mtlUrl = objDir + '/' + mtlFileName;
 
-    // Загружаем MTL первым
+    console.log(`📥 Загружаю MTL: ${mtlUrl}`);
+
     mtlLoader.load(
       mtlUrl,
       (mtl) => {
+        console.log(`✅ MTL загружен успешно!`);
         mtl.preload();
         loader.setMaterials(mtl);
-
-        // Теперь загружаем OBJ с материалами
         loader.load(objUrl, handleObjectLoaded, undefined, reject);
       },
       undefined,
-      () => {
-        // Если MTL не загрузился - загружаем OBJ без MTL
+      (error) => {
+        console.warn(`⚠️ MTL не найден: ${mtlUrl}`);
         loader.load(objUrl, handleObjectLoaded, undefined, reject);
       }
     );
 
     function handleObjectLoaded(obj) {
-    console.log(`✓ OBJ загружен: ${objUrl}`);
+      console.log(`✓ OBJ загружен: ${objUrl}`);
 
-    if (!scene) {
-      console.warn("Scene не инициализирована");
-      resolve();
-      return;
-    }
-
-    // === ДОБАВЬ МАТЕРИАЛ НА СЛУЧАЙ ЕСЛИ MTL НЕ ЗАГРУЗИЛСЯ ===
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x888888,
-      roughness: 0.8,
-      metalness: 0.1
-    });
-
-    obj.traverse((child) => {
-      if (child instanceof THREE.Mesh && !child.material) {
-        child.material = material;
+      if (!scene) {
+        console.warn("Scene не инициализирована");
+        resolve();
+        return;
       }
-    });
 
-    // === ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ (поворот на -90° по X оси) ===
-    obj.rotateOnWorldAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-    // ===
+      // === ИСПОЛЬЗУЕМ ЦВЕТ ИЗ ПАРАМЕТРОВ ===
+      let materialColor = 0xcccccc;  // дефолт
+      if (moduleColor && typeof moduleColor === 'string') {
+        materialColor = new THREE.Color(moduleColor);
+      }
 
-    scene.add(obj);
 
-    // Центрируем камеру на объект
-    const box = new THREE.Box3().setFromObject(obj);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
+      const fallbackMaterial = new THREE.MeshPhongMaterial({
+        color: materialColor,  // ← цвет модуля
+        emissive: 0x333333,
+        shininess: 100,
+        flatShading: false
+      });
+      // === КОНЕЦ ===
 
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = camera.fov * (Math.PI / 180);
-    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.material = fallbackMaterial;
+          if (child.geometry) {
+            child.geometry.computeVertexNormals();
+          }
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
 
-    camera.position.copy(center);
-    camera.position.z += cameraZ * 1.5;
-    camera.lookAt(center);
+      scene.add(obj);
 
-    controls.target.copy(center);
-    controls.update();
+      const box = new THREE.Box3().setFromObject(obj);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
 
-    console.log(`✓ Объект добавлен в сцену`);
-    resolve();
-  }
-});
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = camera.fov * (Math.PI / 180);
+      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+      camera.position.copy(center);
+      camera.position.z += cameraZ * 1.5;
+      camera.lookAt(center);
+
+      controls.target.copy(center);
+      controls.update();
+
+      console.log(`✓ Объект добавлен в сцену`);
+      resolve();
+    }
+  });
 }
 
 saveModuleBtn?.addEventListener("click", async () => {
@@ -2596,7 +2606,55 @@ analyzeHouseBtn?.addEventListener("click", async () => {
   });
 });
 
-generateHouseBtn?.addEventListener("click", generateHousePreview);
+generateHouseBtn?.addEventListener("click", async () => {
+  // Валидируем форму
+  if (!validateHouseForm()) {
+    return;
+  }
+
+  const formData = getHouseFormData();
+  const houseNameValue = $("houseName")?.value?.trim() || `House_${Date.now()}`;
+
+  generateHouseBtn.disabled = true;
+  generateHouseBtn.textContent = "🏗️ Building...";
+
+  try {
+    const response = await fetch(`${SERVER_URL}/api/generate-house`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    house_name: houseNameValue,
+    floors: formData.house.floors,           // ← было formData.floors
+    sections: formData.house.sections,       // ← было formData.sections
+    width: formData.house.width,             // ← было formData.width
+    depth: formData.house.depth,             // ← было formData.depth
+    window_columns: formData.house.window_cols,  // ← было formData.window_columns
+    texture_scale: formData.house.facade?.texture_scale || 1,
+    has_balconies: formData.house.has_balconies,
+    balcony_density: formData.house.balcony_rate,  // ← переименовано
+    wall_module_id: formData.modules.wall,
+    window_module_id: formData.modules.window,
+    door_module_id: formData.modules.door,
+    balcony_module_id: formData.modules.balcony
+  })
+});
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+
+    showToast(`House built: ${data.house_name}`, "success");
+
+    if (data.obj_url) {
+      await loadObjInPreview(data.obj_url, null, 'wall');
+    }
+
+  } catch (err) {
+    showToast(`Build failed: ${err.message}`, "error");
+  } finally {
+    generateHouseBtn.disabled = false;
+    generateHouseBtn.textContent = "Generate House";
+  }
+});
 
 animateHouseBtn?.addEventListener("click", async () => {
   await withLoading(animateHouseBtn, "Animating...", async () => {
