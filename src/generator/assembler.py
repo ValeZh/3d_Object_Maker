@@ -1,338 +1,408 @@
 """
-assembler.py — Сборка дома из отдельных компонентов
-Объединяет window.obj, balcony.obj, door.obj, entrance.obj в один building.obj
+assembler.py — Сборка панельного дома из модульной сетки фасадов
 """
 
 import logging
 from pathlib import Path
 from typing import Dict, Any, List
+from enum import Enum
 import trimesh
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-class BuildingAssembler:
-    """Собирает дом из процедурно сгенерированных компонентов"""
+class FacadeType(Enum):
+    """Типы фасадных модулей"""
+    EMPTY_WALL = "wall"
+    WINDOW = "window"
+    BALCONY = "balcony"
+    ENTRANCE = "door"
 
-    def __init__(self, models_dir: Path, building_params: Dict[str, Any]):
+
+class FacadeGrid:
+    """2D сетка фасада (columns × floors)"""
+
+    def __init__(self, columns: int, floors: int):
+        self.columns = columns
+        self.floors = floors
+        # grid[floor][column] = FacadeType
+        self.grid = [[FacadeType.EMPTY_WALL for _ in range(columns)] for _ in range(floors)]
+
+    def set_cell(self, column: int, floor: int, facade_type: FacadeType):
+        """Установить тип модуля в ячейку сетки"""
+        if 0 <= column < self.columns and 0 <= floor < self.floors:
+            self.grid[floor][column] = facade_type
+
+
+class PanelBuildingAssembler:
+    """Собирает панельный дом из модульной сетки"""
+
+    def __init__(self, params: Dict[str, Any], models_dir: Path):
         """
         Args:
-            models_dir: Папка с .obj файлами (models/)
-            building_params: Параметры дома {floors, windows_per_floor, ...}
+            params: {
+                floors: int,
+                columns: int,
+                sections: int,
+                module_width: float (default 4.0m),
+                module_height: float (default 3.0m),
+                depth: float (modules in depth, default 2),
+                ...
+            }
+            models_dir: Папка с модулями (modules/)
         """
+        self.params = params
         self.models_dir = Path(models_dir)
-        self.params = building_params
 
-        # Параметры здания
-        self.floors = building_params.get("floors", 5)
-        self.wall_height = building_params.get("wall_height", 3.0)
-        self.building_length = building_params.get("building_length", 25.0)
-        self.building_width = building_params.get("building_width", 12.0)
-        self.windows_per_floor = building_params.get("windows_per_floor", 4)
-        self.balconies_per_floor = building_params.get("balconies_per_floor", 2)
-        self.entrance_count = building_params.get("entrance_count", 1)
-        self.balcony_depth = building_params.get("balcony_depth", 1.15)
+        # === ПАРАМЕТРЫ ЗДАНИЯ ===
+        self.floors = params.get("floors", 5)
+        self.columns = params.get("columns", 18)
+        self.sections = params.get("sections", 3)
+        self.module_width = params.get("module_width", 4.0)
+        self.module_height = params.get("module_height", 3.0)
+        self.depth = params.get("depth", 2)
 
-        # Загруженные mesh'и
-        self.meshes = {}
+        # === РАЗМЕРЫ ЗДАНИЯ ===
+        self.building_width = self.columns * self.module_width
+        self.building_height = self.floors * self.module_height
+        self.building_depth = self.depth * self.module_width
 
-    def load_component(self, component_name: str) -> trimesh.Trimesh:
-        """
-        Загружает компонент из .obj файла
+        # === СЕТКИ ФАСАДОВ ===
+        self.front_grid = FacadeGrid(self.columns, self.floors)
+        self.back_grid = FacadeGrid(self.columns, self.floors)
+        self.left_grid = FacadeGrid(self.depth, self.floors)
+        self.right_grid = FacadeGrid(self.depth, self.floors)
 
-        Args:
-            component_name: "window", "balcony", "door", "entrance"
+        # === ЗАГРУЖЕННЫЕ МОДУЛИ ===
+        self.modules = {}
 
-        Returns:
-            Загруженный mesh или None если файла нет
-        """
-        obj_path = self.models_dir / f"{component_name}.obj"
+        logger.info(f"🏗️ Инициализация здания:")
+        logger.info(f"   Размер: {self.columns}×{self.floors} (модули)")
+        logger.info(f"   Размеры: {self.building_width:.1f}m × {self.building_height:.1f}m")
+        logger.info(f"   Секций: {self.sections}")
 
-        if not obj_path.exists():
-            logger.warning(f"⚠️ Файл не найден: {obj_path}")
+    def load_modules(self) -> bool:
+        """Загружает все модули из директории"""
+        logger.info("📥 Загрузка модулей...")
+
+        for facade_type in FacadeType:
+            mesh = self._load_module(facade_type.value)
+            if mesh is not None:
+                self.modules[facade_type] = mesh
+                logger.info(f"   ✓ {facade_type.name}: загружен")
+            else:
+                logger.warning(f"   ⚠️ {facade_type.name}: не найден")
+
+        if not self.modules:
+            logger.error("❌ Не загружено ни одного модуля!")
+            return False
+
+        return True
+
+    def _load_module(self, module_type: str) -> trimesh.Trimesh:
+        """Загружает первый найденный модуль типа"""
+        module_dir = self.models_dir / module_type
+
+        if not module_dir.exists():
+            return None
+
+        # Ищем первый OBJ файл в подпапке
+        obj_files = list(module_dir.glob(f"*/{module_type}.obj"))
+
+        if not obj_files:
             return None
 
         try:
-            mesh = trimesh.load(str(obj_path), process=False)
-            logger.info(f"✓ Загружен {component_name}: {len(mesh.vertices)} вершин, {len(mesh.faces)} граней")
+            mesh = trimesh.load(str(obj_files[0]), process=False)
             return mesh
         except Exception as e:
-            logger.error(f"❌ Ошибка загрузки {component_name}: {e}")
+            logger.error(f"Ошибка загрузки {module_type}: {e}")
             return None
+
+    def generate_facade_rules(self):
+        """Применяет правила размещения модулей в сетке с рандомайзером"""
+        logger.info("📐 Применение правил фасада...")
+
+        # === ПОЛУЧАЕМ texture_scale (1-8) ===
+        scale = self.params.get("texture_scale", 1)
+        scale = max(1, min(scale, 8))  # Ограничиваем от 1 до 8
+
+        # === РАСЧЕТ ВЕРОЯТНОСТЕЙ ===
+        # scale=1: 70% стены, 20% окна, 10% балконы
+        # scale=4: 30% стены, 50% окна, 20% балконы
+        # scale=8: 0% стены, 50% окна, 50% балконы
+
+        wall_prob = max(0, 0.7 - (scale - 1) * 0.087)  # спадает от 0.7 до 0
+        balcony_prob = 0.1 + (scale - 1) * 0.037  # растет от 0.1 до 0.36
+        # остальное окна
+
+        logger.info(f"   Texture Scale: {scale}")
+        logger.info(
+            f"   Вероятности - Стены: {wall_prob:.1%}, Балконы: {balcony_prob:.1%}, Окна: {1 - wall_prob - balcony_prob:.1%}")
+
+        # === РАСЧЁТ ПОЗИЦИЙ ВХОДОВ ===
+        entrance_columns = []
+        if self.sections > 0:
+            section_width = self.columns / (self.sections + 1)
+            for i in range(self.sections):
+                col = int((i + 1) * section_width)
+                col = max(0, min(col, self.columns - 1))
+                entrance_columns.append(col)
+
+        logger.info(f"   Входы в колонках: {entrance_columns}")
+
+        # === ЗАПОЛНЯЕМ ПЕРЕДНИЙ ФАСАД ===
+        for floor in range(self.floors):
+            for col in range(self.columns):
+                if floor == 0:
+                    # ПЕРВЫЙ ЭТАЖ - входы или окна
+                    if col in entrance_columns:
+                        self.front_grid.set_cell(col, floor, FacadeType.ENTRANCE)
+                    else:
+                        self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+                else:
+                    # ВЕРХНИЕ ЭТАЖИ - окна над входом, остальное по вероятности
+                    if col in entrance_columns:
+                        # НАД ВХОДОМ ВСЕГДА ОКНА!
+                        self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+                    else:
+                        # Рандомный выбор по вероятностям
+                        rand = np.random.random()
+                        if rand < wall_prob:
+                            self.front_grid.set_cell(col, floor, FacadeType.EMPTY_WALL)
+                        elif rand < wall_prob + balcony_prob:
+                            self.front_grid.set_cell(col, floor, FacadeType.BALCONY)
+                        else:
+                            self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+
+        # === ЗАПОЛНЯЕМ ЗАДНИЙ ФАСАД (БЕЗ ВХОДОВ) ===
+        for floor in range(self.floors):
+            for col in range(self.columns):
+                # Рандомный выбор по тем же вероятностям
+                rand = np.random.random()
+                if rand < wall_prob:
+                    self.back_grid.set_cell(col, floor, FacadeType.EMPTY_WALL)
+                elif rand < wall_prob + balcony_prob:
+                    self.back_grid.set_cell(col, floor, FacadeType.BALCONY)
+                else:
+                    self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
+
+        # === БОКОВЫЕ ФАСАДЫ (только СТЕНЫ) ===
+        for floor in range(self.floors):
+            for d in range(self.depth):
+                self.left_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
+                self.right_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
 
     def assemble_building(self) -> trimesh.Trimesh:
-        """
-        Собирает полный дом из компонентов
-
-        Алгоритм:
-        1. Загружаем компоненты
-        2. Размножаем окна по этажам и фасадам
-        3. Добавляем балконы
-        4. Добавляем двери
-        5. Добавляем входы
-        6. Объединяем всё в один mesh
-        """
-
+        """Собирает здание"""
         logger.info("=" * 60)
-        logger.info("🏗️ СБОРКА ДОМА")
+        logger.info("🏗️ СБОРКА ЗДАНИЯ")
         logger.info("=" * 60)
 
-        # Список mesh'ей для объединения
-        building_meshes = []
-
-        # === ЗАГРУЖАЕМ КОМПОНЕНТЫ ===
-        logger.info("📥 Загрузка компонентов...")
-
-        window_mesh = self.load_component("window")
-        balcony_mesh = self.load_component("balcony")
-        door_mesh = self.load_component("door")
-        entrance_mesh = self.load_component("entrance")
-
-        # === ОКНА ===
-        if window_mesh is not None:
-            logger.info(
-                f"🪟 Размножение окон ({self.windows_per_floor} × {self.floors} = {self.windows_per_floor * self.floors})...")
-            window_meshes = self._arrange_windows(window_mesh)
-            building_meshes.extend(window_meshes)
-
-        # === БАЛКОНЫ ===
-        if balcony_mesh is not None:
-            logger.info(
-                f"🏠 Размножение балконов ({self.balconies_per_floor} × {self.floors} = {self.balconies_per_floor * self.floors})...")
-            balcony_meshes = self._arrange_balconies(balcony_mesh)
-            building_meshes.extend(balcony_meshes)
-
-        # === ДВЕРИ ===
-        if door_mesh is not None:
-            logger.info(f"🚪 Добавление дверей ({self.entrance_count})...")
-            door_meshes = self._arrange_doors(door_mesh)
-            building_meshes.extend(door_meshes)
-
-        # === ВХОДЫ/ПОДЪЕЗДЫ ===
-        if entrance_mesh is not None:
-            logger.info(f"🚶 Добавление подъездов ({self.entrance_count})...")
-            entrance_meshes = self._arrange_entrances(entrance_mesh)
-            building_meshes.extend(entrance_meshes)
-
-        # === ОБЪЕДИНЕНИЕ ===
-        if not building_meshes:
-            logger.error("❌ Нет компонентов для сборки!")
+        # Загружаем модули
+        if not self.load_modules():
             return None
 
+        # Генерируем правила
+        self.generate_facade_rules()
+
+        building_meshes = []
+
+        # === БАЗОВЫЙ КУБ ===
+        logger.info("📦 Создание базового объёма...")
+        base = self._create_base_volume()
+        if base is not None:
+            building_meshes.append(base)
+
+        # === ПЕРЕДНИЙ ФАСАД ===
+        logger.info("🔲 Размещение переднего фасада...")
+        front_meshes = self._place_facade_grid(
+            self.front_grid,
+            y_offset=0,
+            rotate_z=0
+        )
+        building_meshes.extend(front_meshes)
+
+        # === ЗАДНИЙ ФАСАД ===
+        logger.info("🔲 Размещение заднего фасада...")
+        back_meshes = self._place_facade_grid(
+            self.back_grid,
+            y_offset=self.building_depth,
+            rotate_z=np.pi  # 180°
+        )
+        building_meshes.extend(back_meshes)
+
+        # === ЛЕВЫЙ ФАСАД (ТОЛЬКО СТЕНЫ!) ===
+        logger.info("🔲 Размещение левого фасада...")
+        left_meshes = self._place_side_facade_walls_only(
+            self.left_grid,
+            x_offset=0,
+            rotate_z=-np.pi / 2  # -90°
+        )
+        building_meshes.extend(left_meshes)
+
+        # === ПРАВЫЙ ФАСАД (ТОЛЬКО СТЕНЫ!) ===
+        logger.info("🔲 Размещение правого фасада...")
+        right_meshes = self._place_side_facade_walls_only(
+            self.right_grid,
+            x_offset=self.building_width,
+            rotate_z=np.pi / 2  # 90°
+        )
+        building_meshes.extend(right_meshes)
+
+        # === ОБЪЕДИНЕНИЕ ===
         logger.info(f"🔗 Объединение {len(building_meshes)} компонентов...")
 
         try:
             combined = trimesh.util.concatenate(building_meshes)
             combined.merge_vertices()
 
-            logger.info(f"✅ Дом собран!")
-            logger.info(f"   - Вершин: {len(combined.vertices)}")
-            logger.info(f"   - Граней: {len(combined.faces)}")
-            logger.info(f"   - Объем: {combined.volume:.2f}")
+            logger.info(f"✅ Здание собрано!")
+            logger.info(f"   Вершин: {len(combined.vertices)}")
+            logger.info(f"   Граней: {len(combined.faces)}")
 
             return combined
-
         except Exception as e:
             logger.error(f"❌ Ошибка объединения: {e}")
             return None
 
-    def _arrange_windows(self, window_mesh: trimesh.Trimesh) -> List[trimesh.Trimesh]:
-        """
-        Размножает окна по фасадам и этажам
+    def _create_base_volume(self) -> trimesh.Trimesh:
+        """Создаёт базовый куб здания"""
+        try:
+            box = trimesh.creation.box(
+                extents=[self.building_width, self.building_depth, self.building_height],
+                transform=trimesh.transformations.translation_matrix(
+                    [self.building_width / 2, self.building_depth / 2, self.building_height / 2]
+                )
+            )
+            return box
+        except Exception as e:
+            logger.error(f"Ошибка создания базы: {e}")
+            return None
 
-        Расстояние между окнами рассчитывается из длины здания
-        """
-        windows = []
+    def _place_facade_grid(self, grid: FacadeGrid, y_offset: float, rotate_z: float) -> List[trimesh.Trimesh]:
+        """Размещает модули в фасадной сетке (front/back)"""
+        meshes = []
 
-        # Расстояние между окнами вдоль фасада
-        window_spacing = self.building_length / (self.windows_per_floor + 1)
+        for floor in range(grid.floors):
+            for col in range(grid.columns):
+                facade_type = grid.grid[floor][col]
 
-        # Для каждого этажа
+                if facade_type not in self.modules:
+                    continue
+
+                module = self.modules[facade_type].copy()
+
+                # === ПОВОРОТ ДЛЯ НЕКОТОРЫХ ТИПОВ ===
+                if facade_type in [FacadeType.BALCONY, FacadeType.ENTRANCE]:
+                    module.apply_transform(
+                        trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
+                    )
+
+                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ ===
+                bounds = module.bounds
+                z_min = bounds[0][2]
+                module.apply_translation([0, 0, -z_min])
+
+                # === ЦЕНТРИРУЕМ ПО X И Y (но НЕ по Z!) ===
+                center = module.centroid
+                # Сдвигаем чтобы модуль был в центре ячейки сетки
+                module.apply_translation([-center[0], -center[1], 0])
+
+                # === ПОВОРАЧИВАЕМ если надо (для задней стены) ===
+                if rotate_z != 0:
+                    # Сначала позиционируем, потом поворачиваем
+                    x = col * self.module_width + self.module_width / 2
+                    y = y_offset
+                    z = floor * self.module_height
+                    module.apply_translation([x, y, z])
+
+                    # Поворачиваем вокруг центра модуля
+                    center_point = module.centroid
+                    module.apply_translation([-center_point[0], -center_point[1], 0])
+                    module.apply_transform(
+                        trimesh.transformations.rotation_matrix(rotate_z, [0, 0, 1])
+                    )
+                    module.apply_translation([center_point[0], center_point[1], 0])
+                else:
+                    # Для передней стены просто позиционируем
+                    x = col * self.module_width + self.module_width / 2
+                    y = y_offset
+                    z = floor * self.module_height
+                    module.apply_translation([x, y, z])
+
+                meshes.append(module)
+
+        logger.info(f"   ✓ Размещено {len(meshes)} модулей")
+        return meshes
+
+    def _place_side_facade_walls_only(self, grid: FacadeGrid, x_offset: float, rotate_z: float) -> List[
+        trimesh.Trimesh]:
+        """Размещает ТОЛЬКО СТЕНЫ на боковых фасадах (left/right)"""
+        meshes = []
+
+        if FacadeType.EMPTY_WALL not in self.modules:
+            logger.warning("⚠️ EMPTY_WALL модуль не найден для боковых фасадов")
+            return meshes
+
+        wall_module = self.modules[FacadeType.EMPTY_WALL]
+
         for floor in range(self.floors):
-            floor_z = floor * self.wall_height
+            for d in range(self.depth):
+                module = wall_module.copy()
 
-            # Для каждого окна на этаже
-            for window_idx in range(self.windows_per_floor):
-                # Позиция окна вдоль фасада
-                window_x = window_spacing * (window_idx + 1)
+                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ ===
+                bounds = module.bounds
+                z_min = bounds[0][2]
+                module.apply_translation([0, 0, -z_min])
 
-                # Копируем mesh окна
-                w = window_mesh.copy()
+                # === ЦЕНТРИРУЕМ ПО X И Y (но НЕ по Z!) ===
+                center = module.centroid
+                module.apply_translation([-center[0], -center[1], 0])
 
-                # Позиционируем
-                # Сдвиг вверх: подоконник обычно 0.9м
-                window_z = floor_z + 0.9
+                # === ПОЗИЦИЯ ===
+                x = x_offset
+                y = d * self.module_width + self.module_width / 2
+                z = floor * self.module_height
 
-                # Переводим в центр
-                center = w.centroid
-                w.apply_translation([-center[0], -center[1], -center[2]])
+                # Сначала позиционируем
+                module.apply_translation([x, y, z])
 
-                # Позиционируем в правильное место
-                w.apply_translation([window_x, 0, window_z])
+                # Потом поворачиваем
+                center_point = module.centroid
+                module.apply_translation([-center_point[0], -center_point[1], 0])
+                module.apply_transform(
+                    trimesh.transformations.rotation_matrix(rotate_z, [0, 0, 1])
+                )
+                module.apply_translation([center_point[0], center_point[1], 0])
 
-                windows.append(w)
+                meshes.append(module)
 
-        logger.info(f"   ✓ Окна расставлены: {len(windows)} шт")
-        return windows
-
-    def _arrange_balconies(self, balcony_mesh: trimesh.Trimesh) -> List[trimesh.Trimesh]:
-        """
-        Размножает балконы по фасадам и этажам
-
-        Балконы выступают из фасада на глубину balcony_depth
-        """
-        balconies = []
-
-        # Расстояние между балконами вдоль фасада
-        balcony_spacing = self.building_length / (self.balconies_per_floor + 1)
-
-        # Для каждого этажа
-        for floor in range(self.floors):
-            floor_z = floor * self.wall_height
-
-            # Для каждого балкона на этаже
-            for balcony_idx in range(self.balconies_per_floor):
-                # Позиция балкона вдоль фасада
-                balcony_x = balcony_spacing * (balcony_idx + 1)
-
-                # Копируем mesh балкона
-                b = balcony_mesh.copy()
-
-                # Позиционируем
-                center = b.centroid
-                b.apply_translation([-center[0], -center[1], -center[2]])
-
-                # Балкон выступает из фасада
-                balcony_y = self.balcony_depth
-
-                b.apply_translation([balcony_x, balcony_y, floor_z])
-
-                balconies.append(b)
-
-        logger.info(f"   ✓ Балконы расставлены: {len(balconies)} шт")
-        return balconies
-
-    def _arrange_doors(self, door_mesh: trimesh.Trimesh) -> List[trimesh.Trimesh]:
-        """
-        Добавляет двери на фасад
-        """
-        doors = []
-
-        # Двери ставим в центре фасада на первом этаже
-        center_x = self.building_length / 2
-
-        for entrance_idx in range(self.entrance_count):
-            # Если несколько входов, расставляем их по фасаду
-            if self.entrance_count > 1:
-                spacing = self.building_length / (self.entrance_count + 1)
-                center_x = spacing * (entrance_idx + 1)
-
-            d = door_mesh.copy()
-
-            center = d.centroid
-            d.apply_translation([-center[0], -center[1], -center[2]])
-
-            # Дверь находится на фасаде (y=0) на земле (z=0)
-            d.apply_translation([center_x, 0, 0])
-
-            doors.append(d)
-
-        logger.info(f"   ✓ Двери установлены: {len(doors)} шт")
-        return doors
-
-    def _arrange_entrances(self, entrance_mesh: trimesh.Trimesh) -> List[trimesh.Trimesh]:
-        """
-        Добавляет подъезды/входы перед зданием
-        """
-        entrances = []
-
-        # Подъезды перед входами
-        for entrance_idx in range(self.entrance_count):
-            e = entrance_mesh.copy()
-
-            center = e.centroid
-            e.apply_translation([-center[0], -center[1], -center[2]])
-
-            # Позиция входа (перед дверью)
-            if self.entrance_count > 1:
-                spacing = self.building_length / (self.entrance_count + 1)
-                entrance_x = spacing * (entrance_idx + 1)
-            else:
-                entrance_x = self.building_length / 2
-
-            # Подъезд находится перед зданием (y отрицательный)
-            entrance_y = -2.0
-
-            e.apply_translation([entrance_x, entrance_y, 0])
-
-            entrances.append(e)
-
-        logger.info(f"   ✓ Подъезды установлены: {len(entrances)} шт")
-        return entrances
+        logger.info(f"   ✓ Боковой фасад: {len(meshes)} стен")
+        return meshes
 
     def export_to_obj(self, output_path: Path) -> bool:
-        """
-        Экспортирует собранный дом в OBJ файл
-        """
+        """Экспортирует здание в OBJ"""
         try:
             building = self.assemble_building()
 
             if building is None:
-                logger.error("❌ Не удалось собрать дом")
+                logger.error("❌ Не удалось собрать здание")
                 return False
 
-            # Экспортируем
             building.export(str(output_path))
-
-            logger.info(f"✅ Дом экспортирован в {output_path}")
+            logger.info(f"✅ Здание экспортировано в {output_path}")
             return True
-
         except Exception as e:
             logger.error(f"❌ Ошибка экспорта: {e}")
             return False
 
 
-# ==================== ИНТЕГРАЦИЯ С SERVER.PY ====================
+# === ФУНКЦИЯ ДЛЯ ВЫЗОВА ИЗ SERVER.PY ===
 
 def assemble_building(params: Dict[str, Any], models_dir: Path, output_path: Path) -> bool:
-    """
-    Функция для вызова из server.py
+    """Собирает панельный дом"""
 
-    Args:
-        params: Параметры здания
-        models_dir: Папка с компонентами
-        output_path: Путь для сохранения building.obj
-    """
-
-    assembler = BuildingAssembler(models_dir, params)
+    assembler = PanelBuildingAssembler(params, models_dir)
     return assembler.export_to_obj(output_path)
-
-
-if __name__ == "__main__":
-    # Пример использования
-    import sys
-
-    logging.basicConfig(level=logging.INFO)
-
-    if len(sys.argv) < 2:
-        print("Использование: python assembler.py <models_dir> [output_path]")
-        sys.exit(1)
-
-    models_dir = Path(sys.argv[1])
-    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else models_dir / "building.obj"
-
-    # Пример параметров
-    params = {
-        "floors": 5,
-        "wall_height": 3.0,
-        "building_length": 25.0,
-        "building_width": 12.0,
-        "windows_per_floor": 4,
-        "balconies_per_floor": 2,
-        "entrance_count": 1,
-        "balcony_depth": 1.15
-    }
-
-    success = assemble_building(params, models_dir, output_path)
-    sys.exit(0 if success else 1)

@@ -583,6 +583,15 @@ def export_window_demo(
     img = Image.open(tex_path)
     work.visual = trimesh.visual.texture.TextureVisuals(uv=uv, image=img)
 
+    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
+    work.apply_transform(
+        trimesh.transformations.rotation_matrix(
+            -np.pi / 2,  # -90° по X
+            [1, 0, 0]
+        )
+    )
+    # === КОНЕЦ ===
+
     obj_path = out_dir / "window.obj"
     work.export(str(obj_path), include_texture=True)
 

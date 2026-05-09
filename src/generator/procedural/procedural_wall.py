@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import trimesh
 from PIL import Image
 
 from src.generator.procedural.procedural_wall_mesh import build_solid_wall_mesh
@@ -30,11 +31,11 @@ _DEFAULT_WALL_DIR = _REPO_ROOT / "data" / "wall_export"
 
 
 def _write_wall_obj(
-    obj_path: Path,
-    mtl_name: str,
-    v: np.ndarray,
-    f: np.ndarray,
-    uv: np.ndarray,
+        obj_path: Path,
+        mtl_name: str,
+        v: np.ndarray,
+        f: np.ndarray,
+        uv: np.ndarray,
 ) -> None:
     lines: list[str] = ["# wall (procedural_wall)", f"mtllib {mtl_name}", "", "o wall", "usemtl wall"]
     for row in v:
@@ -61,12 +62,12 @@ def _write_wall_mtl(mtl_path: Path, *, wall_tex: str | None) -> None:
 
 
 def _write_wall_mtl_with_maps(
-    mtl_path: Path,
-    *,
-    wall_tex: str | None,
-    wall_normal_tex: str | None,
-    wall_roughness_tex: str | None,
-    bump_strength: float = 0.7,
+        mtl_path: Path,
+        *,
+        wall_tex: str | None,
+        wall_normal_tex: str | None,
+        wall_roughness_tex: str | None,
+        bump_strength: float = 0.7,
 ) -> None:
     bump_scale = float(max(0.0, bump_strength))
     lines = [
@@ -100,21 +101,21 @@ def _infer_companion_map(base: Path, suffix: str) -> Path | None:
 
 
 def export_wall(
-    out_dir: Path | None = None,
-    *,
-    wall_length: float,
-    wall_thickness: float,
-    wall_height: float,
-    wall_texture: str | Path | None = None,
-    wall_normal_texture: str | Path | None = None,
-    wall_roughness_texture: str | Path | None = None,
-    wall_texture_color: Any = None,
-    use_procedural_maps: bool = False,
-    wall_color_preset: str = "plaster",
-    wall_normal_preset: str = "stucco_like",
-    procedural_tiles_per_side: int = 8,
-    procedural_grout_width: float = 0.06,
-    bump_strength: float = 0.7,
+        out_dir: Path | None = None,
+        *,
+        wall_length: float,
+        wall_thickness: float,
+        wall_height: float,
+        wall_texture: str | Path | None = None,
+        wall_normal_texture: str | Path | None = None,
+        wall_roughness_texture: str | Path | None = None,
+        wall_texture_color: Any = None,
+        use_procedural_maps: bool = False,
+        wall_color_preset: str = "plaster",
+        wall_normal_preset: str = "stucco_like",
+        procedural_tiles_per_side: int = 8,
+        procedural_grout_width: float = 0.06,
+        bump_strength: float = 0.7,
 ) -> Path:
     out_dir = Path(out_dir or _DEFAULT_WALL_DIR).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -193,6 +194,18 @@ def export_wall(
         wall_roughness_name = f"wall_roughness{wr.suffix.lower()}"
         Image.open(wr).convert("RGB").save(out_dir / wall_roughness_name)
 
+    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
+    wall_mesh = trimesh.Trimesh(vertices=v, faces=f, process=False)
+    wall_mesh.apply_transform(
+        trimesh.transformations.rotation_matrix(
+            -np.pi / 2,  # -90° по X
+            [1, 0, 0]
+        )
+    )
+    v = wall_mesh.vertices
+    f = wall_mesh.faces
+    # === КОНЕЦ ===
+
     mtl_name = "wall.mtl"
     mtl_path = out_dir / mtl_name
     obj_path = out_dir / "wall.obj"
@@ -206,4 +219,3 @@ def export_wall(
     _write_wall_obj(obj_path, mtl_name, v, f, uv)
     print(f"[OK] Wall export: {obj_path}")
     return obj_path
-

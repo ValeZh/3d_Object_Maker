@@ -1,4 +1,9 @@
 {
+  "balcony": { "enabled": false },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
   "wall_window": {
     "enabled": true,
     "out_dir": "data/out_batch/red_window_green_wall",

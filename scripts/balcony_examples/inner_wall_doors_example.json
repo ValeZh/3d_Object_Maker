@@ -1,14 +1,26 @@
-[
-  {
-    "u0": 0.3,
-    "u1": 0.7,
-    "z_bottom": 0.02,
-    "z_top": 2.14,
-    "style": "french",
-    "frame_width": 0.09,
-    "frame_depth": 0.08,
-    "leaf_gap": 0.025,
-    "midrail_z_frac": 0.58,
-    "y_outer": 0.06
-  }
-]
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/inner_wall_doors_example",
+    "no_view": true,
+    "inner_wall_doors": [
+      {
+        "u0": 0.3,
+        "u1": 0.7,
+        "z_bottom": 0.02,
+        "z_top": 2.14,
+        "style": "french",
+        "frame_width": 0.09,
+        "frame_depth": 0.08,
+        "leaf_gap": 0.025,
+        "midrail_z_frac": 0.58,
+        "y_outer": 0.06
+      }
+    ]
+  },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false }
+}
