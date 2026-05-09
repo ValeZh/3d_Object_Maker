@@ -324,7 +324,7 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.WINDOW:
-            # Для окна: width, height, depth, style
+            # Для окна: width, height, depth, style, color (рама)
             width = self._extract_value(text, "width")
             height = self._extract_value(text, "height")
             depth = self._extract_value(text, "depth")
@@ -339,6 +339,12 @@ class ModuleTextParser:
             style = self._extract_string(text, "style")
             if style:
                 params["style"] = self._normalize_style(style)
+
+            color_raw = self._extract_string(text, "color")
+            if color_raw:
+                hx = self._get_color_hex(color_raw)
+                if hx:
+                    params["color"] = hx
 
         elif module_type == ModuleType.DOOR:
             # Для двери: height, width, style, material

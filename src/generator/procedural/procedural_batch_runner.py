@@ -100,6 +100,12 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
         for src_key, dst_key in mapping.items():
             if src_key in tex:
                 kwargs[dst_key] = tex[src_key]
+        for src_tint, dst_kw in (
+            ("frame_tex_color", "frame_texture_color"),
+            ("glass_tex_color", "glass_texture_color"),
+        ):
+            if src_tint in tex:
+                kwargs[dst_kw] = tex[src_tint]
     elif section == "wall":
         if "use_procedural_maps" in tex:
             kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])

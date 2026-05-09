@@ -164,6 +164,20 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "window":
+            tex_block = {
+                "use_procedural_maps": True,
+                "frame_color_preset": "plaster",
+                "glass_color_preset": "uniform_noise",
+                "frame_normal_preset": "fine_noise",
+                "generate_normal": True,
+                "generate_roughness": True,
+            }
+            hex_frame = params.get("color") or params.get("frame_color")
+            if isinstance(hex_frame, str) and hex_frame.strip().startswith("#"):
+                tex_block["frame_tex_color"] = hex_to_rgb(hex_frame.strip())
+            hex_glass = params.get("glass_color")
+            if isinstance(hex_glass, str) and hex_glass.strip().startswith("#"):
+                tex_block["glass_tex_color"] = hex_to_rgb(hex_glass.strip())
             config["window"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
@@ -175,15 +189,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "mullions_vertical": 1,
                 "mullions_horizontal": 0,
                 "atlas_half_size": 256,
-                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
-                "texture": {
-                    "use_procedural_maps": True,
-                    "frame_color_preset": "plaster",
-                    "glass_color_preset": "uniform_noise",
-                    "frame_normal_preset": "fine_noise",
-                    "generate_normal": True,
-                    "generate_roughness": True,
-                },
+                "texture": tex_block,
                 "no_view": True,
             }
             # Отключаем остальные
