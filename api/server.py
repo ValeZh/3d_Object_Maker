@@ -3,6 +3,8 @@ api/server.py — Переделанный сервер для модульно�
 Три вкладки: Module Generator → Module Library → House Builder
 """
 
+import base64
+import copy
 import logging
 import json
 import subprocess
@@ -13,7 +15,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -44,6 +46,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Single-pixel PNG — satisfies browser /favicon.ico requests without a static file
+_FAVICON_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    return Response(content=_FAVICON_PNG, media_type="image/png")
+
 
 # ======================= ПУТИ =======================
 
@@ -206,30 +219,47 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "balcony":
-            config["balcony"] = {
-                "enabled": True,
-                "out_dir": str(output_dir),
-                "width_front": params.get("width", 2.0),
-                "width_back": params.get("width", 2.0),
-                "depth": params.get("depth", 1.15),
-                "height": 1.0,
-                "window_mode": "frame_only",
-                "front_window_mode": "with_glass",
-                "window_depth": 0.14,
-                "mullions_vertical": 1,
-                "mullions_horizontal": 0,
-                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
-                "texture": {
-                    "use_procedural_maps": True,
-                    "wall_lower_color_preset": "plaster",
-                    "wall_upper_color_preset": "plaster",
-                    "frame_color_preset": "wood",
-                    "glass_color_preset": "uniform_noise",
-                    "generate_normal": True,
-                    "generate_roughness": True,
-                },
-                "no_view": True,
-            }
+            ceramic_file = (
+                PROJECT_ROOT / "scripts" / "balcony_examples" / "batch_balcony_ceramic_tile.json"
+            )
+            if not ceramic_file.exists():
+                raise FileNotFoundError(f"Ceramic balcony config not found: {ceramic_file}")
+            with open(ceramic_file, "r", encoding="utf-8") as bf:
+                ceramic_cfg = json.load(bf)
+
+            tpl = copy.deepcopy(ceramic_cfg.get("balcony") or {})
+            for key in ("entrance", "entrance_textured", "window", "wall", "wall_window"):
+                if key in ceramic_cfg:
+                    config[key] = copy.deepcopy(ceramic_cfg[key])
+
+            tpl["enabled"] = True
+            tpl["out_dir"] = str(output_dir)
+            tpl["no_view"] = True
+
+            wf = tpl.get("width_front", 2.0)
+            wb = tpl.get("width_back", wf)
+            if params.get("width") is not None:
+                wf = wb = float(params["width"])
+            tpl["width_front"] = wf
+            tpl["width_back"] = wb
+            if params.get("depth") is not None:
+                tpl["depth"] = float(params["depth"])
+            if params.get("height") is not None:
+                tpl["height"] = float(params["height"])
+
+            hex_col = params.get("color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                rgb = hex_to_rgb(hex_col.strip())
+                for k in (
+                    "wall_lower_tex_color",
+                    "wall_upper_tex_color",
+                    "side_jamb_tex_color",
+                    "side_separator_tex_color",
+                    "side_basket_tex_color",
+                ):
+                    tpl[k] = rgb
+
+            config["balcony"] = tpl
             # Отключаем остальные
             for key in ["wall", "window", "wall_window", "entrance", "entrance_textured"]:
                 if key in config:

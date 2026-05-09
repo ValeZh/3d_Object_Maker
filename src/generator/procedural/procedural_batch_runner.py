@@ -141,6 +141,18 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
             if src_key in tex:
                 kwargs[dst_key] = tex[src_key]
 
+        for tint_key in (
+            "wall_lower_tex_color",
+            "wall_upper_tex_color",
+            "frame_tex_color",
+            "glass_tex_color",
+            "side_basket_tex_color",
+            "side_jamb_tex_color",
+            "side_separator_tex_color",
+        ):
+            if tint_key in tex:
+                kwargs[tint_key] = tex[tint_key]
+
 
 def _prepare_call(
     payload: Dict[str, Any],
