@@ -219,20 +219,12 @@ async function initScene() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
   }
   renderer.toneMapping = THREE.NoToneMapping;
-  if (THREE.SRGBColorSpace !== undefined) {
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-  }
-  renderer.toneMapping = THREE.NoToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   preview.appendChild(renderer.domElement);
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
   scene.add(hemi);
-
-  const ambient = new THREE.AmbientLight(0xffffff, 0.62);
-  scene.add(ambient);
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.62);
   scene.add(ambient);
@@ -249,10 +241,6 @@ async function initScene() {
   dir.shadow.camera.top = 50;
   dir.shadow.camera.bottom = -50;
   scene.add(dir);
-
-  const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
-  fill.position.set(-22, 14, -18);
-  scene.add(fill);
 
   const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
   fill.position.set(-22, 14, -18);
@@ -2458,7 +2446,6 @@ generateModuleBtn?.addEventListener("click", async () => {
     // === ЗАГРУЖАЕМ РЕАЛЬНЫЙ OBJ ФАЙЛ В THREE.JS ===
     if (data.obj_url) {
       await loadObjInPreview(data.obj_url, data.params, data.module_type);
-      await loadObjInPreview(data.obj_url, data.params, data.module_type);
     } else if (data.module_id) {
       // Если нет прямого URL, строим его
       const objUrl = `/modules/${moduleType}/${data.module_id}/${moduleType}.obj`;
@@ -2828,21 +2815,12 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   });
 
   console.log(`✓ OBJ загружен: ${objUrl}`);
-  console.log(`✓ OBJ загружен: ${objUrl}`);
 
   if (!scene) {
     console.warn("Scene не инициализирована");
     return;
   }
-  if (!scene) {
-    console.warn("Scene не инициализирована");
-    return;
-  }
 
-  let fallbackMat = null;
-  if (!mtlCreator) {
-    fallbackMat = _toPreviewLitMaterial(null, tintHex);
-  }
   let fallbackMat = null;
   if (!mtlCreator) {
     fallbackMat = _toPreviewLitMaterial(null, tintHex);
@@ -2853,18 +2831,9 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
     if (fallbackMat) child.material = fallbackMat;
   });
   if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
-  obj.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    if (fallbackMat) child.material = fallbackMat;
-  });
-  if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
 
   scene.add(obj);
-  scene.add(obj);
 
-  const box = new THREE.Box3().setFromObject(obj);
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
   const box = new THREE.Box3().setFromObject(obj);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -2872,26 +2841,16 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = camera.fov * (Math.PI / 180);
   const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const fov = camera.fov * (Math.PI / 180);
-  const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
 
-  camera.position.copy(center);
-  camera.position.z += cameraZ * 1.5;
-  camera.lookAt(center);
   camera.position.copy(center);
   camera.position.z += cameraZ * 1.5;
   camera.lookAt(center);
 
   controls.target.copy(center);
   controls.update();
-  controls.target.copy(center);
-  controls.update();
 
-  console.log(`✓ Объект добавлен в сцену`);
   console.log(`✓ Объект добавлен в сцену`);
 }
-
 saveModuleBtn?.addEventListener("click", async () => {
   const text = moduleDescription.value.trim();
   const moduleType = $("moduleType").value;
