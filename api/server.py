@@ -639,6 +639,19 @@ async def generate_house(request: Request):
         payload = await request.json()
         house_name = payload.get("house_name", "Дом")
 
+        # === ПОЛУЧАЕМ WALL МОДУЛЬ И ЕГО РАЗМЕРЫ ===
+        wall_module_id = payload.get("wall_module_id")
+        wall_dimensions = {"width": 4.0, "height": 3.0}  # дефолт
+
+        if wall_module_id:
+            modules_registry = load_modules_registry()
+            for module in modules_registry:
+                if module.get("module_id") == wall_module_id:
+                    if "dimensions" in module:
+                        wall_dimensions = module["dimensions"]
+                        logger.info(f"✓ Размеры wall: {wall_dimensions}")
+                    break
+
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
         house_dir.mkdir(parents=True, exist_ok=True)
@@ -651,8 +664,8 @@ async def generate_house(request: Request):
             "floors": payload.get("floors", 5),
             "columns": payload.get("width", 18),
             "sections": payload.get("sections", 3),
-            "module_width": 4.0,
-            "module_height": 3.0,
+            "module_width": wall_dimensions.get("width", 4.0),  # ← ИЗ WALL!
+            "module_height": wall_dimensions.get("height", 3.0),  # ← ИЗ WALL!
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
         }
