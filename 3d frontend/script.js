@@ -219,12 +219,20 @@ async function initScene() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
   }
   renderer.toneMapping = THREE.NoToneMapping;
+  if (THREE.SRGBColorSpace !== undefined) {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  }
+  renderer.toneMapping = THREE.NoToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   preview.appendChild(renderer.domElement);
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
   scene.add(hemi);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.62);
+  scene.add(ambient);
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.62);
   scene.add(ambient);
@@ -241,6 +249,10 @@ async function initScene() {
   dir.shadow.camera.top = 50;
   dir.shadow.camera.bottom = -50;
   scene.add(dir);
+
+  const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
+  fill.position.set(-22, 14, -18);
+  scene.add(fill);
 
   const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
   fill.position.set(-22, 14, -18);
@@ -2446,6 +2458,7 @@ generateModuleBtn?.addEventListener("click", async () => {
     // === ЗАГРУЖАЕМ РЕАЛЬНЫЙ OBJ ФАЙЛ В THREE.JS ===
     if (data.obj_url) {
       await loadObjInPreview(data.obj_url, data.params, data.module_type);
+      await loadObjInPreview(data.obj_url, data.params, data.module_type);
     } else if (data.module_id) {
       // Если нет прямого URL, строим его
       const objUrl = `/modules/${moduleType}/${data.module_id}/${moduleType}.obj`;
@@ -2459,6 +2472,86 @@ generateModuleBtn?.addEventListener("click", async () => {
     generateModuleBtn.textContent = "Generate Module";
   }
 });
+
+function _previewTintHex(params) {
+  if (!params || typeof params !== "object") return null;
+  return (
+    params.color ||
+    params.frame_color ||
+    params.glass_color ||
+    params.wall_color ||
+    null
+  );
+}
+
+/**
+ * Превью в GUI: без отдельного env/PMREM MeshStandard + normal/bump из trimesh
+ * часто сходят в почти чёрный силуэт. MeshBasic показывает albedo (map) стабильно;
+ * объём можно смотреть в Blender / Open3d.
+ */
+function _toPreviewLitMaterial(phongMat, tintHex) {
+  const T = THREE;
+  const tint =
+    tintHex && typeof tintHex === "string" ? new T.Color(tintHex) : null;
+
+  if (!phongMat) {
+    return new T.MeshBasicMaterial({
+      color: tint ?? new T.Color(0xb8b8b8),
+      side: T.DoubleSide,
+      toneMapped: false,
+    });
+  }
+
+  const transparent = !!phongMat.transparent;
+  const opacity = phongMat.opacity !== undefined ? phongMat.opacity : 1;
+  const diffuse = phongMat.map;
+  if (diffuse && diffuse.image) {
+    const mapTex = diffuse;
+    if (T.SRGBColorSpace !== undefined) {
+      mapTex.colorSpace = T.SRGBColorSpace;
+    }
+    return new T.MeshBasicMaterial({
+      map: mapTex,
+      color:
+        tint?.clone?.() ??
+        phongMat.color?.clone?.() ??
+        new T.Color(0xffffff),
+      side: T.DoubleSide,
+      toneMapped: false,
+      transparent,
+      opacity,
+    });
+  }
+
+  return new T.MeshBasicMaterial({
+    color:
+      tint?.clone?.() ??
+      phongMat.color?.clone?.() ??
+      new T.Color(0xb8b8b8),
+    side: T.DoubleSide,
+    toneMapped: false,
+    transparent,
+    opacity,
+  });
+}
+
+function _applyPreviewMaterials(root, tintHex) {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((m) =>
+        _toPreviewLitMaterial(m, tintHex)
+      );
+    } else {
+      child.material = _toPreviewLitMaterial(child.material, tintHex);
+    }
+    if (child.geometry && !child.geometry.attributes.normal) {
+      child.geometry.computeVertexNormals();
+    }
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+}
 
 function _previewTintHex(params) {
   if (!params || typeof params !== "object") return null;
@@ -2568,6 +2661,99 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   } catch (_) {
     /* ignore */
   }
+  mtlUrls.push(`${objDirRaw}/${moduleType}.mtl`, `${objDirRaw}/material.mtl`);
+
+  const seen = new Set();
+  const orderedMtl = mtlUrls.filter((u) => {
+    if (seen.has(u)) return false;
+    seen.add(u);
+    return true;
+  });
+
+  let mtlCreator = null;
+  for (const full of orderedMtl) {
+    try {
+      const r = await fetch(full);
+      if (!r.ok) continue;
+      const mtlLoaderProbe = new THREE.MTLLoader();
+      mtlLoaderProbe.setPath(objDir);
+      mtlLoaderProbe.setResourcePath(objDir);
+      mtlCreator = mtlLoaderProbe.parse(await r.text(), objDir);
+      console.log(`[Preview] MTL найден: ${full}`);
+      break;
+    } catch (_) {
+      /* пробуем следующий кандидат */
+    }
+  }
+
+  const { obj } = await new Promise((resolve, reject) => {
+    const mgr = new THREE.LoadingManager();
+    let loadedObj = null;
+
+    mgr.onError = (url) => {
+      console.warn("[Preview] Ошибка загрузки ресурса:", url);
+    };
+    mgr.onLoad = () => {
+      if (!loadedObj) {
+        reject(new Error("OBJ не был разобран после завершения LoadingManager"));
+        return;
+      }
+      resolve({ obj: loadedObj, mtlCreator: mtlCreator });
+    };
+
+    const objLoader = new THREE.OBJLoader(mgr);
+
+    try {
+      if (mtlCreator) {
+        mtlCreator.setManager(mgr);
+        mtlCreator.preload();
+        objLoader.setMaterials(mtlCreator);
+        console.log(`[Preview] Текстуры MTL загружаются (base ${objDir})`);
+      } else {
+        console.warn(
+          "[Preview] MTL не найден — смотри mtllib / material.mtl рядом с OBJ"
+        );
+      }
+
+      objLoader.load(
+        objUrl,
+        (o) => {
+          loadedObj = o;
+        },
+        undefined,
+        reject
+      );
+    } catch (e) {
+      reject(e);
+    }
+  });
+async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall") {
+  const params =
+    typeof paramsOrColor === "string" ? { color: paramsOrColor } : paramsOrColor;
+  const tintHex = _previewTintHex(params);
+
+  const objectsToRemove = [];
+  scene.children.forEach((child) => {
+    if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
+      objectsToRemove.push(child);
+    }
+  });
+  objectsToRemove.forEach((o) => scene.remove(o));
+
+  const objDirRaw = objUrl.substring(0, objUrl.lastIndexOf("/"));
+  const objDir = objDirRaw.endsWith("/") ? objDirRaw : `${objDirRaw}/`;
+
+  const mtlUrls = [];
+  try {
+    const res = await fetch(objUrl);
+    if (res.ok) {
+      const body = await res.text();
+      const mm = body.match(/^\s*mtllib\s+([^\s\r\n#]+)/im);
+      if (mm) mtlUrls.push(`${objDirRaw}/${mm[1].trim()}`);
+    }
+  } catch (_) {
+    /* ignore */
+  }
 
   // === ИСПРАВКА ДЛЯ DOOR ===
   if (moduleType === "door") {
@@ -2642,12 +2828,21 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   });
 
   console.log(`✓ OBJ загружен: ${objUrl}`);
+  console.log(`✓ OBJ загружен: ${objUrl}`);
 
   if (!scene) {
     console.warn("Scene не инициализирована");
     return;
   }
+  if (!scene) {
+    console.warn("Scene не инициализирована");
+    return;
+  }
 
+  let fallbackMat = null;
+  if (!mtlCreator) {
+    fallbackMat = _toPreviewLitMaterial(null, tintHex);
+  }
   let fallbackMat = null;
   if (!mtlCreator) {
     fallbackMat = _toPreviewLitMaterial(null, tintHex);
@@ -2658,9 +2853,18 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
     if (fallbackMat) child.material = fallbackMat;
   });
   if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
+  obj.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (fallbackMat) child.material = fallbackMat;
+  });
+  if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
 
   scene.add(obj);
+  scene.add(obj);
 
+  const box = new THREE.Box3().setFromObject(obj);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
   const box = new THREE.Box3().setFromObject(obj);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -2668,14 +2872,23 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = camera.fov * (Math.PI / 180);
   const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * (Math.PI / 180);
+  const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
 
+  camera.position.copy(center);
+  camera.position.z += cameraZ * 1.5;
+  camera.lookAt(center);
   camera.position.copy(center);
   camera.position.z += cameraZ * 1.5;
   camera.lookAt(center);
 
   controls.target.copy(center);
   controls.update();
+  controls.target.copy(center);
+  controls.update();
 
+  console.log(`✓ Объект добавлен в сцену`);
   console.log(`✓ Объект добавлен в сцену`);
 }
 
