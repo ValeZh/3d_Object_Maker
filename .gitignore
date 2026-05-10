@@ -218,3 +218,6 @@ __marimo__/
 /data/
 /panels1/
 /yolov8n.pt
+
+# Local binary bundles (keep out of Git)
+/scripts.zip

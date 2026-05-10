@@ -215,12 +215,19 @@ async function initScene() {
   });
   renderer.setSize(preview.clientWidth, preview.clientHeight);
   renderer.setPixelRatio(window.devicePixelRatio || 1);
+  if (THREE.SRGBColorSpace !== undefined) {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  }
+  renderer.toneMapping = THREE.NoToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   preview.appendChild(renderer.domElement);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.15);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
   scene.add(hemi);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.62);
+  scene.add(ambient);
 
   const dir = new THREE.DirectionalLight(0xffffff, 1.15);
   dir.position.set(18, 28, 14);
@@ -234,6 +241,10 @@ async function initScene() {
   dir.shadow.camera.top = 50;
   dir.shadow.camera.bottom = -50;
   scene.add(dir);
+
+  const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
+  fill.position.set(-22, 14, -18);
+  scene.add(fill);
 
   const grid = new THREE.GridHelper(120, 120, 0x333333, 0x222222);
   scene.add(grid);
@@ -2428,8 +2439,7 @@ generateModuleBtn?.addEventListener("click", async () => {
 
     // === ЗАГРУЖАЕМ РЕАЛЬНЫЙ OBJ ФАЙЛ В THREE.JS ===
     if (data.obj_url) {
-      console.log('Color from params:', data.params?.color);
-      await loadObjInPreview(data.obj_url, data.params?.color, data.module_type);
+      await loadObjInPreview(data.obj_url, data.params, data.module_type);
     } else if (data.module_id) {
       // Если нет прямого URL, строим его
       const objUrl = `/modules/${moduleType}/${data.module_id}/${moduleType}.obj`;
@@ -2444,97 +2454,217 @@ generateModuleBtn?.addEventListener("click", async () => {
   }
 });
 
-// === ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ OBJ В THREE.JS ===
-async function loadObjInPreview(objUrl, moduleColor = null, moduleType = 'wall') {  // ← добавь параметр
-  return new Promise((resolve, reject) => {
-    const objectsToRemove = [];
-    scene.children.forEach((child) => {
-      if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
-        objectsToRemove.push(child);
-      }
+function _previewTintHex(params) {
+  if (!params || typeof params !== "object") return null;
+  return (
+    params.color ||
+    params.frame_color ||
+    params.glass_color ||
+    params.wall_color ||
+    null
+  );
+}
+
+/**
+ * Превью в GUI: без отдельного env/PMREM MeshStandard + normal/bump из trimesh
+ * часто сходят в почти чёрный силуэт. MeshBasic показывает albedo (map) стабильно;
+ * объём можно смотреть в Blender / Open3d.
+ */
+function _toPreviewLitMaterial(phongMat, tintHex) {
+  const T = THREE;
+  const tint =
+    tintHex && typeof tintHex === "string" ? new T.Color(tintHex) : null;
+
+  if (!phongMat) {
+    return new T.MeshBasicMaterial({
+      color: tint ?? new T.Color(0xb8b8b8),
+      side: T.DoubleSide,
+      toneMapped: false,
     });
-    objectsToRemove.forEach(obj => scene.remove(obj));
+  }
 
-    const loader = new window.THREE.OBJLoader();
-    const mtlLoader = new window.THREE.MTLLoader();
+  const transparent = !!phongMat.transparent;
+  const opacity = phongMat.opacity !== undefined ? phongMat.opacity : 1;
+  const diffuse = phongMat.map;
+  if (diffuse && diffuse.image) {
+    const mapTex = diffuse;
+    if (T.SRGBColorSpace !== undefined) {
+      mapTex.colorSpace = T.SRGBColorSpace;
+    }
+    return new T.MeshBasicMaterial({
+      map: mapTex,
+      color:
+        tint?.clone?.() ??
+        phongMat.color?.clone?.() ??
+        new T.Color(0xffffff),
+      side: T.DoubleSide,
+      toneMapped: false,
+      transparent,
+      opacity,
+    });
+  }
 
-    const objDir = objUrl.substring(0, objUrl.lastIndexOf('/'));
-    const mtlFileName = moduleType + '.mtl';  // ← ДИНАМИЧНО!
-    const mtlUrl = objDir + '/' + mtlFileName;
+  return new T.MeshBasicMaterial({
+    color:
+      tint?.clone?.() ??
+      phongMat.color?.clone?.() ??
+      new T.Color(0xb8b8b8),
+    side: T.DoubleSide,
+    toneMapped: false,
+    transparent,
+    opacity,
+  });
+}
 
-    console.log(`📥 Загружаю MTL: ${mtlUrl}`);
+function _applyPreviewMaterials(root, tintHex) {
+  root.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((m) =>
+        _toPreviewLitMaterial(m, tintHex)
+      );
+    } else {
+      child.material = _toPreviewLitMaterial(child.material, tintHex);
+    }
+    if (child.geometry && !child.geometry.attributes.normal) {
+      child.geometry.computeVertexNormals();
+    }
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+}
 
-    mtlLoader.load(
-      mtlUrl,
-      (mtl) => {
-        console.log(`✅ MTL загружен успешно!`);
-        mtl.preload();
-        loader.setMaterials(mtl);
-        loader.load(objUrl, handleObjectLoaded, undefined, reject);
-      },
-      undefined,
-      (error) => {
-        console.warn(`⚠️ MTL не найден: ${mtlUrl}`);
-        loader.load(objUrl, handleObjectLoaded, undefined, reject);
-      }
-    );
+// === ФУНКЦИЯ ДЛЯ ЗАГРУЗКИ OBJ В THREE.JS ===
+async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall") {
+  const params =
+    typeof paramsOrColor === "string" ? { color: paramsOrColor } : paramsOrColor;
+  const tintHex = _previewTintHex(params);
 
-    function handleObjectLoaded(obj) {
-      console.log(`✓ OBJ загружен: ${objUrl}`);
-
-      if (!scene) {
-        console.warn("Scene не инициализирована");
-        resolve();
-        return;
-      }
-
-      // === ИСПОЛЬЗУЕМ ЦВЕТ ИЗ ПАРАМЕТРОВ ===
-      let materialColor = 0xcccccc;  // дефолт
-      if (moduleColor && typeof moduleColor === 'string') {
-        materialColor = new THREE.Color(moduleColor);
-      }
-
-
-      const fallbackMaterial = new THREE.MeshPhongMaterial({
-        color: materialColor,  // ← цвет модуля
-        emissive: 0x333333,
-        shininess: 100,
-        flatShading: false
-      });
-      // === КОНЕЦ ===
-
-      obj.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          child.material = fallbackMaterial;
-          if (child.geometry) {
-            child.geometry.computeVertexNormals();
-          }
-          child.castShadow = true;
-          child.receiveShadow = true;
-        }
-      });
-
-      scene.add(obj);
-
-      const box = new THREE.Box3().setFromObject(obj);
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-
-      const maxDim = Math.max(size.x, size.y, size.z);
-      const fov = camera.fov * (Math.PI / 180);
-      let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-
-      camera.position.copy(center);
-      camera.position.z += cameraZ * 1.5;
-      camera.lookAt(center);
-
-      controls.target.copy(center);
-      controls.update();
-
-      console.log(`✓ Объект добавлен в сцену`);
-      resolve();
+  const objectsToRemove = [];
+  scene.children.forEach((child) => {
+    if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
+      objectsToRemove.push(child);
     }
   });
+  objectsToRemove.forEach((o) => scene.remove(o));
+
+  const objDirRaw = objUrl.substring(0, objUrl.lastIndexOf("/"));
+  const objDir = objDirRaw.endsWith("/") ? objDirRaw : `${objDirRaw}/`;
+
+  const mtlUrls = [];
+  try {
+    const res = await fetch(objUrl);
+    if (res.ok) {
+      const body = await res.text();
+      const mm = body.match(/^\s*mtllib\s+([^\s\r\n#]+)/im);
+      if (mm) mtlUrls.push(`${objDirRaw}/${mm[1].trim()}`);
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  mtlUrls.push(`${objDirRaw}/${moduleType}.mtl`, `${objDirRaw}/material.mtl`);
+
+  const seen = new Set();
+  const orderedMtl = mtlUrls.filter((u) => {
+    if (seen.has(u)) return false;
+    seen.add(u);
+    return true;
+  });
+
+  let mtlCreator = null;
+  for (const full of orderedMtl) {
+    try {
+      const r = await fetch(full);
+      if (!r.ok) continue;
+      const mtlLoaderProbe = new THREE.MTLLoader();
+      mtlLoaderProbe.setPath(objDir);
+      mtlLoaderProbe.setResourcePath(objDir);
+      mtlCreator = mtlLoaderProbe.parse(await r.text(), objDir);
+      console.log(`[Preview] MTL найден: ${full}`);
+      break;
+    } catch (_) {
+      /* пробуем следующий кандидат */
+    }
+  }
+
+  const { obj } = await new Promise((resolve, reject) => {
+    const mgr = new THREE.LoadingManager();
+    let loadedObj = null;
+
+    mgr.onError = (url) => {
+      console.warn("[Preview] Ошибка загрузки ресурса:", url);
+    };
+    mgr.onLoad = () => {
+      if (!loadedObj) {
+        reject(new Error("OBJ не был разобран после завершения LoadingManager"));
+        return;
+      }
+      resolve({ obj: loadedObj, mtlCreator: mtlCreator });
+    };
+
+    const objLoader = new THREE.OBJLoader(mgr);
+
+    try {
+      if (mtlCreator) {
+        mtlCreator.setManager(mgr);
+        mtlCreator.preload();
+        objLoader.setMaterials(mtlCreator);
+        console.log(`[Preview] Текстуры MTL загружаются (base ${objDir})`);
+      } else {
+        console.warn(
+          "[Preview] MTL не найден — смотри mtllib / material.mtl рядом с OBJ"
+        );
+      }
+
+      objLoader.load(
+        objUrl,
+        (o) => {
+          loadedObj = o;
+        },
+        undefined,
+        reject
+      );
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+  console.log(`✓ OBJ загружен: ${objUrl}`);
+
+  if (!scene) {
+    console.warn("Scene не инициализирована");
+    return;
+  }
+
+  let fallbackMat = null;
+  if (!mtlCreator) {
+    fallbackMat = _toPreviewLitMaterial(null, tintHex);
+  }
+
+  obj.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    if (fallbackMat) child.material = fallbackMat;
+  });
+  if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
+
+  scene.add(obj);
+
+  const box = new THREE.Box3().setFromObject(obj);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = camera.fov * (Math.PI / 180);
+  const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+  camera.position.copy(center);
+  camera.position.z += cameraZ * 1.5;
+  camera.lookAt(center);
+
+  controls.target.copy(center);
+  controls.update();
+
+  console.log(`✓ Объект добавлен в сцену`);
 }
 
 saveModuleBtn?.addEventListener("click", async () => {

@@ -72,6 +72,7 @@ class ModuleTextParser:
         "красный": "#c74a4a",
         "red": "#c74a4a",
         "синий": "#4a6fc7",
+        "синяя": "#4a6fc7",
         "blue": "#4a6fc7",
         "зелёный": "#4aa36c",
         "зеленый": "#4aa36c",
@@ -105,6 +106,9 @@ class ModuleTextParser:
         "фиолетовый": "#9c27b0",
         "фиолетовая": "#9c27b0",
         "purple": "#9c27b0",
+        "розовый": "#ff88ff",
+        "розовая": "#ff88ff",
+        "pink": "#ff88ff",
     }
 
     # Дефолты для каждого типа
@@ -166,7 +170,11 @@ class ModuleTextParser:
             ],
             "color": [
                 r"(?:color|цвет)[:]?\s+(#?[a-fA-F0-9]{6})",
-                r"\b(красн[ый|ая]?|синий|синяя|зелён[ый|ая]?|зелен[ый|ая]?|жёлт[ый|ая]?|желт[ый|ая]?|белый|белая|чёрн[ый|ая]?|черн[ый|ая]?|серый|серая|оранжев[ый|ая]?|фиолетов[ый|ая]?|розов[ый|ая]?|коричнев[ый|ая]?|red|blue|green|white|black)\b",
+                # Не использовать «[ый|ая]» внутри [] — это один символ из класса, а не «ый/ая».
+                r"\b((?:красн(?:ый|ая)|син(?:ий|яя)|зелён(?:ый|ая)|зелен(?:ый|ая)|"
+                r"жёлт(?:ый|ая)|желт(?:ый|ая)|бел(?:ый|ая)|чёрн(?:ый|ая)|черн(?:ый|ая)|"
+                r"сер(?:ый|ая)|оранжев(?:ый|ая)|фиолетов(?:ый|ая)|розов(?:ый|ая)|"
+                r"коричнев(?:ый|ая)|red|blue|green|white|black|gray|grey))\b",
             ],
         }
 
@@ -316,7 +324,7 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.WINDOW:
-            # Для окна: width, height, depth, style
+            # Для окна: width, height, depth, style, color (рама)
             width = self._extract_value(text, "width")
             height = self._extract_value(text, "height")
             depth = self._extract_value(text, "depth")
@@ -331,6 +339,12 @@ class ModuleTextParser:
             style = self._extract_string(text, "style")
             if style:
                 params["style"] = self._normalize_style(style)
+
+            color_raw = self._extract_string(text, "color")
+            if color_raw:
+                hx = self._get_color_hex(color_raw)
+                if hx:
+                    params["color"] = hx
 
         elif module_type == ModuleType.DOOR:
             # Для двери: height, width, style, material
@@ -351,7 +365,7 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.BALCONY:
-            # Для балкона: depth, width, style
+            # Для балкона: depth, width, style, color
             depth = self._extract_value(text, "depth")
             width = self._extract_value(text, "width")
 
@@ -363,6 +377,12 @@ class ModuleTextParser:
             style = self._extract_string(text, "style")
             if style:
                 params["style"] = self._normalize_style(style)
+
+            color_raw = self._extract_string(text, "color")
+            if color_raw:
+                hx = self._get_color_hex(color_raw)
+                if hx:
+                    params["color"] = hx
 
         elif module_type == ModuleType.ENTRANCE:
             # Для входа: width, height, depth, style
@@ -408,38 +428,14 @@ class ModuleTextParser:
         if color_lower.startswith("#"):
             return color_lower
 
-        COLOR_MAP = {
-            "красный": "#c74a4a",
-            "красная": "#c74a4a",
-            "синий": "#4a6fc7",
-            "синяя": "#4a6fc7",
-            "зелёный": "#4aa36c",
-            "зеленый": "#4aa36c",
-            "зелёная": "#4aa36c",
-            "зеленая": "#4aa36c",
-            "серый": "#888888",
-            "серая": "#888888",
-            "белый": "#d9d9d9",
-            "белая": "#d9d9d9",
-            "чёрный": "#2a2a2a",
-            "черный": "#2a2a2a",
-            "чёрная": "#2a2a2a",
-            "черная": "#2a2a2a",
-            "коричневый": "#8b6a4e",
-            "коричневая": "#8b6a4e",
-            "оранжевый": "#ff9800",
-            "оранжевая": "#ff9800",
-            "фиолетовый": "#9c27b0",
-            "фиолетовая": "#9c27b0",
-            "жёлтый": "#ffeb3b",
-            "желтый": "#ffeb3b",
-            "жёлтая": "#ffeb3b",
-            "желтая": "#ffeb3b",
-            "розовый": "#ff88ff",
-            "розовая": "#ff88ff",
-        }
+        if color_lower in self.COLOR_MAP:
+            return self.COLOR_MAP[color_lower]
 
-        return COLOR_MAP.get(color_lower, None)
+        for key, hex_code in self.COLOR_MAP.items():
+            if key in color_lower or color_lower in key:
+                return hex_code
+
+        return None
 
     def debug_parse(self, text: str) -> Dict[str, Any]:
         """Парсит с подробной информацией для отладки"""
