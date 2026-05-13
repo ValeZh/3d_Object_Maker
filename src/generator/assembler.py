@@ -1,5 +1,6 @@
 """
 assembler.py — Сборка панельного дома из модульной сетки фасадов
+ИСПРАВЛЕНИЕ: Правильная ориентация модулей и координатная система
 """
 
 import logging
@@ -79,7 +80,7 @@ class PanelBuildingAssembler:
 
         logger.info(f"🏗️ Инициализация здания:")
         logger.info(f"   Размер: {self.columns}×{self.floors} (модули)")
-        logger.info(f"   Размеры: {self.building_width:.1f}m × {self.building_height:.1f}m")
+        logger.info(f"   Размеры: {self.building_width:.1f}m × {self.building_height:.1f}m × {self.building_depth:.1f}m")
         logger.info(f"   Секций: {self.sections}")
 
     def load_modules(self) -> bool:
@@ -101,47 +102,89 @@ class PanelBuildingAssembler:
         return True
 
     def _load_module(self, module_type: str) -> trimesh.Trimesh:
-        """Загружает первый найденный модуль типа"""
+        """Загружает модуль и исправляет ориентацию"""
         module_dir = self.models_dir / module_type
 
         if not module_dir.exists():
+            logger.warning(f"⚠️ Папка не найдена: {module_dir}")
             return None
 
-        # Ищем первый OBJ файл в подпапке
         obj_files = list(module_dir.glob(f"*/{module_type}.obj"))
 
         if not obj_files:
+            logger.warning(f"⚠️ OBJ файлы не найдены в: {module_dir}")
             return None
 
         try:
             mesh = trimesh.load(str(obj_files[0]), process=False)
+            logger.info(f"✓ Загружен {module_type}: {obj_files[0]}")
+
+            try:
+                bounds = mesh.bounds
+                size_x = bounds[1][0] - bounds[0][0]
+                size_y = bounds[1][1] - bounds[0][1]
+                size_z = bounds[1][2] - bounds[0][2]
+
+                logger.info(f"   Размеры OBJ: X={size_x:.2f}m, Y={size_y:.2f}m, Z={size_z:.2f}m")
+
+                # ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ если модуль на боку
+                if size_z < 0.5 and size_y > 0.5:
+                    logger.info(f"   ⚠️ Модуль {module_type} перевернут, исправляем...")
+                    rotate_matrix = trimesh.transformations.rotation_matrix(
+                        np.pi / 2, [1, 0, 0]  # +90° вокруг X
+                    )
+                    mesh.apply_transform(rotate_matrix)
+                    bounds = mesh.bounds
+                    size_x = bounds[1][0] - bounds[0][0]
+                    size_y = bounds[1][1] - bounds[0][1]
+                    size_z = bounds[1][2] - bounds[0][2]
+                    logger.info(f"   ✓ После исправления: X={size_x:.2f}m, Y={size_y:.2f}m, Z={size_z:.2f}m")
+
+                # Масштабируем
+                if size_x < 0.01 or size_z < 0.01:
+                    logger.warning(f"⚠️ {module_type} имеет размер близкий к нулю")
+                    return mesh
+
+                scale_x = self.module_width / size_x
+                scale_z = self.module_height / size_z
+
+                logger.info(f"   Масштабирование: X={scale_x:.2f}, Z={scale_z:.2f}")
+
+                # Масштабируем правильно (вокруг центра)
+                center = mesh.centroid
+                mesh.apply_translation(-center)
+
+                scale_matrix = np.diag([scale_x, 1.0, scale_z, 1.0])
+                mesh.apply_transform(scale_matrix)
+
+                mesh.apply_translation(center)
+
+                logger.info(f"   ✓ {module_type.upper()} масштабирован успешно")
+
+            except Exception as scale_error:
+                logger.error(f"❌ Ошибка масштабирования {module_type}: {scale_error}")
+
             return mesh
+
         except Exception as e:
-            logger.error(f"Ошибка загрузки {module_type}: {e}")
+            logger.error(f"❌ Ошибка загрузки {module_type}: {e}", exc_info=True)
             return None
 
     def generate_facade_rules(self):
-        """Применяет правила размещения модулей в сетке с рандомайзером"""
+        """Применяет правила размещения модулей в сетке"""
         logger.info("📐 Применение правил фасада...")
 
-        # === ПОЛУЧАЕМ texture_scale (1-8) ===
         scale = self.params.get("texture_scale", 1)
-        scale = max(1, min(scale, 8))  # Ограничиваем от 1 до 8
+        scale = max(1, min(scale, 8))
 
-        # === РАСЧЕТ ВЕРОЯТНОСТЕЙ ===
-        # scale=1: 70% стены, 20% окна, 10% балконы
-        # scale=4: 30% стены, 50% окна, 20% балконы
-        # scale=8: 0% стены, 50% окна, 50% балконы
-
-        wall_prob = max(0, 0.7 - (scale - 1) * 0.087)  # спадает от 0.7 до 0
-        balcony_prob = 0.1 + (scale - 1) * 0.037  # растет от 0.1 до 0.36
-        # остальное окна
+        wall_prob = max(0, 0.7 - (scale - 1) * 0.087)
+        balcony_prob = 0.1 + (scale - 1) * 0.037
 
         logger.info(f"   Texture Scale: {scale}")
         logger.info(
             f"   Вероятности - Стены: {wall_prob:.1%}, Балконы: {balcony_prob:.1%}, Окна: {1 - wall_prob - balcony_prob:.1%}")
 
-        # === РАСЧЁТ ПОЗИЦИЙ ВХОДОВ ===
+        # === РАСЧЕТ ВХОДОВ ===
         entrance_columns = []
         if self.sections > 0:
             section_width = self.columns / (self.sections + 1)
@@ -152,53 +195,45 @@ class PanelBuildingAssembler:
 
         logger.info(f"   Входы в колонках: {entrance_columns}")
 
-        # === ЗАПОЛНЯЕМ ПЕРЕДНИЙ ФАСАД ===
+        # === ЗАПОЛНЯЕМ ФАСАДЫ ===
         for floor in range(self.floors):
             for col in range(self.columns):
                 if floor == 0:
-                    # ПЕРВЫЙ ЭТАЖ - входы или окна
+                    # ТОЛЬКО ПЕРВЫЙ ЭТАЖ - входы или окна
                     if col in entrance_columns:
                         self.front_grid.set_cell(col, floor, FacadeType.ENTRANCE)
+                        self.back_grid.set_cell(col, floor, FacadeType.ENTRANCE)  # Двери есть и сзади
                     else:
                         self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+                        self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
                 else:
-                    # ВЕРХНИЕ ЭТАЖИ - окна над входом, остальное по вероятности
+                    # ВЕРХНИЕ ЭТАЖИ
                     if col in entrance_columns:
-                        # НАД ВХОДОМ ВСЕГДА ОКНА!
+                        # НАД ВХОДОМ ВСЕГДА ОКНА
                         self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+                        self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
                     else:
-                        # Рандомный выбор по вероятностям
-                        rand = np.random.random()
-                        if rand < wall_prob:
-                            self.front_grid.set_cell(col, floor, FacadeType.EMPTY_WALL)
-                        elif rand < wall_prob + balcony_prob:
-                            self.front_grid.set_cell(col, floor, FacadeType.BALCONY)
+                        # Рандомные по вероятности
+                        import random
+                        r = random.random()
+                        if r < wall_prob:
+                            element = FacadeType.EMPTY_WALL
+                        elif r < wall_prob + balcony_prob:
+                            element = FacadeType.BALCONY
                         else:
-                            self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
+                            element = FacadeType.WINDOW
 
-        # === ЗАПОЛНЯЕМ ЗАДНИЙ ФАСАД (БЕЗ ВХОДОВ) ===
-        for floor in range(self.floors):
-            for col in range(self.columns):
-                # Рандомный выбор по тем же вероятностям
-                rand = np.random.random()
-                if rand < wall_prob:
-                    self.back_grid.set_cell(col, floor, FacadeType.EMPTY_WALL)
-                elif rand < wall_prob + balcony_prob:
-                    self.back_grid.set_cell(col, floor, FacadeType.BALCONY)
-                else:
-                    self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
+                        self.front_grid.set_cell(col, floor, element)
+                        self.back_grid.set_cell(col, floor, element)
 
-        # === БОКОВЫЕ ФАСАДЫ (только СТЕНЫ) ===
+        # === БОКОВЫЕ ФАСАДЫ (только стены) ===
         for floor in range(self.floors):
             for d in range(self.depth):
                 self.left_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
                 self.right_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
 
     def assemble_building(self) -> trimesh.Trimesh:
-        """Собирает здание"""
-        logger.info("=" * 60)
-        logger.info("🏗️ СБОРКА ЗДАНИЯ")
-        logger.info("=" * 60)
+        """Собирает панельный дом из всех компонентов"""
 
         # Загружаем модули
         if not self.load_modules():
@@ -209,45 +244,39 @@ class PanelBuildingAssembler:
 
         building_meshes = []
 
-        # === БАЗОВЫЙ КУБ ===
-        logger.info("📦 Создание базового объёма...")
-        base = self._create_base_volume()
-        if base is not None:
-            building_meshes.append(base)
-
-        # === ПЕРЕДНИЙ ФАСАД ===
+        # === ПЕРЕДНИЙ ФАСАД (y=0, смотрит в направлении +Y) ===
         logger.info("🔲 Размещение переднего фасада...")
         front_meshes = self._place_facade_grid(
             self.front_grid,
             y_offset=0,
-            rotate_z=0
+            rotate_z=0  # ← НЕ rotate, а rotate_z!
         )
         building_meshes.extend(front_meshes)
 
-        # === ЗАДНИЙ ФАСАД ===
+        # === ЗАДНИЙ ФАСАД (y=depth, смотрит в направлении -Y) ===
         logger.info("🔲 Размещение заднего фасада...")
         back_meshes = self._place_facade_grid(
             self.back_grid,
             y_offset=self.building_depth,
-            rotate_z=np.pi  # 180°
+            rotate_z=np.pi  # ← 180°
         )
         building_meshes.extend(back_meshes)
 
-        # === ЛЕВЫЙ ФАСАД (ТОЛЬКО СТЕНЫ!) ===
+        # === ЛЕВЫЙ ФАСАД (x=0, смотрит в направлении +X) ===
         logger.info("🔲 Размещение левого фасада...")
-        left_meshes = self._place_side_facade_walls_only(
+        left_meshes = self._place_side_facade(
             self.left_grid,
             x_offset=0,
-            rotate_z=-np.pi / 2  # -90°
+            is_left=True
         )
         building_meshes.extend(left_meshes)
 
-        # === ПРАВЫЙ ФАСАД (ТОЛЬКО СТЕНЫ!) ===
+        # === ПРАВЫЙ ФАСАД (x=width, смотрит в направлении -X) ===
         logger.info("🔲 Размещение правого фасада...")
-        right_meshes = self._place_side_facade_walls_only(
+        right_meshes = self._place_side_facade(
             self.right_grid,
             x_offset=self.building_width,
-            rotate_z=np.pi / 2  # 90°
+            is_left=False
         )
         building_meshes.extend(right_meshes)
 
@@ -267,20 +296,6 @@ class PanelBuildingAssembler:
             logger.error(f"❌ Ошибка объединения: {e}")
             return None
 
-    def _create_base_volume(self) -> trimesh.Trimesh:
-        """Создаёт базовый куб здания"""
-        try:
-            box = trimesh.creation.box(
-                extents=[self.building_width, self.building_depth, self.building_height],
-                transform=trimesh.transformations.translation_matrix(
-                    [self.building_width / 2, self.building_depth / 2, self.building_height / 2]
-                )
-            )
-            return box
-        except Exception as e:
-            logger.error(f"Ошибка создания базы: {e}")
-            return None
-
     def _place_facade_grid(self, grid: FacadeGrid, y_offset: float, rotate_z: float) -> List[trimesh.Trimesh]:
         """Размещает модули в фасадной сетке (front/back)"""
         meshes = []
@@ -294,7 +309,8 @@ class PanelBuildingAssembler:
 
                 module = self.modules[facade_type].copy()
 
-                # === ПОВОРОТ ДЛЯ НЕКОТОРЫХ ТИПОВ ===
+                # === ПОВОРОТ ДЛЯ БАЛКОНОВ И ВХОДОВ ===
+                # Они ВСЕГДА ротируются на 180° чтобы смотреть наружу
                 if facade_type in [FacadeType.BALCONY, FacadeType.ENTRANCE]:
                     module.apply_transform(
                         trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
@@ -307,39 +323,42 @@ class PanelBuildingAssembler:
 
                 # === ЦЕНТРИРУЕМ ПО X И Y (но НЕ по Z!) ===
                 center = module.centroid
-                # Сдвигаем чтобы модуль был в центре ячейки сетки
                 module.apply_translation([-center[0], -center[1], 0])
 
-                # === ПОВОРАЧИВАЕМ если надо (для задней стены) ===
-                if rotate_z != 0:
-                    # Сначала позиционируем, потом поворачиваем
-                    x = col * self.module_width + self.module_width / 2
-                    y = y_offset
-                    z = floor * self.module_height
-                    module.apply_translation([x, y, z])
+                # === ПОЗИЦИОНИРУЕМ ===
+                x = col * self.module_width + self.module_width / 2
+                y = y_offset
+                z = floor * self.module_height
+                module.apply_translation([x, y, z])
 
-                    # Поворачиваем вокруг центра модуля
+                # === ПОВОРОТ ДЛЯ BACK ФАСАДА ===
+                if rotate_z != 0:
                     center_point = module.centroid
+                    # Вращаем вокруг центра
                     module.apply_translation([-center_point[0], -center_point[1], 0])
                     module.apply_transform(
                         trimesh.transformations.rotation_matrix(rotate_z, [0, 0, 1])
                     )
                     module.apply_translation([center_point[0], center_point[1], 0])
-                else:
-                    # Для передней стены просто позиционируем
-                    x = col * self.module_width + self.module_width / 2
-                    y = y_offset
-                    z = floor * self.module_height
-                    module.apply_translation([x, y, z])
 
                 meshes.append(module)
 
         logger.info(f"   ✓ Размещено {len(meshes)} модулей")
         return meshes
 
-    def _place_side_facade_walls_only(self, grid: FacadeGrid, x_offset: float, rotate_z: float) -> List[
-        trimesh.Trimesh]:
-        """Размещает ТОЛЬКО СТЕНЫ на боковых фасадах (left/right)"""
+    def _place_side_facade(
+        self,
+        grid: FacadeGrid,
+        x_offset: float,
+        is_left: bool
+    ) -> List[trimesh.Trimesh]:
+        """
+        Размещает ТОЛЬКО СТЕНЫ на боковых фасадах (left/right)
+
+        ИСПРАВЛЕНИЕ:
+        - Left: x=0, смотрит в +X
+        - Right: x=width, смотрит в -X
+        """
         meshes = []
 
         if FacadeType.EMPTY_WALL not in self.modules:
@@ -352,7 +371,7 @@ class PanelBuildingAssembler:
             for d in range(self.depth):
                 module = wall_module.copy()
 
-                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ ===
+                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ (z=0) ===
                 bounds = module.bounds
                 z_min = bounds[0][2]
                 module.apply_translation([0, 0, -z_min])
@@ -361,21 +380,30 @@ class PanelBuildingAssembler:
                 center = module.centroid
                 module.apply_translation([-center[0], -center[1], 0])
 
-                # === ПОЗИЦИЯ ===
+                # === ПОЗИЦИОНИРУЕМ В СЕТКЕ ===
+                # Для боковых фасадов Y идет вдоль глубины дома
                 x = x_offset
                 y = d * self.module_width + self.module_width / 2
                 z = floor * self.module_height
-
-                # Сначала позиционируем
                 module.apply_translation([x, y, z])
 
-                # Потом поворачиваем
+                # === ПОВОРОТ БОКОВЫХ ФАСАДОВ ===
                 center_point = module.centroid
-                module.apply_translation([-center_point[0], -center_point[1], 0])
-                module.apply_transform(
-                    trimesh.transformations.rotation_matrix(rotate_z, [0, 0, 1])
-                )
-                module.apply_translation([center_point[0], center_point[1], 0])
+
+                if is_left:
+                    # Left (x=0): поворот -90° вокруг Z (смотрит в +X)
+                    module.apply_translation([-center_point[0], -center_point[1], 0])
+                    module.apply_transform(
+                        trimesh.transformations.rotation_matrix(-np.pi / 2, [0, 0, 1])
+                    )
+                    module.apply_translation([center_point[0], center_point[1], 0])
+                else:
+                    # Right (x=width): поворот +90° вокруг Z (смотрит в -X)
+                    module.apply_translation([-center_point[0], -center_point[1], 0])
+                    module.apply_transform(
+                        trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
+                    )
+                    module.apply_translation([center_point[0], center_point[1], 0])
 
                 meshes.append(module)
 
