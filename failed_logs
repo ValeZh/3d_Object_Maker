@@ -1,0 +1,61 @@
+INFO:     127.0.0.1:59101 - "POST /api/generate-module HTTP/1.1" 200 OK
+INFO:api.server:✓ Wall параметры: {'height': 4.0, 'width': 3.0, 'color': '#c74a4a', 'material': 'concrete', 'thickness': 0.3}
+INFO:api.server:✓ Window параметры: {'width': 1.5, 'height': 1.2, 'style': 'double', 'frame_color': '#444444', 'glass_color': '#87CEEB', 'color': '#4aa36c'}
+INFO:api.server:🔗 Combining wall + window → wall_window via batch runner...
+INFO:api.server:🔨 Generating wall_window via batch runner for module 59d7e5a2
+[OK] Wall+window: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\window\59d7e5a2\wall_window.obj
+     Atlas: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\window\59d7e5a2\window_atlas.png
+INFO:api.server:✓ Renamed wall_window.obj → window.obj
+INFO:api.server:✓ ZIP модуля создан: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\window_59d7e5a2.zip
+INFO:api.server:✓ Реестр сохранен (265 модулей)
+INFO:api.server:✓ Wall_window saved to registry: 59d7e5a2
+INFO:api.server:✓ Wall_window created: 59d7e5a2
+INFO:api.server:🏗️ Параметры здания: {'floors': 8, 'columns': 18, 'sections': 3, 'module_width': 3.0, 'module_height': 4.0, 'depth': 2, 'texture_scale': 3}
+INFO:src.generator.assembler:🏗️ Инициализация здания:
+INFO:src.generator.assembler:   Размер: 18×8 (модули)
+INFO:src.generator.assembler:   Размеры: 54.0m × 32.0m × 6.0m
+INFO:src.generator.assembler:   Секций: 3
+INFO:src.generator.assembler:📥 Загрузка модулей...
+INFO:src.generator.assembler:✓ Загружен wall: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\wall\01bb2b86\wall.obj
+INFO:src.generator.assembler:   Размеры OBJ: X=2.00m, Y=3.00m, Z=0.30m
+INFO:src.generator.assembler:   ⚠️ Модуль wall перевернут, исправляем...
+INFO:src.generator.assembler:   ✓ После исправления: X=2.00m, Y=0.30m, Z=3.00m
+INFO:src.generator.assembler:   Масштабирование: X=1.50, Z=1.33
+ERROR:src.generator.assembler:❌ Ошибка масштабирования wall: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (4,) + inhomogeneous part.
+INFO:src.generator.assembler:   ✓ EMPTY_WALL: загружен
+INFO:src.generator.assembler:✓ Загружен window: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\window\0127643e\window.obj
+INFO:src.generator.assembler:   Размеры OBJ: X=1.50m, Y=1.20m, Z=0.12m
+INFO:src.generator.assembler:   ⚠️ Модуль window перевернут, исправляем...
+INFO:src.generator.assembler:   ✓ После исправления: X=1.50m, Y=0.12m, Z=1.20m
+INFO:src.generator.assembler:   Масштабирование: X=2.00, Z=3.33
+ERROR:src.generator.assembler:❌ Ошибка масштабирования window: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (4,) + inhomogeneous part.
+INFO:src.generator.assembler:   ✓ WINDOW: загружен
+INFO:src.generator.assembler:✓ Загружен balcony: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\balcony\03611f31\balcony.obj
+INFO:src.generator.assembler:   Размеры OBJ: X=3.04m, Y=1.29m, Z=1.14m
+INFO:src.generator.assembler:   Масштабирование: X=0.99, Z=3.51
+ERROR:src.generator.assembler:❌ Ошибка масштабирования balcony: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (4,) + inhomogeneous part.
+INFO:src.generator.assembler:   ✓ BALCONY: загружен
+INFO:src.generator.assembler:✓ Загружен door: C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\door\00bd38e2\door.obj
+INFO:src.generator.assembler:   Размеры OBJ: X=4.20m, Y=1.75m, Z=2.65m
+INFO:src.generator.assembler:   Масштабирование: X=0.71, Z=1.51
+ERROR:src.generator.assembler:❌ Ошибка масштабирования door: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (4,) + inhomogeneous part.
+INFO:src.generator.assembler:   ✓ ENTRANCE: загружен
+INFO:src.generator.assembler:📐 Применение правил фасада...
+INFO:src.generator.assembler:   Texture Scale: 3
+INFO:src.generator.assembler:   Вероятности - Стены: 52.6%, Балконы: 17.4%, Окна: 30.0%
+INFO:src.generator.assembler:   Входы в колонках: [4, 9, 13]
+INFO:src.generator.assembler:🔲 Размещение переднего фасада...
+INFO:src.generator.assembler:   ✓ Размещено 144 модулей
+INFO:src.generator.assembler:🔲 Размещение заднего фасада...
+INFO:src.generator.assembler:   ✓ Размещено 144 модулей
+INFO:src.generator.assembler:🔲 Размещение левого фасада...
+INFO:src.generator.assembler:   ✓ Боковой фасад: 16 стен
+INFO:src.generator.assembler:🔲 Размещение правого фасада...
+INFO:src.generator.assembler:   ✓ Боковой фасад: 16 стен
+INFO:src.generator.assembler:🔗 Объединение 320 компонентов...
+INFO:src.generator.assembler:✅ Здание собрано!
+INFO:src.generator.assembler:   Вершин: 20496
+INFO:src.generator.assembler:   Граней: 14596
+INFO:src.generator.assembler:✅ Здание экспортировано в C:\Users\lasta\Projekt3d\3d_Object_Maker\output\modules\houses\e57c0a91\house.obj
+INFO:api.server:✓ Дом собран: e57c0a91
+INFO:api.server:✓ Реестр домов сохранен (37 домов)

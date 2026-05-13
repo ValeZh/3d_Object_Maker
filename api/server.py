@@ -669,26 +669,161 @@ async def delete_module(module_id: str):
 
 
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
+def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
+    """
+    Builds a wall_window module from wall + window params via procedural_batch_runner.
+    Returns the module_id saved in the registry (type "window", assembler picks it up).
+    """
+    try:
+        module_id = str(uuid.uuid4())[:8]
+        output_dir = MODULES_DIR / "window" / module_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build the wall_window config section for run_all_generators
+        wall_window_cfg: Dict[str, Any] = {
+            "enabled": True,
+            "out_dir": str(output_dir),
+            # Wall geometry from wall module params
+            "wall_length": float(wall_params.get("width", 3.0)),
+            "wall_height": float(wall_params.get("height", 3.0)),
+            "wall_thickness": float(wall_params.get("thickness", 0.25)),
+            # Window position (centred by default)
+            "window_center_x": 0.0,
+            "window_sill_z": 1.0,
+            # Window geometry from window module params
+            "width": float(window_params.get("width", 1.1)),
+            "height": float(window_params.get("height", 1.4)),
+            "mullions_vertical": int(window_params.get("mullions_vertical", 1)),
+            "no_view": True,
+            # PBR maps
+            "texture": {
+                "generate_normal": True,
+                "generate_roughness": True,
+            },
+        }
+
+        # Pass wall colour tint directly (top-level, not nested – forwarded as-is to exporter)
+        wall_color = wall_params.get("color")
+        if isinstance(wall_color, str) and wall_color.strip().startswith("#"):
+            wall_window_cfg["wall_texture_color"] = hex_to_rgb(wall_color.strip())
+
+        frame_color = window_params.get("color") or window_params.get("frame_color")
+        if isinstance(frame_color, str) and frame_color.strip().startswith("#"):
+            wall_window_cfg["frame_texture_color"] = hex_to_rgb(frame_color.strip())
+
+        glass_color = window_params.get("glass_color")
+        if isinstance(glass_color, str) and glass_color.strip().startswith("#"):
+            wall_window_cfg["glass_texture_color"] = hex_to_rgb(glass_color.strip())
+
+        logger.info(f"🔨 Generating wall_window via batch runner for module {module_id}")
+        results = run_all_generators({"wall_window": wall_window_cfg}, default_out_root=output_dir)
+
+        obj_path = results.get("wall_window")
+        if not obj_path or not obj_path.exists():
+            raise Exception("wall_window generator returned no output file")
+
+        # Assembler looks for {type}.obj = window.obj; rename so it can find it
+        if obj_path.name != "window.obj":
+            new_path = obj_path.parent / "window.obj"
+            obj_path.rename(new_path)
+            obj_path = new_path
+            logger.info("✓ Renamed wall_window.obj → window.obj")
+
+        combined_params = {
+            "wall_length": wall_window_cfg["wall_length"],
+            "wall_height": wall_window_cfg["wall_height"],
+            "wall_thickness": wall_window_cfg["wall_thickness"],
+            "window_center_x": wall_window_cfg["window_center_x"],
+            "window_sill_z": wall_window_cfg["window_sill_z"],
+            "width": wall_window_cfg["width"],
+            "height": wall_window_cfg["height"],
+            "mullions_vertical": wall_window_cfg["mullions_vertical"],
+        }
+
+        zip_path = create_module_zip(module_id, "window", combined_params, obj_path)
+        if not zip_path:
+            raise Exception("Failed to create ZIP for wall_window")
+
+        module_record = {
+            "module_id": module_id,
+            "module_type": "window",
+            "module_name": (
+                f"Wall+Window "
+                f"{window_params.get('width', 1.1):.1f}×{window_params.get('height', 1.4):.1f}"
+            ),
+            "params": combined_params,
+            "zip_file": zip_path.name,
+            "created_at": datetime.now().isoformat(),
+            "dimensions": {
+                "width": wall_params.get("width", 3.0),
+                "height": wall_params.get("height", 3.0),
+            },
+        }
+
+        modules = load_modules_registry()
+        modules.append(module_record)
+        save_modules_registry(modules)
+
+        logger.info(f"✓ Wall_window saved to registry: {module_id}")
+        return module_id
+
+    except Exception as e:
+        logger.error(f"❌ Error creating wall_window: {e}", exc_info=True)
+        raise Exception(f"Failed to create wall_window: {str(e)}")
+
 @app.post("/api/generate-house")
 async def generate_house(request: Request):
     try:
         payload = await request.json()
         house_name = payload.get("house_name", "Дом")
 
+        # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL И WINDOW ===
+        wall_module_id = payload.get("wall_module_id")
+        window_module_id = payload.get("window_module_id")
+        wall_dimensions = {"width": 4.0, "height": 3.0}
+
+        wall_params = None
+        window_params = None
+        modules_registry = load_modules_registry()
+
+        # Ищем wall и window в реестре
+        for module in modules_registry:
+            module_id = module.get("module_id")
+
+            if module_id == wall_module_id:
+                wall_params = module.get("params", {})
+                if "dimensions" in module:
+                    wall_dimensions = module["dimensions"]
+                logger.info(f"✓ Wall параметры: {wall_params}")
+
+            if module_id == window_module_id:
+                window_params = module.get("params", {})
+                logger.info(f"✓ Window параметры: {window_params}")
+
+        # === REQUIRE BOTH WALL AND WINDOW ===
+        if not wall_params:
+            return JSONResponse({"error": "Wall module not found in registry"}, status_code=400)
+        if not window_params:
+            return JSONResponse({"error": "Window module not found in registry"}, status_code=400)
+
+        # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
+        logger.info("🔗 Combining wall + window → wall_window via batch runner...")
+        window_module_id = create_wall_window_module(wall_params, window_params)
+        logger.info(f"✓ Wall_window created: {window_module_id}")
+
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
         house_dir.mkdir(parents=True, exist_ok=True)
 
-        # === НОВЫЙ АССЕМБЛЕР С СЕТКОЙ ФАСАДОВ ===
+        # === ПАРАМЕТРЫ ДЛЯ АССЕМБЛЕРА ===
         from src.generator.assembler import assemble_building
 
-        # Параметры для нового ассемблера
         building_params = {
             "floors": payload.get("floors", 5),
             "columns": payload.get("width", 18),
             "sections": payload.get("sections", 3),
-            "module_width": 4.0,
-            "module_height": 3.0,
+            "module_width": wall_dimensions.get("width", 4.0),
+            "module_height": wall_dimensions.get("height", 3.0),
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
         }
@@ -779,7 +914,6 @@ async def get_house(house_id: str):
             {"error": str(e)},
             status_code=500
         )
-
 
 # ======================= СТАРЫЙ ENDPOINT (для совместимости) =======================
 

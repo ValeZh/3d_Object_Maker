@@ -7,7 +7,8 @@ import re
 from typing import Dict, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
-
+import logging
+logger = logging.getLogger(__name__)
 
 class ModuleType(str, Enum):
     """Типы модулей"""
@@ -199,22 +200,38 @@ class ModuleTextParser:
 
         return max(scores, key=scores.get)
 
-    def _extract_value(self, text: str, param_name: str) -> Optional[float]:
-        """Извлекает численное значение параметра"""
-        print(f"🔍 Ищу {param_name} в тексте: '{text}'")
+    def _extract_value(self, text: str, param_name: str) -> float | None:
+        """Извлекает число, которое стоит ПРЯМО ПЕРЕД названием параметра"""
 
-        if param_name not in self.PARAM_PATTERNS:
+        # Регулярные выражения - ищут число ПЕРЕД словом параметра
+        patterns = {
+            # Ищет: [число] [опционально метры] [height/высота]
+            # Но НЕ перед словом width
+            "height": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:high|height|высота)",
+
+            # Ищет: [число] [опционально метры] [width/ширина]
+            # Но НЕ перед словом height
+            "width": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:width|ширина)",
+
+            "depth": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:deep|depth|глубина)",
+        }
+
+        pattern = patterns.get(param_name)
+        if not pattern:
             return None
 
-        for pattern in self.PARAM_PATTERNS[param_name]:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                try:
-                    value = self._normalize_number(match.group(1))
-                    return value
-                except (ValueError, IndexError):
-                    continue
+        # Ищем ВСЕ совпадения и берем ПОСЛЕДНЕЕ
+        # (потому что пользователь может написать "height 4, width 2")
+        matches = list(re.finditer(pattern, text, re.IGNORECASE))
 
+        if matches:
+            # Берем последнее совпадение (оно точнее)
+            match = matches[-1]
+            value = float(match.group(1))
+            logger.info(f"🔍 Найдено {param_name}: {value}")
+            return value
+
+        logger.info(f"🔍 {param_name} не найден в тексте: '{text}'")
         return None
 
     def _extract_string(self, text: str, param_name: str) -> Optional[str]:
