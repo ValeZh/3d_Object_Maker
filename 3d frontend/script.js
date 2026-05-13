@@ -917,6 +917,7 @@ function clearHouseValidation() {
     [balconyRate, "balconyRateError"],
     [windowCols, "windowColsError"],
     [wallModule, "wallModuleError"],
+    [windowModule, "windowModuleError"],
     [balconyModule, "balconyModuleError"]
   ].forEach(([input, id]) => setFieldError(input, "", id));
 
@@ -940,6 +941,11 @@ function validateHouseForm(showErrors = true) {
   if (!wallModule.value) {
     errors.push("Wall module is required.");
     if (showErrors) setFieldError(wallModule, "Select a wall module.", "wallModuleError");
+  }
+
+  if (!windowModule.value) {
+    errors.push("Window module is required.");
+    if (showErrors) setFieldError(windowModule, "Select a window module.", "windowModuleError");
   }
 
   if (!(floors >= 1)) {
@@ -2562,6 +2568,12 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   } catch (_) {
     /* ignore */
   }
+
+  // === ИСПРАВКА ДЛЯ DOOR ===
+  if (moduleType === "door") {
+    mtlUrls.push(`${objDirRaw}/entrance.mtl`);
+  }
+
   mtlUrls.push(`${objDirRaw}/${moduleType}.mtl`, `${objDirRaw}/material.mtl`);
 
   const seen = new Set();
