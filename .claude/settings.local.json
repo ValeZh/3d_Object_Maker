@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(xargs -I{} head -30 {})",
+      "Bash(xargs -I{} head -20 {})"
+    ]
+  }
+}

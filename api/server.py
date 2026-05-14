@@ -8,8 +8,10 @@ import copy
 import logging
 import json
 import subprocess
+import threading
 import zipfile
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -93,37 +95,76 @@ ensure_registry_exists(HOUSES_REGISTRY_FILE)
 
 # ======================= ФУНКЦИИ РЕЕСТРА =======================
 
+# Per-file threading locks prevent concurrent in-process corruption.
+# Advisory file locks (fcntl) cover multi-process scenarios (e.g. uvicorn --workers N).
+_modules_lock = threading.Lock()
+_houses_lock  = threading.Lock()
+
+try:
+    import fcntl as _fcntl
+    def _flock(f, exclusive: bool):
+        op = _fcntl.LOCK_EX if exclusive else _fcntl.LOCK_SH
+        _fcntl.flock(f, op)
+    def _funlock(f):
+        _fcntl.flock(f, _fcntl.LOCK_UN)
+except ImportError:
+    # Windows fallback — threading.Lock alone is still sufficient for a
+    # single uvicorn worker, which is the default dev configuration.
+    def _flock(f, exclusive: bool):  # noqa: F811
+        pass
+    def _funlock(f):                 # noqa: F811
+        pass
+
+
+@contextmanager
+def _registry_read(path: Path, thread_lock: threading.Lock):
+    with thread_lock:
+        with open(path, 'r', encoding='utf-8') as f:
+            _flock(f, exclusive=False)
+            try:
+                yield f
+            finally:
+                _funlock(f)
+
+
+@contextmanager
+def _registry_write(path: Path, thread_lock: threading.Lock):
+    with thread_lock:
+        with open(path, 'w', encoding='utf-8') as f:
+            _flock(f, exclusive=True)
+            try:
+                yield f
+            finally:
+                _funlock(f)
+
+
 def load_modules_registry() -> List[Dict[str, Any]]:
-    """Загружает список модулей из реестра"""
     try:
-        with open(MODULES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+        with _registry_read(MODULES_REGISTRY_FILE, _modules_lock) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Ошибка загрузки реестра модулей: {e}")
         return []
 
 def save_modules_registry(modules: List[Dict[str, Any]]):
-    """Сохраняет список модулей в реестр"""
     try:
-        with open(MODULES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+        with _registry_write(MODULES_REGISTRY_FILE, _modules_lock) as f:
             json.dump(modules, f, ensure_ascii=False, indent=2)
         logger.info(f"✓ Реестр сохранен ({len(modules)} модулей)")
     except Exception as e:
         logger.error(f"Ошибка сохранения реестра: {e}")
 
 def load_houses_registry() -> List[Dict[str, Any]]:
-    """Загружает список домов из реестра"""
     try:
-        with open(HOUSES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+        with _registry_read(HOUSES_REGISTRY_FILE, _houses_lock) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Ошибка загрузки реестра домов: {e}")
         return []
 
 def save_houses_registry(houses: List[Dict[str, Any]]):
-    """Сохраняет список домов в реестр"""
     try:
-        with open(HOUSES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+        with _registry_write(HOUSES_REGISTRY_FILE, _houses_lock) as f:
             json.dump(houses, f, ensure_ascii=False, indent=2)
         logger.info(f"✓ Реестр домов сохранен ({len(houses)} домов)")
     except Exception as e:
@@ -150,12 +191,23 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
 
         # Обновляем конфиг в зависимости от типа модуля
         if module_type == "wall":
+            tex_block: Dict[str, Any] = {
+                "use_procedural_maps": True,
+                "wall_color_preset": "plaster",
+                "generate_normal": True,
+                "generate_roughness": True,
+            }
+            hex_col = params.get("color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                tex_block["wall_tex_color"] = hex_to_rgb(hex_col.strip())
+
             config["wall"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "wall_length": params.get("width", 2.0),
                 "wall_thickness": params.get("thickness", 0.3),
                 "wall_height": params.get("height", 3.0),
+                "texture": tex_block,
                 "no_view": True,
             }
             # Отключаем остальные
@@ -306,13 +358,11 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 if path and path.exists():
                     logger.info(f"✓ Модуль сгенерирован: {path}")
 
-                    # Переименуем файлы в правильное имя
-                    correct_filename = module_type + ".obj"
-
                     if module_type == "door" and path.name == "entrance.obj":
                         new_path = path.parent / "door.obj"
                         path.rename(new_path)
                         logger.info(f"✓ Переименовано: entrance.obj → door.obj")
+                        _inject_door_material(new_path, params.get("color"))
                         return new_path
 
                     elif module_type == "entrance" and path.name == "entrance_textured.obj":
@@ -335,6 +385,55 @@ def hex_to_rgb(hex_color: str) -> list:
     """Конвертирует HEX в RGB (0-255)"""
     hex_color = hex_color.lstrip('#')
     return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def _normalise_hex(color: Optional[str]) -> Optional[str]:
+    """Return #RRGGBB or None.  Accepts upper/lower-case with or without '#'."""
+    if not isinstance(color, str):
+        return None
+    c = color.strip().lstrip('#')
+    if len(c) == 6 and all(ch in '0123456789abcdefABCDEF' for ch in c):
+        return f'#{c.upper()}'
+    return None
+
+
+def _inject_door_material(obj_path: Path, color_hex: Optional[str]) -> None:
+    """
+    Post-process a trimesh-exported door OBJ (no material) to add a basic MTL.
+    Writes door.mtl alongside the OBJ and prepends mtllib + usemtl lines.
+    """
+    try:
+        hex_norm = _normalise_hex(color_hex) or "#8B6914"   # wood brown default
+        r, g, b  = hex_to_rgb(hex_norm)
+        rd, gd, bd = r / 255.0, g / 255.0, b / 255.0
+
+        mtl_path = obj_path.parent / "door.mtl"
+        mtl_path.write_text(
+            f"newmtl door\nKa 1 1 1\nKd {rd:.4f} {gd:.4f} {bd:.4f}\nKs 0 0 0\n",
+            encoding="utf-8"
+        )
+
+        obj_text = obj_path.read_text(encoding="utf-8")
+        lines    = obj_text.splitlines(keepends=True)
+
+        # Inject mtllib after the leading comment block; add usemtl before first face.
+        new_lines: list[str] = []
+        mtllib_added  = False
+        usemtl_added  = False
+        for line in lines:
+            stripped = line.lstrip()
+            if not mtllib_added and not stripped.startswith('#'):
+                new_lines.append("mtllib door.mtl\n")
+                mtllib_added = True
+            if not usemtl_added and stripped.startswith('f '):
+                new_lines.append("usemtl door\n")
+                usemtl_added = True
+            new_lines.append(line)
+
+        obj_path.write_text("".join(new_lines), encoding="utf-8")
+        logger.info(f"✓ door.mtl injected (color {hex_norm})")
+    except Exception as exc:
+        logger.warning(f"_inject_door_material failed: {exc}")
 
 def create_module_zip(module_id: str, module_type: str, params: Dict[str, Any], obj_path: Optional[Path]) -> Optional[Path]:
     """
@@ -475,6 +574,14 @@ async def generate_module(request: Request):
 
         module_type = parse_result.module_type.value
         params = parse_result.params
+
+        # Color from the UI color-picker overrides any color the NLP parser extracted
+        # from the text description.  Normalise both paths to #RRGGBB before storing.
+        picker_color = _normalise_hex(payload.get("color"))
+        if picker_color:
+            params["color"] = picker_color
+        elif "color" in params:
+            params["color"] = _normalise_hex(params["color"]) or params["color"]
 
         # === 2️⃣ Генерация OBJ ===
         module_id = str(uuid.uuid4())[:8]
@@ -668,6 +775,153 @@ async def delete_module(module_id: str):
         )
 
 
+@app.patch("/api/modules/{module_id}")
+async def rename_module(module_id: str, request: Request):
+    """
+    🔹 ВКЛАДКА 2: ПЕРЕИМЕНОВАНИЕ МОДУЛЯ
+
+    Входные данные:
+    {
+        "name": "Новое имя"
+    }
+    """
+    try:
+        payload = await request.json()
+        new_name = payload.get("name", "").strip()
+
+        if not new_name:
+            return JSONResponse({"error": "Имя не может быть пустым"}, status_code=400)
+
+        modules = load_modules_registry()
+        module = next((m for m in modules if m["module_id"] == module_id), None)
+
+        if not module:
+            return JSONResponse({"error": "Модуль не найден"}, status_code=404)
+
+        module["module_name"] = new_name
+        save_modules_registry(modules)
+        logger.info(f"✓ Модуль переименован: {module_id} → '{new_name}'")
+
+        return {"status": "success", "module_id": module_id, "module_name": new_name}
+
+    except Exception as e:
+        logger.error(f"Ошибка переименования модуля: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/facade-textures")
+async def get_facade_textures():
+    """
+    🔹 ВКЛАДКА 3: СПИСОК ТЕКСТУР ФАСАДА
+
+    Сканирует TEXTURES_DIR и возвращает список доступных текстур.
+    Фронтенд использует этот список для заполнения <select>.
+    """
+    try:
+        if not TEXTURES_DIR.exists():
+            return []
+
+        extensions = {".png", ".jpg", ".jpeg", ".webp"}
+        textures = []
+
+        for f in sorted(TEXTURES_DIR.iterdir()):
+            if f.suffix.lower() in extensions:
+                textures.append({
+                    "name": f.stem,
+                    "url": f"/textures/{f.name}",
+                })
+
+        logger.info(f"Текстур найдено: {len(textures)}")
+        return textures
+
+    except Exception as e:
+        logger.error(f"Ошибка получения текстур: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/api/analyze-building-text")
+async def analyze_building_text(request: Request):
+    """
+    🔹 ВКЛАДКА 3: ПАРСИНГ ТЕКСТОВОГО ОПИСАНИЯ ДОМА
+
+    Входные данные:
+    {
+        "text": "9-этажный дом, 3 секции, с балконами"
+    }
+
+    Выходные данные (формат совместим с applyHouseParams на фронтенде):
+    {
+        "house": {
+            "floors": 9,
+            "sections": 3,
+            "width": 18,
+            "depth": 2,
+            "has_balconies": true,
+            "balcony_rate": 0.3,
+            "window_cols": 8,
+            "facade": {"texture_url": "", "texture_scale": 3}
+        }
+    }
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+
+        if not text:
+            return JSONResponse({"error": "Пустой текст"}, status_code=400)
+
+        logger.info(f"📝 Анализ текста дома: '{text}'")
+
+        import re
+
+        t = text.lower()
+
+        def _int(pattern, default):
+            m = re.search(pattern, t)
+            return int(m.group(1)) if m else default
+
+        def _float(pattern, default):
+            m = re.search(pattern, t)
+            return float(m.group(1).replace(",", ".")) if m else default
+
+        floors = _int(r"(\d+)\s*(?:этаж|floor|storey|story)", 9)
+        sections = _int(r"(\d+)\s*(?:секци|подъезд|entranc|section)", 3)
+        width = _int(r"(?:ширин[аы]|width)\s*(\d+)", 18)
+        depth = _int(r"(?:глубин[аы]|depth)\s*(\d+)", 2)
+        window_cols = _int(r"(\d+)\s*(?:окон|window)", 8)
+        balcony_rate = _float(r"балкон[ыа]?\s*(\d+(?:[.,]\d+)?)", 0.3)
+        if balcony_rate > 1.0:
+            balcony_rate = balcony_rate / 100.0
+
+        has_balconies = bool(
+            re.search(r"балкон|balcon", t) and
+            not re.search(r"без балкон|no balcon", t)
+        )
+
+        result = {
+            "house": {
+                "floors": max(1, min(floors, 25)),
+                "sections": max(1, min(sections, 10)),
+                "width": max(6, min(width, 30)),
+                "depth": max(1, min(depth, 6)),
+                "has_balconies": has_balconies,
+                "balcony_rate": round(max(0.0, min(balcony_rate, 1.0)), 2),
+                "window_cols": max(2, min(window_cols, width)),
+                "facade": {
+                    "texture_url": "",
+                    "texture_scale": 3,
+                },
+            }
+        }
+
+        logger.info(f"✓ Параметры дома извлечены: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Ошибка анализа текста дома: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
@@ -826,6 +1080,11 @@ async def generate_house(request: Request):
             "module_height": wall_dimensions.get("height", 3.0),
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
+            "balcony_rate": payload.get("balcony_rate", 0.25),
+            # Specific UUIDs so the assembler loads the freshly generated composite,
+            # not an arbitrary first match from the output directory.
+            "wall_module_id":   wall_module_id,
+            "window_module_id": window_module_id,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")
@@ -954,6 +1213,10 @@ async def generate_building_legacy(request: Request):
 if MODULES_DIR.exists():
     app.mount("/modules", StaticFiles(directory=MODULES_DIR), name="modules")
     logger.info(f"✓ Модули доступны по /modules")
+
+if TEXTURES_DIR.exists():
+    app.mount("/textures", StaticFiles(directory=TEXTURES_DIR), name="textures")
+    logger.info(f"✓ Текстуры доступны по /textures")
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

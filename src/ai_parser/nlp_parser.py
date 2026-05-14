@@ -435,25 +435,6 @@ class ModuleTextParser:
             confidence=confidence
         )
 
-    def _get_color_hex(self, color_name: str) -> str:
-        """Преобразует название цвета в HEX код"""
-        if not color_name:
-            return None
-
-        color_lower = color_name.lower().strip()
-
-        if color_lower.startswith("#"):
-            return color_lower
-
-        if color_lower in self.COLOR_MAP:
-            return self.COLOR_MAP[color_lower]
-
-        for key, hex_code in self.COLOR_MAP.items():
-            if key in color_lower or color_lower in key:
-                return hex_code
-
-        return None
-
     def debug_parse(self, text: str) -> Dict[str, Any]:
         """Парсит с подробной информацией для отладки"""
         print(f"\n📝 Парсинг модуля: '{text}'\n")

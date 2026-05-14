@@ -1442,7 +1442,7 @@ function renderSavedModules() {
       if (!mod) return;
       applyModuleParams(mod);
       renderModulePreview(mod);
-      setActiveTab("modulePage");
+      setActiveTab("modules");
     };
   });
 
@@ -2434,7 +2434,10 @@ generateModuleBtn?.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: finalText,
-        module_type: moduleType
+        module_type: moduleType,
+        // Include color-picker value so it overrides any NLP-parsed color.
+        // <input type="color"> always yields #rrggbb; server normalises to #RRGGBB.
+        color: moduleColor.value || undefined
       })
     });
 

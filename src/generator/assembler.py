@@ -1,436 +1,702 @@
 """
-assembler.py — Сборка панельного дома из модульной сетки фасадов
-ИСПРАВЛЕНИЕ: Правильная ориентация модулей и координатная система
+assembler.py — Strict grid-based panel building assembler
+
+Cell size:
+  cellWidth  = wall module bounding-box X
+  cellHeight = wall module bounding-box Z  (internal Z-up space)
+
+Per-facade pipeline (TWO PHASES):
+
+  PHASE 1 — Plan (no meshes, pure state assignment)
+    Step 1  All cells initialised as WALL
+    Step 2  Door cells reserved  (floor 0, front only, highest priority)
+    Step 3  Balcony cells reserved  (floors ≥ 1, deterministic stagger)
+            — cell state set to BALCONY/BALCONY_UPPER to block window promotion
+            — a plain WALL mesh is still emitted for every balcony cell
+    Step 4  Remaining WALL cells promoted to WALL_WINDOW
+            using a deterministic interval derived from texture_scale
+
+  PHASE 2 — Build (one mesh per cell, no overlaps)
+    DOOR         → door module, scaled to span; 180° Z-flip on front facade
+    BALCONY      → wall mesh (underlying) + balcony overlay placed in front
+    BALCONY_UPPER→ wall mesh (underlying wall continues behind upper span)
+    WALL_WINDOW  → wall_window composite, scaled to cell
+    WALL         → plain wall, scaled to cell
+
+    After all cell meshes: each facade-mesh is 180° Z-flipped on the FRONT
+    facade so modules face outward.
+
+    After all facades are assembled: a -90° X rotation is applied to the
+    entire building scene, converting from internal Z-up to Three.js Y-up.
+
+Rules:
+  • No standalone window module — wall_window is the only window representation
+  • Door and balcony reservations happen BEFORE any window logic
+  • Reserved cells cannot be overridden by window replacement
+  • texture_scale drives window density deterministically (no randomness)
+  • Balcony is an overlay — it never removes the wall behind it
+  • Assembler is placement-only — it does not generate geometry
 """
 
 import logging
+import math
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 from enum import Enum
+
 import trimesh
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-class FacadeType(Enum):
-    """Типы фасадных модулей"""
-    EMPTY_WALL = "wall"
-    WINDOW = "window"
-    BALCONY = "balcony"
-    ENTRANCE = "door"
+# ========================= CELL STATE =========================
+
+class CellState(Enum):
+    WALL         = "wall"           # plain wall (default)
+    WALL_WINDOW  = "wall_window"    # wall replaced by wall_window composite
+    DOOR         = "door"           # structural — entrance door span
+    BALCONY      = "balcony"        # overlay balcony; underlying wall still emitted
+    BALCONY_UPPER = "balcony_upper" # upper cell of 2-floor balcony; wall still emitted
+
+    def is_structural(self) -> bool:
+        """Structural cells cannot be overridden by window replacement."""
+        return self in (CellState.DOOR, CellState.BALCONY, CellState.BALCONY_UPPER)
+
+    def needs_wall_mesh(self) -> bool:
+        """All non-DOOR cells produce a wall or wall_window mesh in phase 2."""
+        return self != CellState.DOOR
 
 
 class FacadeGrid:
-    """2D сетка фасада (columns × floors)"""
+    """
+    2D planning grid (cols × floors).
+    Starts fully initialised as WALL.
+    Structural reservations block window promotion but do NOT suppress wall meshes
+    for BALCONY/BALCONY_UPPER cells.
+    """
 
-    def __init__(self, columns: int, floors: int):
-        self.columns = columns
+    def __init__(self, cols: int, floors: int):
+        self.cols   = cols
         self.floors = floors
-        # grid[floor][column] = FacadeType
-        self.grid = [[FacadeType.EMPTY_WALL for _ in range(columns)] for _ in range(floors)]
+        self._state: List[List[CellState]] = [
+            [CellState.WALL] * cols for _ in range(floors)
+        ]
 
-    def set_cell(self, column: int, floor: int, facade_type: FacadeType):
-        """Установить тип модуля в ячейку сетки"""
-        if 0 <= column < self.columns and 0 <= floor < self.floors:
-            self.grid[floor][column] = facade_type
+    def state(self, col: int, floor: int) -> CellState:
+        if 0 <= col < self.cols and 0 <= floor < self.floors:
+            return self._state[floor][col]
+        return CellState.DOOR  # out-of-bounds treated as reserved
+
+    def is_wall(self, col: int, floor: int) -> bool:
+        """True only for plain WALL — eligible for wall_window promotion."""
+        return self.state(col, floor) == CellState.WALL
+
+    def can_reserve(self, cols_r: List[int], floors_r: List[int]) -> bool:
+        return all(self.state(c, f) == CellState.WALL
+                   for c in cols_r for f in floors_r)
+
+    def reserve(self, cols_r: List[int], floors_r: List[int], state: CellState) -> None:
+        for c in cols_r:
+            for f in floors_r:
+                if 0 <= c < self.cols and 0 <= f < self.floors:
+                    self._state[f][c] = state
+
+    def promote_to_wall_window(self, col: int, floor: int) -> None:
+        if self.state(col, floor) == CellState.WALL:
+            self._state[floor][col] = CellState.WALL_WINDOW
 
 
-class PanelBuildingAssembler:
-    """Собирает панельный дом из модульной сетки"""
+# ========================= MODULE LOADER =========================
 
-    def __init__(self, params: Dict[str, Any], models_dir: Path):
-        """
-        Args:
-            params: {
-                floors: int,
-                columns: int,
-                sections: int,
-                module_width: float (default 4.0m),
-                module_height: float (default 3.0m),
-                depth: float (modules in depth, default 2),
-                ...
-            }
-            models_dir: Папка с модулями (modules/)
-        """
-        self.params = params
-        self.models_dir = Path(models_dir)
+class ModuleLoader:
+    """Loads, orients, and caches trimesh objects from OBJ files."""
 
-        # === ПАРАМЕТРЫ ЗДАНИЯ ===
-        self.floors = params.get("floors", 5)
-        self.columns = params.get("columns", 18)
-        self.sections = params.get("sections", 3)
-        self.module_width = params.get("module_width", 4.0)
-        self.module_height = params.get("module_height", 3.0)
-        self.depth = params.get("depth", 2)
+    def __init__(self, modules_dir: Path, preferred_ids: Optional[Dict[str, str]] = None):
+        self.modules_dir = Path(modules_dir)
+        # Maps module_type → specific UUID subdirectory to load.
+        # When set, the loader targets that UUID directory directly instead of
+        # picking the first alphabetical match — critical for freshly generated
+        # composites that must not be confused with older modules of the same type.
+        self._preferred: Dict[str, str] = preferred_ids or {}
+        self._cache: Dict[str, Optional[trimesh.Trimesh]] = {}
 
-        # === РАЗМЕРЫ ЗДАНИЯ ===
-        self.building_width = self.columns * self.module_width
-        self.building_height = self.floors * self.module_height
-        self.building_depth = self.depth * self.module_width
+    def load(self, module_type: str) -> Optional[trimesh.Trimesh]:
+        if module_type not in self._cache:
+            self._cache[module_type] = self._from_disk(module_type)
+        return self._cache[module_type]
 
-        # === СЕТКИ ФАСАДОВ ===
-        self.front_grid = FacadeGrid(self.columns, self.floors)
-        self.back_grid = FacadeGrid(self.columns, self.floors)
-        self.left_grid = FacadeGrid(self.depth, self.floors)
-        self.right_grid = FacadeGrid(self.depth, self.floors)
+    def bbox(self, module_type: str) -> Tuple[float, float, float]:
+        """(width_x, depth_y, height_z) from bounding box."""
+        mesh = self.load(module_type)
+        if mesh is None:
+            return (1.0, 0.3, 1.0)
+        b = mesh.bounds
+        return (b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2])
 
-        # === ЗАГРУЖЕННЫЕ МОДУЛИ ===
-        self.modules = {}
-
-        logger.info(f"🏗️ Инициализация здания:")
-        logger.info(f"   Размер: {self.columns}×{self.floors} (модули)")
-        logger.info(f"   Размеры: {self.building_width:.1f}m × {self.building_height:.1f}m × {self.building_depth:.1f}m")
-        logger.info(f"   Секций: {self.sections}")
-
-    def load_modules(self) -> bool:
-        """Загружает все модули из директории"""
-        logger.info("📥 Загрузка модулей...")
-
-        for facade_type in FacadeType:
-            mesh = self._load_module(facade_type.value)
-            if mesh is not None:
-                self.modules[facade_type] = mesh
-                logger.info(f"   ✓ {facade_type.name}: загружен")
-            else:
-                logger.warning(f"   ⚠️ {facade_type.name}: не найден")
-
-        if not self.modules:
-            logger.error("❌ Не загружено ни одного модуля!")
-            return False
-
-        return True
-
-    def _load_module(self, module_type: str) -> trimesh.Trimesh:
-        """Загружает модуль и исправляет ориентацию"""
-        module_dir = self.models_dir / module_type
-
+    def _from_disk(self, module_type: str) -> Optional[trimesh.Trimesh]:
+        module_dir = self.modules_dir / module_type
         if not module_dir.exists():
-            logger.warning(f"⚠️ Папка не найдена: {module_dir}")
+            logger.warning(f"Module dir not found: {module_dir}")
             return None
 
-        obj_files = list(module_dir.glob(f"*/{module_type}.obj"))
+        # Preferred UUID takes priority; fall back to alphabetical first match.
+        preferred_id = self._preferred.get(module_type)
+        if preferred_id:
+            preferred_path = module_dir / preferred_id / f"{module_type}.obj"
+            if preferred_path.exists():
+                obj_files = [preferred_path]
+                logger.debug(f"Using preferred module {module_type}/{preferred_id}")
+            else:
+                logger.warning(
+                    f"Preferred module {module_type}/{preferred_id} not found at "
+                    f"{preferred_path}; falling back to alphabetical search."
+                )
+                obj_files = sorted(module_dir.glob(f"*/{module_type}.obj"))
+        else:
+            obj_files = sorted(module_dir.glob(f"*/{module_type}.obj"))
 
         if not obj_files:
-            logger.warning(f"⚠️ OBJ файлы не найдены в: {module_dir}")
+            logger.warning(f"No OBJ for module '{module_type}'")
             return None
 
         try:
-            mesh = trimesh.load(str(obj_files[0]), process=False)
-            logger.info(f"✓ Загружен {module_type}: {obj_files[0]}")
-
-            try:
-                bounds = mesh.bounds
-                size_x = bounds[1][0] - bounds[0][0]
-                size_y = bounds[1][1] - bounds[0][1]
-                size_z = bounds[1][2] - bounds[0][2]
-
-                logger.info(f"   Размеры OBJ: X={size_x:.2f}m, Y={size_y:.2f}m, Z={size_z:.2f}m")
-
-                # ИСПРАВЛЯЕМ ОРИЕНТАЦИЮ если модуль на боку
-                if size_z < 0.5 and size_y > 0.5:
-                    logger.info(f"   ⚠️ Модуль {module_type} перевернут, исправляем...")
-                    rotate_matrix = trimesh.transformations.rotation_matrix(
-                        np.pi / 2, [1, 0, 0]  # +90° вокруг X
-                    )
-                    mesh.apply_transform(rotate_matrix)
-                    bounds = mesh.bounds
-                    size_x = bounds[1][0] - bounds[0][0]
-                    size_y = bounds[1][1] - bounds[0][1]
-                    size_z = bounds[1][2] - bounds[0][2]
-                    logger.info(f"   ✓ После исправления: X={size_x:.2f}m, Y={size_y:.2f}m, Z={size_z:.2f}m")
-
-                # Масштабируем
-                if size_x < 0.01 or size_z < 0.01:
-                    logger.warning(f"⚠️ {module_type} имеет размер близкий к нулю")
-                    return mesh
-
-                scale_x = self.module_width / size_x
-                scale_z = self.module_height / size_z
-
-                logger.info(f"   Масштабирование: X={scale_x:.2f}, Z={scale_z:.2f}")
-
-                # Масштабируем правильно (вокруг центра)
-                center = mesh.centroid
-                mesh.apply_translation(-center)
-
-                scale_matrix = np.diag([scale_x, 1.0, scale_z, 1.0])
-                mesh.apply_transform(scale_matrix)
-
-                mesh.apply_translation(center)
-
-                logger.info(f"   ✓ {module_type.upper()} масштабирован успешно")
-
-            except Exception as scale_error:
-                logger.error(f"❌ Ошибка масштабирования {module_type}: {scale_error}")
-
-            return mesh
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка загрузки {module_type}: {e}", exc_info=True)
+            loaded = trimesh.load(str(obj_files[0]), process=False)
+        except Exception as exc:
+            logger.error(f"Failed to load {module_type}: {exc}", exc_info=True)
             return None
 
-    def generate_facade_rules(self):
-        """Применяет правила размещения модулей в сетке"""
-        logger.info("📐 Применение правил фасада...")
+        # For multi-geometry Scenes prefer the first geometry to retain its visual.
+        if isinstance(loaded, trimesh.Scene):
+            parts = [g for g in loaded.geometry.values()
+                     if isinstance(g, trimesh.Trimesh)]
+            if not parts:
+                return None
+            # Use single geometry directly (preserves TextureVisuals/ColorVisuals).
+            # Multi-part collapse loses per-part materials; prefer first part.
+            loaded = parts[0] if len(parts) == 1 else trimesh.util.concatenate(parts)
 
-        scale = self.params.get("texture_scale", 1)
-        scale = max(1, min(scale, 8))
+        if not isinstance(loaded, trimesh.Trimesh):
+            logger.warning(f"Unexpected type for {module_type}: {type(loaded)}")
+            return None
 
-        wall_prob = max(0, 0.7 - (scale - 1) * 0.087)
-        balcony_prob = 0.1 + (scale - 1) * 0.037
-
-        logger.info(f"   Texture Scale: {scale}")
+        mesh = self._fix_orientation(loaded)
+        ww, wd, wh = mesh.bounds[1] - mesh.bounds[0]
         logger.info(
-            f"   Вероятности - Стены: {wall_prob:.1%}, Балконы: {balcony_prob:.1%}, Окна: {1 - wall_prob - balcony_prob:.1%}")
-
-        # === РАСЧЕТ ВХОДОВ ===
-        entrance_columns = []
-        if self.sections > 0:
-            section_width = self.columns / (self.sections + 1)
-            for i in range(self.sections):
-                col = int((i + 1) * section_width)
-                col = max(0, min(col, self.columns - 1))
-                entrance_columns.append(col)
-
-        logger.info(f"   Входы в колонках: {entrance_columns}")
-
-        # === ЗАПОЛНЯЕМ ФАСАДЫ ===
-        for floor in range(self.floors):
-            for col in range(self.columns):
-                if floor == 0:
-                    # ТОЛЬКО ПЕРВЫЙ ЭТАЖ - входы или окна
-                    if col in entrance_columns:
-                        self.front_grid.set_cell(col, floor, FacadeType.ENTRANCE)
-                        self.back_grid.set_cell(col, floor, FacadeType.ENTRANCE)  # Двери есть и сзади
-                    else:
-                        self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
-                        self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
-                else:
-                    # ВЕРХНИЕ ЭТАЖИ
-                    if col in entrance_columns:
-                        # НАД ВХОДОМ ВСЕГДА ОКНА
-                        self.front_grid.set_cell(col, floor, FacadeType.WINDOW)
-                        self.back_grid.set_cell(col, floor, FacadeType.WINDOW)
-                    else:
-                        # Рандомные по вероятности
-                        import random
-                        r = random.random()
-                        if r < wall_prob:
-                            element = FacadeType.EMPTY_WALL
-                        elif r < wall_prob + balcony_prob:
-                            element = FacadeType.BALCONY
-                        else:
-                            element = FacadeType.WINDOW
-
-                        self.front_grid.set_cell(col, floor, element)
-                        self.back_grid.set_cell(col, floor, element)
-
-        # === БОКОВЫЕ ФАСАДЫ (только стены) ===
-        for floor in range(self.floors):
-            for d in range(self.depth):
-                self.left_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
-                self.right_grid.set_cell(d, floor, FacadeType.EMPTY_WALL)
-
-    def assemble_building(self) -> trimesh.Trimesh:
-        """Собирает панельный дом из всех компонентов"""
-
-        # Загружаем модули
-        if not self.load_modules():
-            return None
-
-        # Генерируем правила
-        self.generate_facade_rules()
-
-        building_meshes = []
-
-        # === ПЕРЕДНИЙ ФАСАД (y=0, смотрит в направлении +Y) ===
-        logger.info("🔲 Размещение переднего фасада...")
-        front_meshes = self._place_facade_grid(
-            self.front_grid,
-            y_offset=0,
-            rotate_z=0  # ← НЕ rotate, а rotate_z!
+            f"Loaded '{module_type}': {obj_files[0].parent.name}/{obj_files[0].name} "
+            f"[{ww:.2f}×{wd:.2f}×{wh:.2f}m]"
         )
-        building_meshes.extend(front_meshes)
+        return mesh
 
-        # === ЗАДНИЙ ФАСАД (y=depth, смотрит в направлении -Y) ===
-        logger.info("🔲 Размещение заднего фасада...")
-        back_meshes = self._place_facade_grid(
-            self.back_grid,
-            y_offset=self.building_depth,
-            rotate_z=np.pi  # ← 180°
+    @staticmethod
+    def _fix_orientation(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+        """Rotate so Z is the vertical (height) axis — internal Z-up convention."""
+        b = mesh.bounds
+        sx, sy, sz = b[1] - b[0]
+        if sz < 0.3 * max(sx, sy, 1e-6) and sy > sz:
+            rot = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
+            mesh.apply_transform(rot)
+        return mesh
+
+
+# ========================= MESH UTILITIES =========================
+
+def _bbox_center(mesh: trimesh.Trimesh) -> np.ndarray:
+    return (mesh.bounds[0] + mesh.bounds[1]) * 0.5
+
+
+def _scale_exact(mesh: trimesh.Trimesh, target_x: float, target_z: float) -> None:
+    """Scale mesh so X span = target_x, Z span = target_z. In-place."""
+    b   = mesh.bounds
+    sx  = b[1][0] - b[0][0]
+    sz  = b[1][2] - b[0][2]
+    if sx < 1e-6 or sz < 1e-6:
+        return
+    c = _bbox_center(mesh)
+    mesh.apply_translation(-c)
+    mesh.apply_transform(np.diag([target_x / sx, 1.0, target_z / sz, 1.0]))
+    mesh.apply_translation(c)
+
+
+def _scale_fit(mesh: trimesh.Trimesh, max_x: float, max_z: float) -> None:
+    """Scale mesh DOWN to fit within max_x × max_z, aspect ratio preserved. In-place."""
+    b  = mesh.bounds
+    sx = b[1][0] - b[0][0]
+    sz = b[1][2] - b[0][2]
+    if sx < 1e-6 or sz < 1e-6:
+        return
+    scale = min(max_x / sx, max_z / sz)
+    if scale >= 1.0:
+        return
+    c = _bbox_center(mesh)
+    mesh.apply_translation(-c)
+    mesh.apply_transform(np.diag([scale, scale, scale, 1.0]))
+    mesh.apply_translation(c)
+
+
+def _position(mesh: trimesh.Trimesh,
+              center_x: float,
+              z_bottom: float,
+              y_center: float) -> None:
+    """Move mesh: X center = center_x, Z bottom = z_bottom, Y center = y_center."""
+    b = mesh.bounds
+    mesh.apply_translation([
+        center_x - (b[0][0] + b[1][0]) * 0.5,
+        y_center  - (b[0][1] + b[1][1]) * 0.5,
+        z_bottom  - b[0][2],
+    ])
+
+
+def _flip_facing(mesh: trimesh.Trimesh) -> None:
+    """
+    Rotate 180° around Z axis so the module faces the other Y direction.
+    Applied to front-facade modules so they face outward instead of inward.
+    In-place, pivoted around the mesh's own bounding-box centre.
+    """
+    c = _bbox_center(mesh)
+    mesh.apply_translation(-c)
+    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1]))
+    mesh.apply_translation(c)
+
+
+# ========================= ASSEMBLER =========================
+
+class GridFacadeAssembler:
+    """
+    Strict two-phase grid assembler.
+
+    Phase 1 — Planning: build a 2D CellState map with no meshes.
+    Phase 2 — Building: emit exactly one wall mesh per non-DOOR cell plus
+               balcony overlays on top, and door span meshes for DOOR cells.
+
+    The "window" module slot holds the wall_window composite OBJ produced
+    by server.py's create_wall_window_module().  It is used as a full-cell
+    replacement for plain wall panels, never as an overlay.
+
+    Final output: a trimesh.Scene in Y-up orientation (Three.js compatible).
+    """
+
+    def __init__(self, params: Dict[str, Any], modules_dir: Path):
+        self.params = params
+
+        preferred_ids: Dict[str, str] = {}
+        if params.get("wall_module_id"):
+            preferred_ids["wall"] = params["wall_module_id"]
+        if params.get("window_module_id"):
+            preferred_ids["window"] = params["window_module_id"]
+
+        self.loader = ModuleLoader(Path(modules_dir), preferred_ids=preferred_ids)
+
+        self.floors:      int = max(1, int(params.get("floors",        5)))
+        self.cols:        int = max(1, int(params.get("columns",       10)))
+        self.sections:    int = max(0, int(params.get("sections",       3)))
+        self.depth_cells: int = max(1, int(params.get("depth",          2)))
+        self.texture_scale: int = max(1, min(8, int(params.get("texture_scale", 3))))
+        self.balcony_rate: float = max(0.0, min(1.0,
+                                       float(params.get("balcony_rate", 0.25))))
+
+        wall = self.loader.load("wall")
+        if wall is None:
+            raise RuntimeError("Wall module is required but could not be loaded.")
+
+        ww, wd, wh     = self.loader.bbox("wall")
+        self.cell_width:  float = ww if ww > 0.01 else 4.0
+        self.cell_height: float = wh if wh > 0.01 else 3.0
+        self.wall_depth:  float = wd if wd > 0.01 else 0.3
+
+        self.building_width:  float = self.cols        * self.cell_width
+        self.building_height: float = self.floors      * self.cell_height
+        self.building_depth:  float = self.depth_cells * self.cell_width
+
+        logger.info(
+            f"GridFacadeAssembler | grid {self.cols}×{self.floors} | "
+            f"cell {self.cell_width:.2f}m×{self.cell_height:.2f}m | "
+            f"building {self.building_width:.1f}×"
+            f"{self.building_height:.1f}×{self.building_depth:.1f}m | "
+            f"texture_scale={self.texture_scale}"
         )
-        building_meshes.extend(back_meshes)
 
-        # === ЛЕВЫЙ ФАСАД (x=0, смотрит в направлении +X) ===
-        logger.info("🔲 Размещение левого фасада...")
-        left_meshes = self._place_side_facade(
-            self.left_grid,
-            x_offset=0,
-            is_left=True
-        )
-        building_meshes.extend(left_meshes)
+    # ── Helpers ───────────────────────────────────────────────────
 
-        # === ПРАВЫЙ ФАСАД (x=width, смотрит в направлении -X) ===
-        logger.info("🔲 Размещение правого фасада...")
-        right_meshes = self._place_side_facade(
-            self.right_grid,
-            x_offset=self.building_width,
-            is_left=False
-        )
-        building_meshes.extend(right_meshes)
+    def _entrance_cols(self) -> List[int]:
+        if self.sections <= 0:
+            return []
+        spacing = self.cols / self.sections
+        result = []
+        for i in range(self.sections):
+            col = int(round((i + 0.5) * spacing - 0.5))
+            result.append(max(0, min(self.cols - 1, col)))
+        return result
 
-        # === ОБЪЕДИНЕНИЕ ===
-        logger.info(f"🔗 Объединение {len(building_meshes)} компонентов...")
+    @staticmethod
+    def _window_density(texture_scale: int) -> float:
+        return round(min(0.90, max(0.10, 0.10 + (texture_scale - 1) * 0.114)), 3)
 
-        try:
-            combined = trimesh.util.concatenate(building_meshes)
-            combined.merge_vertices()
+    @staticmethod
+    def _is_window_col(col: int, floor: int, step: int) -> bool:
+        if step <= 1:
+            return True
+        offset = (step // 2) * (floor % 2)
+        return ((col + offset) % step) == 0
 
-            logger.info(f"✅ Здание собрано!")
-            logger.info(f"   Вершин: {len(combined.vertices)}")
-            logger.info(f"   Граней: {len(combined.faces)}")
+    @staticmethod
+    def _is_balcony_position(candidate_idx: int, floor: int, step: int) -> bool:
+        if step <= 1:
+            return True
+        offset = (step // 2) * (floor % 2)
+        return ((candidate_idx + offset) % step) == 0
 
-            return combined
-        except Exception as e:
-            logger.error(f"❌ Ошибка объединения: {e}")
-            return None
+    # ========================
+    # PHASE 1 — PLANNING
+    # ========================
 
-    def _place_facade_grid(self, grid: FacadeGrid, y_offset: float, rotate_z: float) -> List[trimesh.Trimesh]:
-        """Размещает модули в фасадной сетке (front/back)"""
-        meshes = []
+    def _plan_step2_doors(self,
+                          grid: FacadeGrid,
+                          entrance_cols: List[int]) -> List[Tuple[int, int]]:
+        placements: List[Tuple[int, int]] = []
 
-        for floor in range(grid.floors):
-            for col in range(grid.columns):
-                facade_type = grid.grid[floor][col]
+        door_orig = self.loader.load("door")
+        if door_orig is None:
+            logger.warning("Door module missing — entrance columns will be plain wall.")
+            return placements
 
-                if facade_type not in self.modules:
+        dw, _, _ = self.loader.bbox("door")
+        h_span   = max(1, math.ceil(dw / self.cell_width))
+
+        for center_col in entrance_cols:
+            start  = center_col - h_span // 2
+            cols_r = list(range(start, start + h_span))
+
+            if any(c < 0 or c >= self.cols for c in cols_r):
+                continue
+            if not grid.can_reserve(cols_r, [0]):
+                continue
+
+            grid.reserve(cols_r, [0], CellState.DOOR)
+            placements.append((start, h_span))
+            logger.debug(f"Door reserved: cols={cols_r}, floor=0")
+
+        return placements
+
+    def _plan_step3_balconies(self,
+                              grid: FacadeGrid,
+                              entrance_cols: List[int]) -> List[Tuple[int, int, int, int]]:
+        """
+        Reserve balcony cells (blocks window promotion) and return placement list.
+        BALCONY/BALCONY_UPPER states do NOT suppress wall meshes — only window
+        promotion is blocked.
+        """
+        placements: List[Tuple[int, int, int, int]] = []
+
+        if self.balcony_rate <= 0:
+            return placements
+
+        bal_orig = self.loader.load("balcony")
+        if bal_orig is None:
+            return placements
+
+        bw, _, bh = self.loader.bbox("balcony")
+        h_span    = max(1, math.ceil(bw / self.cell_width))
+        v_span    = 2 if bh > self.cell_height else 1
+
+        blocked   = set(entrance_cols)
+        bal_step  = max(1, round(1.0 / self.balcony_rate))
+
+        for floor in range(1, self.floors):
+            if v_span == 2 and floor + 1 >= self.floors:
+                continue
+
+            candidates = [
+                col for col in range(0, self.cols - h_span + 1, max(1, h_span))
+                if not any(c in blocked for c in range(col, col + h_span))
+            ]
+
+            for idx, col in enumerate(candidates):
+                if not self._is_balcony_position(idx, floor, bal_step):
                     continue
 
-                module = self.modules[facade_type].copy()
+                cols_r  = list(range(col, col + h_span))
+                floor_r = [floor, floor + 1] if v_span == 2 else [floor]
 
-                # === ПОВОРОТ ДЛЯ БАЛКОНОВ И ВХОДОВ ===
-                # Они ВСЕГДА ротируются на 180° чтобы смотреть наружу
-                if facade_type in [FacadeType.BALCONY, FacadeType.ENTRANCE]:
-                    module.apply_transform(
-                        trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
-                    )
+                if not grid.can_reserve(cols_r, floor_r):
+                    continue
 
-                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ ===
-                bounds = module.bounds
-                z_min = bounds[0][2]
-                module.apply_translation([0, 0, -z_min])
+                grid.reserve(cols_r, [floor], CellState.BALCONY)
+                if v_span == 2:
+                    grid.reserve(cols_r, [floor + 1], CellState.BALCONY_UPPER)
 
-                # === ЦЕНТРИРУЕМ ПО X И Y (но НЕ по Z!) ===
-                center = module.centroid
-                module.apply_translation([-center[0], -center[1], 0])
+                placements.append((col, floor, h_span, v_span))
+                logger.debug(f"Balcony reserved: cols={cols_r}, floor={floor}, v_span={v_span}")
 
-                # === ПОЗИЦИОНИРУЕМ ===
-                x = col * self.module_width + self.module_width / 2
-                y = y_offset
-                z = floor * self.module_height
-                module.apply_translation([x, y, z])
+        return placements
 
-                # === ПОВОРОТ ДЛЯ BACK ФАСАДА ===
-                if rotate_z != 0:
-                    center_point = module.centroid
-                    # Вращаем вокруг центра
-                    module.apply_translation([-center_point[0], -center_point[1], 0])
-                    module.apply_transform(
-                        trimesh.transformations.rotation_matrix(rotate_z, [0, 0, 1])
-                    )
-                    module.apply_translation([center_point[0], center_point[1], 0])
+    def _plan_step4_windows(self, grid: FacadeGrid, entrance_cols: List[int]) -> None:
+        density = self._window_density(self.texture_scale)
+        step    = max(1, round(1.0 / density))
+        blocked = set(entrance_cols)
 
-                meshes.append(module)
+        promoted = 0
+        for floor in range(self.floors):
+            for col in range(self.cols):
+                if floor == 0 and col in blocked:
+                    continue
+                if not grid.is_wall(col, floor):
+                    continue
+                if self._is_window_col(col, floor, step):
+                    grid.promote_to_wall_window(col, floor)
+                    promoted += 1
 
-        logger.info(f"   ✓ Размещено {len(meshes)} модулей")
+        logger.info(
+            f"Window step4: density={density:.2f}, interval={step} cols, "
+            f"promoted {promoted} cells to WALL_WINDOW"
+        )
+
+    def _plan_facade(self,
+                     is_front: bool,
+                     entrance_cols: List[int]
+                     ) -> Tuple[FacadeGrid,
+                                List[Tuple[int, int]],
+                                List[Tuple[int, int, int, int]]]:
+        grid = FacadeGrid(self.cols, self.floors)
+
+        door_placements: List[Tuple[int, int]] = []
+        if is_front:
+            door_placements = self._plan_step2_doors(grid, entrance_cols)
+
+        bal_placements = self._plan_step3_balconies(grid, entrance_cols)
+        self._plan_step4_windows(grid, entrance_cols)
+
+        return grid, door_placements, bal_placements
+
+    # ========================
+    # PHASE 2 — BUILD
+    # ========================
+
+    def _build_from_plan(self,
+                         grid: FacadeGrid,
+                         door_placements: List[Tuple[int, int]],
+                         bal_placements: List[Tuple[int, int, int, int]],
+                         y_center: float,
+                         is_front: bool) -> List[trimesh.Trimesh]:
+        """
+        Build meshes from the completed plan.
+
+        Every non-DOOR cell gets a wall or wall_window mesh.
+        BALCONY/BALCONY_UPPER cells get a plain wall mesh (the balcony overlaid
+        on top of it is placed as a separate overlay mesh with a Y offset so it
+        sits in front of the wall surface — not replacing it).
+
+        Front-facade modules are flipped 180° around Z so they face outward.
+        """
+        meshes: List[trimesh.Trimesh] = []
+
+        wall_orig = self.loader.load("wall")
+        ww_orig   = self.loader.load("window")   # wall_window composite
+        door_orig = self.loader.load("door")
+        bal_orig  = self.loader.load("balcony")
+
+        # ── Per-cell wall / wall_window meshes ────────────────────
+        for floor in range(self.floors):
+            z_bottom = floor * self.cell_height
+            for col in range(self.cols):
+                s = grid.state(col, floor)
+
+                if s == CellState.DOOR:
+                    continue  # handled as span mesh below
+
+                if s == CellState.WALL_WINDOW:
+                    src = ww_orig if ww_orig is not None else wall_orig
+                else:
+                    # WALL, BALCONY, BALCONY_UPPER all get a plain wall
+                    src = wall_orig
+
+                if src is None:
+                    continue
+
+                m = src.copy()
+                _scale_exact(m, self.cell_width, self.cell_height)
+                if is_front:
+                    _flip_facing(m)
+                _position(m, (col + 0.5) * self.cell_width, z_bottom, y_center)
+                meshes.append(m)
+
+        # ── Door span meshes ──────────────────────────────────────
+        if door_orig is not None:
+            _, _, dh = self.loader.bbox("door")
+            for start_col, h_span in door_placements:
+                door = door_orig.copy()
+                _scale_exact(door, h_span * self.cell_width, min(dh, self.cell_height))
+                if is_front:
+                    _flip_facing(door)
+                cx = (start_col + h_span / 2) * self.cell_width
+                _position(door, cx, 0.0, y_center)
+                meshes.append(door)
+
+        # ── Balcony overlay meshes (placed IN FRONT of wall) ─────
+        if bal_orig is not None and bal_placements:
+            _, bd, bh = self.loader.bbox("balcony")
+            # Outward direction: front facade → -Y; back facade → +Y
+            outward = -1.0 if is_front else 1.0
+            # Place balcony so its back face meets the wall's outer face
+            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0)
+
+            for start_col, floor, h_span, v_span in bal_placements:
+                bal      = bal_orig.copy()
+                span_w   = h_span * self.cell_width
+                z_bottom = floor  * self.cell_height
+
+                if v_span == 1:
+                    _scale_fit(bal, span_w, self.cell_height)
+                    placed_h = bal.bounds[1][2] - bal.bounds[0][2]
+                    z_bottom += (self.cell_height - placed_h) / 2
+                else:
+                    _scale_fit(bal, span_w, bh)
+
+                cx = (start_col + h_span / 2) * self.cell_width
+                _position(bal, cx, z_bottom, bal_y)
+                meshes.append(bal)
+
         return meshes
 
-    def _place_side_facade(
-        self,
-        grid: FacadeGrid,
-        x_offset: float,
-        is_left: bool
-    ) -> List[trimesh.Trimesh]:
-        """
-        Размещает ТОЛЬКО СТЕНЫ на боковых фасадах (left/right)
+    # ── Front / back facade (full pipeline) ──────────────────────
 
-        ИСПРАВЛЕНИЕ:
-        - Left: x=0, смотрит в +X
-        - Right: x=width, смотрит в -X
-        """
-        meshes = []
+    def _build_facade(self,
+                      y_center: float,
+                      is_front: bool,
+                      entrance_cols: List[int]) -> List[trimesh.Trimesh]:
+        grid, door_pl, bal_pl = self._plan_facade(is_front, entrance_cols)
 
-        if FacadeType.EMPTY_WALL not in self.modules:
-            logger.warning("⚠️ EMPTY_WALL модуль не найден для боковых фасадов")
+        wall_count = sum(
+            1 for f in range(self.floors) for c in range(self.cols)
+            if grid.state(c, f) == CellState.WALL
+        )
+        ww_count = sum(
+            1 for f in range(self.floors) for c in range(self.cols)
+            if grid.state(c, f) == CellState.WALL_WINDOW
+        )
+        door_cells = sum(
+            1 for f in range(self.floors) for c in range(self.cols)
+            if grid.state(c, f) == CellState.DOOR
+        )
+        bal_cells = sum(
+            1 for f in range(self.floors) for c in range(self.cols)
+            if grid.state(c, f) in (CellState.BALCONY, CellState.BALCONY_UPPER)
+        )
+        label = "front" if is_front else "back"
+        logger.info(
+            f"{label.capitalize()} facade plan: "
+            f"WALL={wall_count} WALL_WINDOW={ww_count} "
+            f"DOOR_cells={door_cells} BALCONY_cells={bal_cells}"
+        )
+
+        meshes = self._build_from_plan(grid, door_pl, bal_pl, y_center, is_front)
+        logger.info(f"{label.capitalize()} facade built: {len(meshes)} meshes")
+        return meshes
+
+    # ── Side facades (walls only) ─────────────────────────────────
+
+    def _build_side_facade(self, x_pos: float, is_left: bool) -> List[trimesh.Trimesh]:
+        meshes: List[trimesh.Trimesh] = []
+        wall_orig = self.loader.load("wall")
+        if wall_orig is None:
+            logger.error("Wall module missing — side facade empty.")
             return meshes
 
-        wall_module = self.modules[FacadeType.EMPTY_WALL]
+        angle = -np.pi / 2 if is_left else np.pi / 2
 
         for floor in range(self.floors):
-            for d in range(self.depth):
-                module = wall_module.copy()
+            z_bottom = floor * self.cell_height
+            for d in range(self.depth_cells):
+                w = wall_orig.copy()
+                _scale_exact(w, self.cell_width, self.cell_height)
 
-                # === ВЫРАВНИВАЕМ ПО НИЖНЕЙ ГРАНИ (z=0) ===
-                bounds = module.bounds
-                z_min = bounds[0][2]
-                module.apply_translation([0, 0, -z_min])
+                c = _bbox_center(w)
+                w.apply_translation(-c)
+                w.apply_transform(
+                    trimesh.transformations.rotation_matrix(angle, [0, 0, 1])
+                )
+                w.apply_translation(c)
 
-                # === ЦЕНТРИРУЕМ ПО X И Y (но НЕ по Z!) ===
-                center = module.centroid
-                module.apply_translation([-center[0], -center[1], 0])
+                b = w.bounds
+                w.apply_translation([
+                    x_pos                             - (b[0][0] + b[1][0]) * 0.5,
+                    (d + 0.5) * self.cell_width       - (b[0][1] + b[1][1]) * 0.5,
+                    z_bottom                          - b[0][2],
+                ])
+                meshes.append(w)
 
-                # === ПОЗИЦИОНИРУЕМ В СЕТКЕ ===
-                # Для боковых фасадов Y идет вдоль глубины дома
-                x = x_offset
-                y = d * self.module_width + self.module_width / 2
-                z = floor * self.module_height
-                module.apply_translation([x, y, z])
-
-                # === ПОВОРОТ БОКОВЫХ ФАСАДОВ ===
-                center_point = module.centroid
-
-                if is_left:
-                    # Left (x=0): поворот -90° вокруг Z (смотрит в +X)
-                    module.apply_translation([-center_point[0], -center_point[1], 0])
-                    module.apply_transform(
-                        trimesh.transformations.rotation_matrix(-np.pi / 2, [0, 0, 1])
-                    )
-                    module.apply_translation([center_point[0], center_point[1], 0])
-                else:
-                    # Right (x=width): поворот +90° вокруг Z (смотрит в -X)
-                    module.apply_translation([-center_point[0], -center_point[1], 0])
-                    module.apply_transform(
-                        trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
-                    )
-                    module.apply_translation([center_point[0], center_point[1], 0])
-
-                meshes.append(module)
-
-        logger.info(f"   ✓ Боковой фасад: {len(meshes)} стен")
+        label = "left" if is_left else "right"
+        logger.info(f"{label.capitalize()} side facade: {len(meshes)} walls")
         return meshes
 
+    # ── Main assembly ─────────────────────────────────────────────
+
+    def assemble_building(self) -> Optional[trimesh.Scene]:
+        """
+        Assemble all facade meshes into a trimesh.Scene in Y-up orientation.
+
+        Internal assembly uses Z-up (height = Z).  A -90° rotation around X
+        is applied to every mesh at the end to convert to Three.js Y-up so the
+        exported OBJ renders upright without further client-side transforms.
+        """
+        entrance_cols = self._entrance_cols()
+        logger.info(
+            f"Assembly start — entrance cols: {entrance_cols}, "
+            f"balcony_rate: {self.balcony_rate:.2f}, "
+            f"texture_scale: {self.texture_scale} "
+            f"(window density: {self._window_density(self.texture_scale):.2f})"
+        )
+
+        all_meshes: List[trimesh.Trimesh] = []
+
+        # Solid structural base volume
+        base = trimesh.creation.box(
+            extents=[self.building_width, self.building_depth, self.building_height]
+        )
+        base.apply_translation([
+            self.building_width  / 2,
+            self.building_depth  / 2,
+            self.building_height / 2,
+        ])
+        all_meshes.append(base)
+
+        # Front facade (y=0, has doors, modules flipped to face outward)
+        all_meshes.extend(self._build_facade(0.0,                 True,  entrance_cols))
+        # Back facade (y=depth, no doors, default outward orientation is correct)
+        all_meshes.extend(self._build_facade(self.building_depth, False, entrance_cols))
+        # Side facades (walls only, rotated 90° around Z)
+        all_meshes.extend(self._build_side_facade(0.0,                 is_left=True))
+        all_meshes.extend(self._build_side_facade(self.building_width, is_left=False))
+
+        # Convert from internal Z-up to Three.js Y-up by rotating -90° around X.
+        rot_yup = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
+
+        scene = trimesh.Scene()
+        for i, mesh in enumerate(all_meshes):
+            mesh.apply_transform(rot_yup)
+            scene.add_geometry(mesh, node_name=f'mesh_{i:04d}')
+
+        total = len(all_meshes)
+        logger.info(f"Assembly complete — {total} mesh components in scene")
+        return scene
+
     def export_to_obj(self, output_path: Path) -> bool:
-        """Экспортирует здание в OBJ"""
+        scene = self.assemble_building()
+        if scene is None:
+            logger.error("Assembly failed — nothing to export.")
+            return False
         try:
-            building = self.assemble_building()
-
-            if building is None:
-                logger.error("❌ Не удалось собрать здание")
-                return False
-
-            building.export(str(output_path))
-            logger.info(f"✅ Здание экспортировано в {output_path}")
+            scene.export(str(output_path))
+            logger.info(f"Exported: {output_path}")
             return True
-        except Exception as e:
-            logger.error(f"❌ Ошибка экспорта: {e}")
+        except Exception as exc:
+            logger.error(f"Export failed: {exc}", exc_info=True)
             return False
 
 
-# === ФУНКЦИЯ ДЛЯ ВЫЗОВА ИЗ SERVER.PY ===
+# ========================= PUBLIC API =========================
 
 def assemble_building(params: Dict[str, Any], models_dir: Path, output_path: Path) -> bool:
-    """Собирает панельный дом"""
-
-    assembler = PanelBuildingAssembler(params, models_dir)
+    """Entry point called by server.py — signature unchanged."""
+    assembler = GridFacadeAssembler(params, models_dir)
     return assembler.export_to_obj(output_path)
