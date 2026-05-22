@@ -8,6 +8,8 @@
 
 Иначе: Open3D — ``read_triangle_model`` + Filament там, где включено; балкон на Windows по умолчанию
 ``draw_geometries``; Filament для балкона: ``OPEN3D_BALCONY_FILAMENT_PREVIEW=1``.
+Текстурированный подъезд на Windows: по умолчанию меш + ``entrance_atlas.png`` (без пустого Filament+MTL);
+Filament+MTL: ``OPEN3D_ENTRANCE_FILAMENT_PREVIEW=1``.
 
 Не импортирует procedural_window — чтобы избежать циклических импортов.
 """
@@ -218,6 +220,80 @@ def _filament_viewer_triangle_model(
     return False
 
 
+def _preview_mesh_with_atlas(
+    o3d: Any,
+    path: Path,
+    *,
+    title: str,
+    atlas_filename: str,
+    normal_filename: str | None = None,
+) -> bool:
+    """
+    Filament ``read_triangle_model`` + MTL (map_Bump / map_Pr) на Windows часто даёт пустое белое окно.
+    Запасной путь: меш + ``entrance_atlas`` / ``window_atlas`` и shader ``defaultLit``.
+    """
+    mesh = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
+    if len(mesh.vertices) == 0:
+        return False
+    mesh.compute_vertex_normals()
+    lookat, eye, up = _open3d_mesh_preview_camera(mesh)
+    draw_base: dict[str, Any] = dict(
+        title=title[:127],
+        lookat=lookat,
+        eye=eye,
+        up=up,
+        field_of_view=58.0,
+        ibl_intensity=1.0,
+        show_skybox=False,
+    )
+    out_dir = path.parent
+    atlas_path = out_dir / atlas_filename
+    if not atlas_path.is_file():
+        return False
+    from open3d.visualization import rendering
+
+    try:
+        albedo = o3d.io.read_image(str(atlas_path))
+    except Exception as e:
+        print(f"[warn] Open3D read_image({atlas_filename}): {e}")
+        return False
+    normal_img = None
+    if normal_filename:
+        normal_path = out_dir / normal_filename
+        if normal_path.is_file():
+            try:
+                normal_img = o3d.io.read_image(str(normal_path))
+            except Exception as e:
+                print(f"[warn] Open3D read_image({normal_filename}): {e}")
+    attempts: List[Tuple[str, Any]] = []
+    m0 = rendering.MaterialRecord()
+    m0.shader = "defaultLit"
+    m0.albedo_img = albedo
+    m0.base_color = (1.0, 1.0, 1.0, 1.0)
+    m0.base_metallic = 0.0
+    m0.base_roughness = 0.58
+    attempts.append(("lit+albedo", m0))
+    if normal_img is not None:
+        m1 = rendering.MaterialRecord()
+        m1.shader = "defaultLit"
+        m1.albedo_img = albedo
+        m1.normal_img = normal_img
+        m1.base_color = (1.0, 1.0, 1.0, 1.0)
+        m1.base_metallic = 0.0
+        m1.base_roughness = 0.58
+        attempts.append(("lit+albedo+normal", m1))
+    for label, mat in reversed(attempts):
+        try:
+            o3d.visualization.draw(
+                [{"name": title[:64], "geometry": mesh, "material": mat}],
+                **draw_base,
+            )
+            return True
+        except Exception as e:
+            print(f"[warn] Open3D preview ({title}, {label}): {e}")
+    return False
+
+
 def _draw_geometries_safe(o3d: Any, mesh: Any, *, window_name: str) -> None:
     """Старый визуализатор Open3D (без Filament) — стабильнее для тяжёлых балконов на Windows."""
     try:
@@ -401,7 +477,13 @@ def preview_entrance_obj_open3d(obj_path: Path | str, *, niche: bool = False) ->
 
 
 def preview_entrance_textured_obj_open3d(obj_path: Path | str) -> None:
-    """Подъезд с атласом: тот же режим, что «Wall + window» (triangle model + Filament UI)."""
+    """
+    Подъезд с атласом.
+
+    На Windows по умолчанию — меш + ``entrance_atlas.png`` (``defaultLit``), без ``read_triangle_model``:
+    Filament+MTL с ``map_Bump``/``map_Pr`` часто открывает пустое белое окно.
+    Filament+MTL: ``OPEN3D_ENTRANCE_FILAMENT_PREVIEW=1``.
+    """
     path = Path(obj_path).resolve()
     if not path.is_file():
         return
@@ -411,7 +493,39 @@ def preview_entrance_textured_obj_open3d(obj_path: Path | str) -> None:
     if o3d is None:
         print("pip install open3d for interactive preview.")
         return
+    win = platform.system() == "Windows"
+    force_filament = os.environ.get("OPEN3D_ENTRANCE_FILAMENT_PREVIEW", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if win and not force_filament:
+        if _preview_mesh_with_atlas(
+            o3d,
+            path,
+            title="Entrance (textured)",
+            atlas_filename="entrance_atlas.png",
+            normal_filename="entrance_normal_atlas.png",
+        ):
+            return
+    elif not win:
+        if _preview_mesh_with_atlas(
+            o3d,
+            path,
+            title="Entrance (textured)",
+            atlas_filename="entrance_atlas.png",
+            normal_filename="entrance_normal_atlas.png",
+        ):
+            return
     if _filament_viewer_triangle_model(o3d, path, title="Entrance (textured)", mesh_post_processing=False):
+        return
+    if _preview_mesh_with_atlas(
+        o3d,
+        path,
+        title="Entrance (textured)",
+        atlas_filename="entrance_atlas.png",
+        normal_filename="entrance_normal_atlas.png",
+    ):
         return
     mesh = o3d.io.read_triangle_mesh(str(path), enable_post_processing=False)
     if len(mesh.vertices) and mesh.has_triangle_uvs():
