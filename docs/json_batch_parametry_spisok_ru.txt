@@ -1,0 +1,293 @@
+JSON-батч: параметр — пример значения (секции balcony, entrance, entrance_textured, window, wall, wall_window)
+
+--- любая секция ---
+enabled — true
+out_dir — "data/out_batch/my_run"
+output — "data/out_batch/out"   (синоним out_dir)
+no_view — true
+
+--- texture: общие ключи ---
+bump_strength — 0.7
+normal_strength — 0.65   (синоним bump_strength)
+generate_normal — true
+generate_roughness — true
+
+--- texture: только window ---
+use_procedural_maps — true
+material_preset — "plaster"
+frame_color_preset — "wood"
+glass_color_preset — "uniform_noise"
+frame_normal_preset — "fine_noise"
+glass_normal_preset — "flat"
+tiles_per_side — 8
+grout_width — 0.06
+frame_tex_color — [200, 190, 180]
+glass_tex_color — [0.9, 0.95, 1.0]
+
+--- texture: только wall ---
+use_procedural_maps — true
+wall_color_preset — "ceramic_tile"
+wall_normal_preset — "ceramic_tile"
+tiles_per_side — 9
+grout_width — 0.055
+
+--- texture: только entrance_textured ---
+use_procedural_maps — true
+wall_color_preset — "plaster"
+roof_color_preset — "wood"
+door_color_preset — "ceramic_tile"
+
+--- texture: только balcony ---
+use_procedural_maps — true
+wall_lower_color_preset — "ceramic_tile"
+wall_upper_color_preset — "ceramic_tile"
+frame_color_preset — "wood"
+glass_color_preset — "uniform_noise"
+side_basket_color_preset — "ceramic_tile"
+side_jamb_color_preset — "plaster"
+side_separator_color_preset — "wood"
+tiles_per_side — 10
+grout_width — 0.055
+wall_lower_tex_color — [200, 195, 188]
+wall_upper_tex_color — [200, 195, 188]
+frame_tex_color — [120, 80, 50]
+glass_tex_color — [0.85, 0.9, 0.95]
+side_basket_tex_color — [210, 208, 205]
+side_jamb_tex_color — [190, 188, 185]
+side_separator_tex_color — [140, 100, 70]
+
+--- texture: только wall_window ---
+bump_strength — 0.7
+normal_strength — 0.7
+generate_normal — true
+generate_roughness — true
+
+--- секция balcony (плоские) ---
+width_back — 1.6
+width_front — 2.0
+depth — 1.15
+height — 2.15
+simple_box — false
+floor_corner_left_wall — null   или  [-0.8, 0.0]
+floor_corner_right_wall — null
+floor_corner_front_left — null
+floor_corner_front_right — null
+vertical_prism — true
+window_left_wall — false
+window_right_wall — false
+floor_thickness — 0.14
+wall_thickness — 0.0
+parapet_z_frac — 0.42
+parapet_height — null
+window_mode — "with_glass"
+front_window_mode — null
+open_left_above_parapet — false
+open_right_above_parapet — false
+window_depth — 0.14
+tilt_left_deg — 0.0
+tilt_right_deg — 0.0
+wall_upper_z_frac — 0.35
+side_upper_mode — "wall"
+mullions_vertical — 2
+mullions_horizontal — 0
+mullion_offset_x — 0.0
+mullion_offset_z — 0.0
+partial_horizontal_bars — [[2, 0.78]]
+window_kind — "fixed"
+parapet_sill — true
+sill_thickness — 0.06
+sill_depth — 0.1
+side_parapet_split_frac — 0.0
+side_parapet_separator_depth — 0.022
+inner_wall_windows — [ { "u0": 0.06, "u1": 0.24, "z_bottom": 1.45, "z_top": 1.95, "window_mode": "with_glass", "window_depth": 0.14, "window_kind": "fixed", "mullions_vertical": 1, "mullions_horizontal": 0 } ]
+inner_wall_doors — [ { "u0": 0.32, "u1": 0.68, "z_bottom": 0.02, "z_top": 2.12, "style": "french", "frame_width": 0.09, "frame_depth": 0.08, "leaf_gap": 0.025, "midrail_z_frac": 0.58, "y_outer": 0.06 } ]
+wall_lower_tex — "data/textures/wall_plaster.png"
+wall_upper_tex — "data/textures/wall_plaster.png"
+frame_tex — "data/textures/window_frame.png"
+glass_tex — "data/textures/window_glass.png"
+side_basket_tex — "data/textures/tile_ceramic_albedo.png"
+side_jamb_tex — "data/textures/wall_plaster.png"
+side_separator_tex — "data/textures/window_frame.png"
+wall_lower_tex_color — [200, 198, 192]
+wall_upper_tex_color — [200, 198, 192]
+frame_tex_color — [110, 75, 45]
+glass_tex_color — [0.88, 0.92, 0.98]
+side_basket_tex_color — [220, 218, 215]
+side_jamb_tex_color — [185, 182, 178]
+side_separator_tex_color — [130, 90, 60]
+use_procedural_maps — true
+wall_lower_proc_preset — "ceramic_tile"
+wall_upper_proc_preset — "ceramic_tile"
+frame_proc_preset — "wood"
+glass_proc_preset — "uniform_noise"
+side_basket_proc_preset — "ceramic_tile"
+side_jamb_proc_preset — "plaster"
+side_separator_proc_preset — "wood"
+procedural_tiles_per_side — 10
+procedural_grout_width — 0.055
+generate_normal_map — true
+generate_roughness_map — true
+bump_strength — 0.65
+atlas_tile — 256
+
+--- элемент inner_wall_windows ---
+u0 — 0.06
+u1 — 0.24
+z_bottom — 1.45
+z_top — 1.95
+window_mode — "with_glass"
+window_depth — 0.14
+window_kind — "fixed"
+mullions_vertical — 1
+mullions_horizontal — 0
+mullion_offset_x — 0.0
+mullion_offset_z — 0.0
+partial_horizontal_bars — []
+
+--- элемент inner_wall_doors ---
+u0 — 0.32
+u1 — 0.68
+z_bottom — 0.02
+z_top — 2.12
+style — "french"
+frame_width — 0.09
+frame_depth — 0.08
+leaf_gap — 0.025
+midrail_z_frac — 0.58
+y_outer — 0.06
+
+--- секция entrance ---
+no_view — false
+entrance_style — "canopy"
+niche_clear_height — 2.52
+niche_ceiling_thickness — 0.16
+niche_floor_z — 0.13
+step_front_depth — 0.36
+plinth_height — 0.13
+double_door — true
+niche_door_u0 — 0.24
+niche_door_u1 — 0.76
+niche_door_z_bottom — null
+niche_door_z_top — null
+door_frame_depth — 0.06
+door_frame_width — 0.09
+door_leaf_gap — 0.025
+door_midrail_z_frac — 0.58
+door_recess_y — 0.045
+width — 3.6
+depth — 1.75
+canopy_thickness — 0.2
+canopy_z_bottom — 2.45
+platform_height — 0.16
+platform_depth — 0.4
+platform_width — null
+has_left_wall — false
+has_right_wall — false
+wall_thickness — 0.2
+partition_thickness — 0.22
+partitions_x — [0.0]
+right_support_pole — true
+pole_radius — 0.055
+pole_front_inset — 0.12
+pole_side_inset — 0.12
+doors — [ { "u0": 0.06, "u1": 0.44, "z_bottom": 0.12, "z_top": 2.05 }, { "u0": 0.56, "u1": 0.94, "z_bottom": 0.12, "z_top": 2.05 } ]
+door_plane_y — 0.04
+door_plane_thickness — 0.03
+
+--- элемент doors (canopy) ---
+u0 — 0.1
+u1 — 0.9
+z_bottom — 0.12
+z_top — 2.05
+
+--- секция entrance_textured (+ все поля entrance) ---
+atlas_tile — 256
+wall_tex — "data/textures/wall_plaster.png"
+roof_tex — "data/textures/roof_shingles_albedo.png"
+door_tex — "data/textures/tile_ceramic_albedo.png"
+wall_tex_color — [180, 175, 168]
+roof_tex_color — [150, 140, 130]
+door_tex_color — [90, 70, 50]
+use_procedural_maps — true
+wall_proc_preset — "plaster"
+roof_proc_preset — "wood"
+door_proc_preset — "ceramic_tile"
+generate_normal_map — true
+generate_roughness_map — true
+bump_strength — 0.7
+
+--- секция window ---
+width — 1.2
+height — 1.5
+depth — 0.12
+profile — "rect"
+kind — "fixed"
+mullions_vertical — 1
+mullions_horizontal — 0
+mullion_offset_x — 0.0
+mullion_offset_z — 0.0
+partial_horizontal_bars — []
+frame_texture — "data/textures/window_frame.png"
+glass_texture — "data/textures/window_glass.png"
+frame_normal_texture — "data/textures/custom_frame_n.png"
+glass_normal_texture — null
+frame_texture_color — [200, 200, 200]
+glass_texture_color — [0.92, 0.94, 0.98]
+atlas_half_size — 256
+generate_normal_atlas — true
+generate_roughness_atlas — true
+bump_strength — 0.7
+material_preset — "wood"
+frame_color_preset — "wood"
+glass_color_preset — "uniform_noise"
+frame_normal_preset — "wood_grain"
+glass_normal_preset — "flat"
+procedural_tiles_per_side — 8
+procedural_grout_width — 0.06
+use_procedural_maps — true
+
+--- секция wall ---
+wall_length — 4.0
+wall_thickness — 0.25
+wall_height — 3.0
+wall_texture — "data/textures/wall_cracked_albedo.png"
+wall_normal_texture — null
+wall_roughness_texture — null
+wall_texture_color — [152, 148, 138]
+use_procedural_maps — true
+wall_color_preset — "ceramic_tile"
+wall_normal_preset — "ceramic_tile"
+procedural_tiles_per_side — 9
+procedural_grout_width — 0.055
+bump_strength — 0.8
+
+--- секция wall_window ---
+wall_length — 4.0
+wall_thickness — 0.25
+wall_height — 3.0
+window_center_x — 0.0
+window_sill_z — 1.0
+width — 1.2
+height — 1.5
+depth — 0.12
+profile — "rect"
+kind — "fixed"
+mullions_vertical — 1
+mullions_horizontal — 0
+mullion_offset_x — 0.0
+mullion_offset_z — 0.0
+partial_horizontal_bars — []
+frame_texture — "data/textures/window_frame.png"
+glass_texture — "data/textures/window_glass.png"
+wall_texture — "data/textures/window_frame.png"
+wall_normal_texture — null
+wall_roughness_texture — null
+frame_normal_texture — null
+glass_normal_texture — null
+frame_texture_color — [210, 45, 45]
+glass_texture_color — [240, 90, 90]
+wall_texture_color — [45, 130, 65]
+atlas_half_size — 256
+generate_normal_maps — true
+generate_roughness_maps — true
+bump_strength — 0.7

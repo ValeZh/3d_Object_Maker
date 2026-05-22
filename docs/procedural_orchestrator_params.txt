@@ -77,7 +77,10 @@ Export function:
 - export_balcony(out_dir=..., no_view=..., atlas_tile=..., textures..., **kwargs)
 
 Direct function arguments supported by orchestrator:
-- no_view: bool
+- no_view: bool (batch: default true). If false, preview after export. On **Windows** balcony Open3D preview uses
+  legacy ``draw_geometries`` by default (Filament often crashes the process). For Filament balcony preview:
+  set ``OPEN3D_BALCONY_FILAMENT_PREVIEW=1``. To avoid Open3D entirely: set ``PROCEDURAL_MESH_PREVIEW=plotly`` or ``system``
+  (see ``open3d_preview.py`` module docstring).
 - atlas_tile: int
 - wall_lower_tex: string path
 - wall_upper_tex: string path
@@ -278,7 +281,9 @@ Optional arguments:
 - atlas_half_size: int
 - texture (optional nested object, see §2): supports only common PBR flags here
   (``bump_strength``, ``generate_normal``, ``generate_roughness``); no dedicated preset keys yet.
-- no_view: bool (batch runner only; default true). If false, Open3D preview after export.
+- no_view: bool (batch runner only; default true). If false, preview after export via ``open3d_preview.py`` (default: Open3D;
+  optional env ``PROCEDURAL_MESH_PREVIEW=plotly`` for Plotly in browser, or ``system`` to open the ``.obj`` in the OS default
+  app). Open3D path requires ``pip install open3d``. Export only: ``no_view: true``.
 
 
 9) Procedural textures (modules vs batch JSON)

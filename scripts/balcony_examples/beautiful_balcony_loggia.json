@@ -1,0 +1,89 @@
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/beautiful_balcony_loggia",
+    "no_view": false,
+    "atlas_tile": 512,
+    "width_back": 2.45,
+    "width_front": 2.95,
+    "depth": 1.42,
+    "height": 2.48,
+    "parapet_z_frac": 0.44,
+    "parapet_sill": true,
+    "sill_thickness": 0.07,
+    "sill_depth": 0.12,
+    "wall_upper_z_frac": 0.36,
+    "side_parapet_split_frac": 0.4,
+    "side_parapet_separator_depth": 0.026,
+    "window_mode": "none",
+    "front_window_mode": "with_glass",
+    "window_depth": 0.15,
+    "window_kind": "fixed",
+    "mullions_vertical": 3,
+    "mullions_horizontal": 1,
+    "mullion_offset_x": 0.0,
+    "mullion_offset_z": 0.02,
+    "texture": {
+      "use_procedural_maps": true,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "bump_strength": 0.62,
+      "wall_lower_color_preset": "ceramic_tile",
+      "wall_upper_color_preset": "plaster",
+      "frame_color_preset": "wood",
+      "glass_color_preset": "uniform_noise",
+      "side_basket_color_preset": "ceramic_tile",
+      "side_jamb_color_preset": "ceramic_tile",
+      "side_separator_color_preset": "wood",
+      "tiles_per_side": 12,
+      "grout_width": 0.048
+    },
+    "wall_lower_tex_color": [188, 178, 168],
+    "wall_upper_tex_color": [232, 226, 216],
+    "frame_tex_color": [112, 82, 58],
+    "glass_tex_color": [175, 198, 218],
+    "inner_wall_windows": [
+      {
+        "u0": 0.05,
+        "u1": 0.27,
+        "z_bottom": 0.38,
+        "z_top": 2.05,
+        "window_mode": "with_glass",
+        "mullions_vertical": 1,
+        "mullions_horizontal": 2,
+        "window_depth": 0.14,
+        "window_kind": "fixed"
+      },
+      {
+        "u0": 0.73,
+        "u1": 0.95,
+        "z_bottom": 0.38,
+        "z_top": 2.05,
+        "window_mode": "with_glass",
+        "mullions_vertical": 1,
+        "mullions_horizontal": 2,
+        "window_depth": 0.14,
+        "window_kind": "fixed"
+      }
+    ],
+    "inner_wall_doors": [
+      {
+        "u0": 0.32,
+        "u1": 0.68,
+        "z_bottom": 0.02,
+        "z_top": 2.14,
+        "style": "french",
+        "frame_width": 0.085,
+        "frame_depth": 0.078,
+        "leaf_gap": 0.022,
+        "midrail_z_frac": 0.56,
+        "y_outer": 0.055
+      }
+    ]
+  },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false }
+}

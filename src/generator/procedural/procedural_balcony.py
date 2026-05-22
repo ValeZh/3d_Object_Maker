@@ -79,6 +79,9 @@ BALCONY_TILE_SIDE_BASKET = 4
 BALCONY_TILE_SIDE_JAMB = 5
 BALCONY_TILE_SIDE_SEPARATOR = 6
 
+# Сторона квадрата тайла атласа (px); задаётся в export_balcony для inset в _scale_uv_to_tile.
+_BALCONY_ATLAS_TILE_PX: int = 512
+
 
 USER_BALCONY: dict[str, Any] = {
     "width_back": 1.6,
@@ -336,7 +339,12 @@ def _vertical_wall_slab_textured(
     parts.append(_textured_quad(bo, tile_i, uv4, flip=not flip))
     for i in range(4):
         j = (i + 1) % 4
-        uvi = np.stack([uv4[i], uv4[j], uv4[j], uv4[i]])
+        # Торец призмы: геометрия — узкая полоса; UV не должен быть вырожденным (две вершины
+        # с одним и тем же (u,v)), иначе фильтрация текстуры даёт «радужный» шум.
+        uvi = np.array(
+            [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            dtype=np.float64,
+        )
         parts.append(_textured_quad([bi[i], bi[j], bo[j], bo[i]], tile_i, uvi, flip=False))
     m = trimesh.util.concatenate(parts)
     m.remove_unreferenced_vertices()
@@ -615,13 +623,31 @@ def _open_rgb(path: Path) -> Image.Image:
     return im
 
 
-def _scale_uv_to_tile(uv: np.ndarray, tile_index: int) -> np.ndarray:
-    """tile_index в пределах атласа -> u в [i/N, (i+1)/N)."""
+def _scale_uv_to_tile(
+    uv: np.ndarray,
+    tile_index: int,
+    *,
+    tile_px: int | None = None,
+) -> np.ndarray:
+    """tile_index в пределах атласа -> u в [i/N, (i+1)/N), v в [0, 1] с полутексельным inset.
+
+    Без inset соседние тайлы в атласе соприкасаются вплотную; билинейная фильтрация на границах
+    (u = k/N) подмешивает соседний материал и даёт «радужные» артефакты в Open3D / других вьюерах.
+    """
+    global _BALCONY_ATLAS_TILE_PX
     n = float(BALCONY_ATLAS_NUM_TILES)
     w = 1.0 / n
+    tp = int(tile_px if tile_px is not None else _BALCONY_ATLAS_TILE_PX)
+    tw = float(max(tp, 64))
+    half_u_local = (0.5 / tw) * w
+    half_v_local = 0.5 / tw
     out = np.asarray(uv, dtype=np.float64).copy()
-    out[:, 0] = np.clip(out[:, 0], 0.0, 1.0) * w + w * float(tile_index)
-    out[:, 1] = np.clip(out[:, 1], 0.0, 1.0)
+    u_local = np.clip(out[:, 0], 0.0, 1.0)
+    v_local = np.clip(out[:, 1], 0.0, 1.0)
+    span_u = max(w - 2.0 * half_u_local, w * 0.98)
+    span_v = max(1.0 - 2.0 * half_v_local, 0.98)
+    out[:, 0] = w * float(tile_index) + half_u_local + u_local * span_u
+    out[:, 1] = half_v_local + v_local * span_v
     return out
 
 
@@ -1673,18 +1699,14 @@ def _balcony_floor_textured_parts(
     def _uv_floor_top(p: np.ndarray) -> np.ndarray:
         return np.array([(float(p[0]) - xmin_f) / xspan, float(p[1]) / d_safe], dtype=np.float64)
 
+    # Верх пола — горизонтальная плоскость: только планарный UV в XY (см. _uv_floor_top).
+    # Нельзя подставлять базис вертикальной стены парапета (BL_b—FL_b—FL_zp—BL_zp): для точек
+    # на z=top проекция на ту плоскость вырождается → совпадающие (u,v) у разных углов и
+    # «радужные» артефакты в превью/движках.
     uv_bl = _uv_floor_top(BL_t)
     uv_fl = _uv_floor_top(FL_t)
     uv_fr = _uv_floor_top(FR_t)
     uv_br = _uv_floor_top(BR_t)
-    if BL_zp is not None and FL_zp is not None:
-        b0, uh, vh, rm = _planar_wall_uv_basis(BL_b, FL_b, FL_zp, BL_zp)
-        uv_bl = _planar_wall_uv01_at(b0, uh, vh, rm, BL_t)
-        uv_fl = _planar_wall_uv01_at(b0, uh, vh, rm, FL_t)
-    if FR_zp is not None and BR_zp is not None:
-        b0, uh, vh, rm = _planar_wall_uv_basis(BR_b, FR_b, FR_zp, BR_zp)
-        uv_fr = _planar_wall_uv01_at(b0, uh, vh, rm, FR_t)
-        uv_br = _planar_wall_uv01_at(b0, uh, vh, rm, BR_t)
     uv_ft = np.stack([uv_bl, uv_fl, uv_fr, uv_br])
     f_top = _textured_quad([BL_t, FL_t, FR_t, BR_t], BALCONY_TILE_WALL_LOWER, uv_ft, flip=False)
     uv_fb = np.stack([_uv_floor_top(BL_b), _uv_floor_top(BR_b), _uv_floor_top(FR_b), _uv_floor_top(FL_b)])
@@ -2609,6 +2631,8 @@ def export_balcony(
     u = USER_BALCONY
     p = {**u, **kw_rest}
     ph = p.get("parapet_height")
+    global _BALCONY_ATLAS_TILE_PX
+    _BALCONY_ATLAS_TILE_PX = max(int(atlas_tile), 64)
     wall_parts, win_parts = build_balcony_meshes(
         width_back=float(p["width_back"]),
         width_front=float(p["width_front"]),
