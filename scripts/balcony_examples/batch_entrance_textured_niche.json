@@ -1,0 +1,24 @@
+{
+  "balcony": { "enabled": false },
+  "entrance": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false },
+  "entrance_textured": {
+    "enabled": true,
+    "out_dir": "data/out_batch/entrance_textured_niche",
+    "no_view": false,
+    "entrance_style": "niche",
+    "width": 3.2,
+    "depth": 1.5,
+    "atlas_tile": 256,
+    "texture": {
+      "use_procedural_maps": true,
+      "generate_normal": true,
+      "generate_roughness": true,
+      "wall_color_preset": "plaster",
+      "roof_color_preset": "wood",
+      "door_color_preset": "ceramic_tile"
+    }
+  }
+}

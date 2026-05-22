@@ -2,7 +2,7 @@
   "balcony": {
     "enabled": true,
     "out_dir": "data/out_batch/inner_wall_windows_example",
-    "no_view": true,
+    "no_view": false,
     "inner_wall_windows": [
   {
     "u0": 0.04,

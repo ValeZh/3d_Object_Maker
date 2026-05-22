@@ -178,8 +178,10 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     Ожидает словарь конфигурации с ключами:
       balcony, entrance, entrance_textured, window, wall, wall_window
 
-    Секции window и wall_window: опционально no_view (по умолчанию true — без Open3D).
-    При no_view: false после экспорта вызывается preview_window_obj_open3d (нужен pip install open3d).
+    Секции window и wall_window: опционально no_view (по умолчанию true — без превью).
+    При no_view: false — превью через ``open3d_preview``; опционально другой бэкенд: переменная
+    ``PROCEDURAL_MESH_PREVIEW=plotly`` (браузер) или ``system`` (``.obj`` в приложении ОС). Для Open3D: ``pip install open3d``.
+    Балкон на Windows: стабильное ``draw_geometries``; Filament для балкона: ``OPEN3D_BALCONY_FILAMENT_PREVIEW=1``.
     """
     out: dict[str, Path] = {}
 

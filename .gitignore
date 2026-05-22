@@ -221,3 +221,30 @@ __marimo__/
 
 # Local binary bundles (keep out of Git)
 /scripts.zip
+
+# Microsoft Word
+*.doc
+*.docx
+
+# docs: ignore everything except whitelisted parameter lists
+docs/**
+!docs/
+!docs/json_batch_parametry_ru.txt
+!docs/json_batch_parametry_spisok_ru.txt
+!docs/procedural_orchestrator_params.txt
+/scripts/_diary_extract.txt
+/scripts/_docx_paras.txt
+/scripts/_docx_structure.txt
+/scripts/_verify_diary.txt
+/scripts/build_chapter04c_blockschemes.py
+/scripts/build_compact_mermaid_schemes.py
+/scripts/fill_practice_diary.py
+/scripts/fix_appendix_math_align.py
+/scripts/format_thesis_stzvo.py
+/scripts/grayscale_thesis_figures.py
+/scripts/mermaid_thesis_style.py
+/scripts/render_blockschemes_from_txt.py
+/scripts/render_formula_pngs.py
+/scripts/render_mermaid_kroki.py
+/scripts/run_thesis_test_scenarios.ps1
+/scripts/txt_to_latex_thesis.py
