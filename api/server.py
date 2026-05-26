@@ -1058,7 +1058,8 @@ async def generate_house(request: Request):
             "module_height": wall_dimensions.get("height", 3.0),
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
-            "balcony_rate": payload.get("balcony_rate", 0.25),
+            # has_balcony: True if the user selected a balcony module
+            "has_balcony": bool(payload.get("has_balconies", False)) and balcony_module_id is not None,
             # Specific UUIDs so the assembler loads freshly generated modules
             # rather than an arbitrary first alphabetical match from disk.
             "wall_module_id":    wall_module_id,
