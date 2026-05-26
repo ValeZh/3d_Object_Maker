@@ -1,0 +1,26 @@
+{
+  "balcony": { "enabled": false },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false },
+  "window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/window_only",
+    "no_view": false,
+    "width": 1.4,
+    "height": 1.6,
+    "depth": 0.12,
+    "profile": "rect",
+    "kind": "fixed",
+    "mullions_vertical": 1,
+    "mullions_horizontal": 0,
+    "atlas_half_size": 256,
+    "texture": {
+      "use_procedural_maps": true,
+      "frame_color_preset": "wood",
+      "glass_color_preset": "uniform_noise",
+      "bump_strength": 0.5
+    }
+  }
+}
