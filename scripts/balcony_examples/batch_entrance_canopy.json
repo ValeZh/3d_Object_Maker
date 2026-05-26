@@ -1,0 +1,22 @@
+{
+  "balcony": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": { "enabled": false },
+  "entrance": {
+    "enabled": true,
+    "out_dir": "data/out_batch/entrance_canopy",
+    "no_view": false,
+    "entrance_style": "canopy",
+    "width": 3.6,
+    "depth": 1.75,
+    "has_left_wall": true,
+    "has_right_wall": true,
+    "partitions_x": [0.0],
+    "doors": [
+      { "u0": 0.06, "u1": 0.44, "z_bottom": 0.12, "z_top": 2.05 },
+      { "u0": 0.56, "u1": 0.94, "z_bottom": 0.12, "z_top": 2.05 }
+    ]
+  }
+}

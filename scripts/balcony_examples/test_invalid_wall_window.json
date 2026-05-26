@@ -1,0 +1,19 @@
+{
+  "balcony": { "enabled": false },
+  "entrance": { "enabled": false },
+  "entrance_textured": { "enabled": false },
+  "window": { "enabled": false },
+  "wall": { "enabled": false },
+  "wall_window": {
+    "enabled": true,
+    "out_dir": "data/out_batch/test_invalid",
+    "no_view": true,
+    "wall_length": 3.0,
+    "wall_thickness": 0.25,
+    "wall_height": 3.0,
+    "window_center_x": 5.0,
+    "window_sill_z": 1.0,
+    "width": 2.0,
+    "height": 1.5
+  }
+}
