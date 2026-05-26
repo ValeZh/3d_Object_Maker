@@ -118,6 +118,9 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
         for src_key, dst_key in mapping.items():
             if src_key in tex:
                 kwargs[dst_key] = tex[src_key]
+        # Pass per-pixel colour tint through to export_wall's wall_texture_color param.
+        if "wall_tex_color" in tex:
+            kwargs["wall_texture_color"] = tex["wall_tex_color"]
     elif section == "entrance_textured":
         if "use_procedural_maps" in tex:
             kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])

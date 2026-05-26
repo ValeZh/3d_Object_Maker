@@ -139,6 +139,9 @@ def send_module_text_to_deepseek(text: str, module_type: Optional[str] = None) -
             timeout=30
         )
 
+        if response.status_code == 402:
+            logger.warning("DeepSeek: недостаточно средств на балансе (402) — module parse")
+            return {}
         if response.status_code != 200:
             logger.error(f"DeepSeek ошибка {response.status_code}: {response.text}")
             return {}
@@ -238,6 +241,105 @@ def extract_module_parameters(text: str, module_type: Optional[str] = None) -> d
 
     # Объединяем с defaults
     return {**defaults, **result}
+
+
+def parse_building_text(text: str) -> Optional[dict]:
+    """
+    Отправляет текст описания ЗДАНИЯ в DeepSeek и возвращает validated dict
+    или None при ошибке.
+    """
+    prompt = f"""You are an architect assistant. A user described a building in natural language (possibly with grammar mistakes or typos).
+Correct any errors mentally, then extract building parameters and return ONLY a valid JSON object.
+
+The JSON must have exactly these fields:
+{{
+  "floors": <integer 1-25>,
+  "sections": <integer 1-10, number of entrances/sections>,
+  "width": <integer 6-30, number of facade columns>,
+  "depth": <integer 1-6>,
+  "has_balconies": <boolean>,
+  "balcony_rate": <float 0.0-1.0>,
+  "window_cols": <integer 2-width>,
+  "texture_scale": <integer 1-8>
+}}
+
+Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, balcony_rate=0.3, window_cols=8, texture_scale=3.
+Clamp all values. window_cols <= width. Return ONLY JSON.
+
+User description: "{text}"
+"""
+
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "You are an architect. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 400,
+    }
+
+    try:
+        logger.info(f"DeepSeek: парсим здание '{text[:60]}'")
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=20)
+
+        if response.status_code == 402:
+            logger.warning("DeepSeek: недостаточно средств на балансе (402) — используется regex fallback")
+            return None
+        if response.status_code != 200:
+            logger.error(f"DeepSeek ошибка {response.status_code}: {response.text[:200]}")
+            return None
+
+        content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        logger.info(f"DeepSeek building response: {content[:200]}")
+
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if not match:
+            logger.warning("JSON не найден в ответе DeepSeek (building)")
+            return None
+
+        parsed = json.loads(match.group(0))
+
+        floors = max(1, min(25, int(parsed.get("floors", 9))))
+        sections = max(1, min(10, int(parsed.get("sections", 3))))
+        width = max(6, min(30, int(parsed.get("width", 18))))
+        depth = max(1, min(6, int(parsed.get("depth", 2))))
+        has_balconies = bool(parsed.get("has_balconies", True))
+        balcony_rate = max(0.0, min(1.0, float(parsed.get("balcony_rate", 0.3))))
+        window_cols = max(2, min(width, int(parsed.get("window_cols", 8))))
+        texture_scale = max(1, min(8, int(parsed.get("texture_scale", 3))))
+
+        result = {
+            "house": {
+                "floors": floors,
+                "sections": sections,
+                "width": width,
+                "depth": depth,
+                "has_balconies": has_balconies,
+                "balcony_rate": round(balcony_rate, 2),
+                "window_cols": window_cols,
+                "facade": {"texture_url": "", "texture_scale": texture_scale},
+            }
+        }
+        logger.info(f"✓ Building params: {result}")
+        return result
+
+    except requests.exceptions.Timeout:
+        logger.error("DeepSeek timeout (20s) — building parse")
+        return None
+    except requests.exceptions.ConnectionError:
+        logger.error("DeepSeek ConnectionError — building parse")
+        return None
+    except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        logger.error(f"Building parse error: {exc}")
+        return None
+    except Exception as exc:
+        logger.error(f"DeepSeek error: {exc}")
+        return None
 
 
 # ============== ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ==============

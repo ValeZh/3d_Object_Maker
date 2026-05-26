@@ -8,8 +8,10 @@ import copy
 import logging
 import json
 import subprocess
+import threading
 import zipfile
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -25,8 +27,8 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent  # Поднимаемся в корень проекта
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ai_parser.parser import extract_module_parameters
-from src.ai_parser.nlp_parser import ModuleTextParser
+from src.ai_parser.parser import extract_module_parameters, parse_building_text
+from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser
 from src.generator.assembler import assemble_building
 from src.generator.procedural.procedural_batch_runner import run_all_generators
 from src.generator.procedural.procedural_batch_json_parser import parse_and_run
@@ -93,37 +95,76 @@ ensure_registry_exists(HOUSES_REGISTRY_FILE)
 
 # ======================= ФУНКЦИИ РЕЕСТРА =======================
 
+# Per-file threading locks prevent concurrent in-process corruption.
+# Advisory file locks (fcntl) cover multi-process scenarios (e.g. uvicorn --workers N).
+_modules_lock = threading.Lock()
+_houses_lock  = threading.Lock()
+
+try:
+    import fcntl as _fcntl
+    def _flock(f, exclusive: bool):
+        op = _fcntl.LOCK_EX if exclusive else _fcntl.LOCK_SH
+        _fcntl.flock(f, op)
+    def _funlock(f):
+        _fcntl.flock(f, _fcntl.LOCK_UN)
+except ImportError:
+    # Windows fallback — threading.Lock alone is still sufficient for a
+    # single uvicorn worker, which is the default dev configuration.
+    def _flock(f, exclusive: bool):  # noqa: F811
+        pass
+    def _funlock(f):                 # noqa: F811
+        pass
+
+
+@contextmanager
+def _registry_read(path: Path, thread_lock: threading.Lock):
+    with thread_lock:
+        with open(path, 'r', encoding='utf-8') as f:
+            _flock(f, exclusive=False)
+            try:
+                yield f
+            finally:
+                _funlock(f)
+
+
+@contextmanager
+def _registry_write(path: Path, thread_lock: threading.Lock):
+    with thread_lock:
+        with open(path, 'w', encoding='utf-8') as f:
+            _flock(f, exclusive=True)
+            try:
+                yield f
+            finally:
+                _funlock(f)
+
+
 def load_modules_registry() -> List[Dict[str, Any]]:
-    """Загружает список модулей из реестра"""
     try:
-        with open(MODULES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+        with _registry_read(MODULES_REGISTRY_FILE, _modules_lock) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Ошибка загрузки реестра модулей: {e}")
         return []
 
 def save_modules_registry(modules: List[Dict[str, Any]]):
-    """Сохраняет список модулей в реестр"""
     try:
-        with open(MODULES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+        with _registry_write(MODULES_REGISTRY_FILE, _modules_lock) as f:
             json.dump(modules, f, ensure_ascii=False, indent=2)
         logger.info(f"✓ Реестр сохранен ({len(modules)} модулей)")
     except Exception as e:
         logger.error(f"Ошибка сохранения реестра: {e}")
 
 def load_houses_registry() -> List[Dict[str, Any]]:
-    """Загружает список домов из реестра"""
     try:
-        with open(HOUSES_REGISTRY_FILE, 'r', encoding='utf-8') as f:
+        with _registry_read(HOUSES_REGISTRY_FILE, _houses_lock) as f:
             return json.load(f)
     except Exception as e:
         logger.error(f"Ошибка загрузки реестра домов: {e}")
         return []
 
 def save_houses_registry(houses: List[Dict[str, Any]]):
-    """Сохраняет список домов в реестр"""
     try:
-        with open(HOUSES_REGISTRY_FILE, 'w', encoding='utf-8') as f:
+        with _registry_write(HOUSES_REGISTRY_FILE, _houses_lock) as f:
             json.dump(houses, f, ensure_ascii=False, indent=2)
         logger.info(f"✓ Реестр домов сохранен ({len(houses)} домов)")
     except Exception as e:
@@ -150,12 +191,23 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
 
         # Обновляем конфиг в зависимости от типа модуля
         if module_type == "wall":
+            tex_block: Dict[str, Any] = {
+                "use_procedural_maps": True,
+                "wall_color_preset": "plaster",
+                "generate_normal": True,
+                "generate_roughness": True,
+            }
+            hex_col = params.get("color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                tex_block["wall_tex_color"] = hex_to_rgb(hex_col.strip())
+
             config["wall"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "wall_length": params.get("width", 2.0),
                 "wall_thickness": params.get("thickness", 0.3),
                 "wall_height": params.get("height", 3.0),
+                "texture": tex_block,
                 "no_view": True,
             }
             # Отключаем остальные
@@ -198,7 +250,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "door":
-            config["entrance"] = {
+            door_cfg: Dict[str, Any] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "entrance_style": "canopy",
@@ -209,7 +261,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "doors": [
                     {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
                 ],
-                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "atlas_tile": 256,
                 "texture": {
                     "use_procedural_maps": True,
                     "wall_color_preset": "plaster",
@@ -219,8 +271,14 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 },
                 "no_view": True,
             }
+            hex_col = params.get("color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                rgb = hex_to_rgb(hex_col.strip())
+                door_cfg["door_tex_color"] = rgb
+                door_cfg["wall_tex_color"] = rgb
+            config["entrance_textured"] = door_cfg
             # Отключаем остальные
-            for key in ["wall", "window", "wall_window", "balcony", "entrance_textured"]:
+            for key in ["wall", "window", "wall_window", "balcony", "entrance"]:
                 if key in config:
                     config[key]["enabled"] = False
 
@@ -306,13 +364,14 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 if path and path.exists():
                     logger.info(f"✓ Модуль сгенерирован: {path}")
 
-                    # Переименуем файлы в правильное имя
-                    correct_filename = module_type + ".obj"
-
                     if module_type == "door" and path.name == "entrance.obj":
                         new_path = path.parent / "door.obj"
                         path.rename(new_path)
                         logger.info(f"✓ Переименовано: entrance.obj → door.obj")
+                        # entrance_textured already writes material.mtl with atlas texture;
+                        # only inject fallback diffuse material if no MTL was produced.
+                        if not (new_path.parent / "material.mtl").exists():
+                            _inject_door_material(new_path, params.get("color"))
                         return new_path
 
                     elif module_type == "entrance" and path.name == "entrance_textured.obj":
@@ -335,6 +394,55 @@ def hex_to_rgb(hex_color: str) -> list:
     """Конвертирует HEX в RGB (0-255)"""
     hex_color = hex_color.lstrip('#')
     return [int(hex_color[i:i + 2], 16) for i in (0, 2, 4)]
+
+
+def _normalise_hex(color: Optional[str]) -> Optional[str]:
+    """Return #RRGGBB or None.  Accepts upper/lower-case with or without '#'."""
+    if not isinstance(color, str):
+        return None
+    c = color.strip().lstrip('#')
+    if len(c) == 6 and all(ch in '0123456789abcdefABCDEF' for ch in c):
+        return f'#{c.upper()}'
+    return None
+
+
+def _inject_door_material(obj_path: Path, color_hex: Optional[str]) -> None:
+    """
+    Post-process a trimesh-exported door OBJ (no material) to add a basic MTL.
+    Writes door.mtl alongside the OBJ and prepends mtllib + usemtl lines.
+    """
+    try:
+        hex_norm = _normalise_hex(color_hex) or "#8B6914"   # wood brown default
+        r, g, b  = hex_to_rgb(hex_norm)
+        rd, gd, bd = r / 255.0, g / 255.0, b / 255.0
+
+        mtl_path = obj_path.parent / "door.mtl"
+        mtl_path.write_text(
+            f"newmtl door\nKa 1 1 1\nKd {rd:.4f} {gd:.4f} {bd:.4f}\nKs 0 0 0\n",
+            encoding="utf-8"
+        )
+
+        obj_text = obj_path.read_text(encoding="utf-8")
+        lines    = obj_text.splitlines(keepends=True)
+
+        # Inject mtllib after the leading comment block; add usemtl before first face.
+        new_lines: list[str] = []
+        mtllib_added  = False
+        usemtl_added  = False
+        for line in lines:
+            stripped = line.lstrip()
+            if not mtllib_added and not stripped.startswith('#'):
+                new_lines.append("mtllib door.mtl\n")
+                mtllib_added = True
+            if not usemtl_added and stripped.startswith('f '):
+                new_lines.append("usemtl door\n")
+                usemtl_added = True
+            new_lines.append(line)
+
+        obj_path.write_text("".join(new_lines), encoding="utf-8")
+        logger.info(f"✓ door.mtl injected (color {hex_norm})")
+    except Exception as exc:
+        logger.warning(f"_inject_door_material failed: {exc}")
 
 def create_module_zip(module_id: str, module_type: str, params: Dict[str, Any], obj_path: Optional[Path]) -> Optional[Path]:
     """
@@ -475,6 +583,14 @@ async def generate_module(request: Request):
 
         module_type = parse_result.module_type.value
         params = parse_result.params
+
+        # Color from the UI color-picker overrides any color the NLP parser extracted
+        # from the text description.  Normalise both paths to #RRGGBB before storing.
+        picker_color = _normalise_hex(payload.get("color"))
+        if picker_color:
+            params["color"] = picker_color
+        elif "color" in params:
+            params["color"] = _normalise_hex(params["color"]) or params["color"]
 
         # === 2️⃣ Генерация OBJ ===
         module_id = str(uuid.uuid4())[:8]
@@ -668,6 +784,103 @@ async def delete_module(module_id: str):
         )
 
 
+@app.patch("/api/modules/{module_id}")
+async def rename_module(module_id: str, request: Request):
+    """
+    🔹 ВКЛАДКА 2: ПЕРЕИМЕНОВАНИЕ МОДУЛЯ
+
+    Входные данные:
+    {
+        "name": "Новое имя"
+    }
+    """
+    try:
+        payload = await request.json()
+        new_name = payload.get("name", "").strip()
+
+        if not new_name:
+            return JSONResponse({"error": "Имя не может быть пустым"}, status_code=400)
+
+        modules = load_modules_registry()
+        module = next((m for m in modules if m["module_id"] == module_id), None)
+
+        if not module:
+            return JSONResponse({"error": "Модуль не найден"}, status_code=404)
+
+        module["module_name"] = new_name
+        save_modules_registry(modules)
+        logger.info(f"✓ Модуль переименован: {module_id} → '{new_name}'")
+
+        return {"status": "success", "module_id": module_id, "module_name": new_name}
+
+    except Exception as e:
+        logger.error(f"Ошибка переименования модуля: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/facade-textures")
+async def get_facade_textures():
+    """
+    🔹 ВКЛАДКА 3: СПИСОК ТЕКСТУР ФАСАДА
+
+    Сканирует TEXTURES_DIR и возвращает список доступных текстур.
+    Фронтенд использует этот список для заполнения <select>.
+    """
+    try:
+        if not TEXTURES_DIR.exists():
+            return []
+
+        extensions = {".png", ".jpg", ".jpeg", ".webp"}
+        textures = []
+
+        for f in sorted(TEXTURES_DIR.iterdir()):
+            if f.suffix.lower() in extensions:
+                textures.append({
+                    "name": f.stem,
+                    "url": f"/textures/{f.name}",
+                })
+
+        logger.info(f"Текстур найдено: {len(textures)}")
+        return textures
+
+    except Exception as e:
+        logger.error(f"Ошибка получения текстур: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+_building_text_parser = BuildingTextParser()
+
+
+@app.post("/api/analyze-building-text")
+async def analyze_building_text(request: Request):
+    """
+    ВКЛАДКА 3: ПАРСИНГ ТЕКСТОВОГО ОПИСАНИЯ ДОМА
+    AI (DeepSeek через parser.py), fallback — regex (nlp_parser.py).
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+
+        if not text:
+            return JSONResponse({"error": "Пустой текст"}, status_code=400)
+
+        logger.info(f"Анализ текста дома: '{text}'")
+
+        import asyncio
+        loop = asyncio.get_event_loop()
+        ai_result = await loop.run_in_executor(None, parse_building_text, text)
+        if ai_result is not None:
+            logger.info(f"AI parse succeeded: {ai_result}")
+            return ai_result
+
+        logger.info("AI parse failed — using regex fallback")
+        return _building_text_parser.parse(text)
+
+    except Exception as e:
+        logger.error(f"Ошибка анализа текста дома: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
@@ -680,19 +893,27 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Build the wall_window config section for run_all_generators
+        wall_height = float(wall_params.get("height", 3.0))
+        win_height  = float(window_params.get("height", 1.4))
+        # Centre the window vertically within the wall, leaving at least 0.15m
+        # headroom above and 0.2m sill below so the wall mesh doesn't degenerate.
+        sill_z = max(0.2, (wall_height - win_height) / 2)
+        if sill_z + win_height > wall_height - 0.12:
+            sill_z = max(0.1, wall_height - win_height - 0.12)
+
         wall_window_cfg: Dict[str, Any] = {
             "enabled": True,
             "out_dir": str(output_dir),
             # Wall geometry from wall module params
             "wall_length": float(wall_params.get("width", 3.0)),
-            "wall_height": float(wall_params.get("height", 3.0)),
+            "wall_height": wall_height,
             "wall_thickness": float(wall_params.get("thickness", 0.25)),
-            # Window position (centred by default)
+            # Window position (centred vertically; sill computed above)
             "window_center_x": 0.0,
-            "window_sill_z": 1.0,
+            "window_sill_z": sill_z,
             # Window geometry from window module params
             "width": float(window_params.get("width", 1.1)),
-            "height": float(window_params.get("height", 1.4)),
+            "height": win_height,
             "mullions_vertical": int(window_params.get("mullions_vertical", 1)),
             "no_view": True,
             # PBR maps
@@ -777,16 +998,17 @@ async def generate_house(request: Request):
         payload = await request.json()
         house_name = payload.get("house_name", "Дом")
 
-        # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL И WINDOW ===
+        # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL, WINDOW И BALCONY ===
         wall_module_id = payload.get("wall_module_id")
         window_module_id = payload.get("window_module_id")
+        balcony_module_id = payload.get("balcony_module_id") or None
         wall_dimensions = {"width": 4.0, "height": 3.0}
 
         wall_params = None
         window_params = None
         modules_registry = load_modules_registry()
 
-        # Ищем wall и window в реестре
+        # Ищем wall, window и balcony в реестре
         for module in modules_registry:
             module_id = module.get("module_id")
 
@@ -800,6 +1022,9 @@ async def generate_house(request: Request):
                 window_params = module.get("params", {})
                 logger.info(f"✓ Window параметры: {window_params}")
 
+            if module_id == balcony_module_id:
+                logger.info(f"✓ Balcony module найден в реестре: {module_id}")
+
         # === REQUIRE BOTH WALL AND WINDOW ===
         if not wall_params:
             return JSONResponse({"error": "Wall module not found in registry"}, status_code=400)
@@ -808,8 +1033,15 @@ async def generate_house(request: Request):
 
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")
-        window_module_id = create_wall_window_module(wall_params, window_params)
-        logger.info(f"✓ Wall_window created: {window_module_id}")
+        try:
+            window_module_id = create_wall_window_module(wall_params, window_params)
+            logger.info(f"✓ Wall_window created: {window_module_id}")
+        except Exception as ww_err:
+            logger.warning(
+                f"⚠️ Wall_window generation failed: {ww_err}. "
+                "Assembly will proceed using plain walls for window cells."
+            )
+            window_module_id = None
 
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
@@ -826,6 +1058,12 @@ async def generate_house(request: Request):
             "module_height": wall_dimensions.get("height", 3.0),
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
+            "balcony_rate": payload.get("balcony_rate", 0.25),
+            # Specific UUIDs so the assembler loads freshly generated modules
+            # rather than an arbitrary first alphabetical match from disk.
+            "wall_module_id":    wall_module_id,
+            "window_module_id":  window_module_id,
+            "balcony_module_id": balcony_module_id,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")
@@ -954,6 +1192,10 @@ async def generate_building_legacy(request: Request):
 if MODULES_DIR.exists():
     app.mount("/modules", StaticFiles(directory=MODULES_DIR), name="modules")
     logger.info(f"✓ Модули доступны по /modules")
+
+if TEXTURES_DIR.exists():
+    app.mount("/textures", StaticFiles(directory=TEXTURES_DIR), name="textures")
+    logger.info(f"✓ Текстуры доступны по /textures")
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

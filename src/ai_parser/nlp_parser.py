@@ -435,25 +435,6 @@ class ModuleTextParser:
             confidence=confidence
         )
 
-    def _get_color_hex(self, color_name: str) -> str:
-        """Преобразует название цвета в HEX код"""
-        if not color_name:
-            return None
-
-        color_lower = color_name.lower().strip()
-
-        if color_lower.startswith("#"):
-            return color_lower
-
-        if color_lower in self.COLOR_MAP:
-            return self.COLOR_MAP[color_lower]
-
-        for key, hex_code in self.COLOR_MAP.items():
-            if key in color_lower or color_lower in key:
-                return hex_code
-
-        return None
-
     def debug_parse(self, text: str) -> Dict[str, Any]:
         """Парсит с подробной информацией для отладки"""
         print(f"\n📝 Парсинг модуля: '{text}'\n")
@@ -468,6 +449,47 @@ class ModuleTextParser:
         print()
 
         return result.to_dict()
+
+
+class BuildingTextParser:
+    """Regex-парсер описания ЗДАНИЯ — используется как fallback если AI недоступен."""
+
+    def parse(self, text: str) -> dict:
+        t = text.lower()
+
+        def _int(pattern, default):
+            m = re.search(pattern, t)
+            return int(m.group(1)) if m else default
+
+        def _float(pattern, default):
+            m = re.search(pattern, t)
+            return float(m.group(1).replace(",", ".")) if m else default
+
+        floors = _int(r"(\d+)\s*(?:этаж|floor|storey|story)", 9)
+        sections = _int(r"(\d+)\s*(?:секци|подъезд|entranc|section)", 3)
+        width = _int(r"(?:ширин[аы]|width)\s*(\d+)", 18)
+        depth = _int(r"(?:глубин[аы]|depth)\s*(\d+)", 2)
+        window_cols = _int(r"(\d+)\s*(?:окон|window)", 8)
+        balcony_rate = _float(r"балкон[ыа]?\s*(\d+(?:[.,]\d+)?)", 0.3)
+        if balcony_rate > 1.0:
+            balcony_rate /= 100.0
+        has_balconies = bool(
+            re.search(r"балкон|balcon", t) and
+            not re.search(r"без\s*балкон|no\s*balcon", t)
+        )
+
+        return {
+            "house": {
+                "floors": max(1, min(floors, 25)),
+                "sections": max(1, min(sections, 10)),
+                "width": max(6, min(width, 30)),
+                "depth": max(1, min(depth, 6)),
+                "has_balconies": has_balconies,
+                "balcony_rate": round(max(0.0, min(balcony_rate, 1.0)), 2),
+                "window_cols": max(2, min(window_cols, width)),
+                "facade": {"texture_url": "", "texture_scale": 3},
+            }
+        }
 
 
 # ============== ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ==============

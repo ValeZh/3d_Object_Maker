@@ -1442,7 +1442,7 @@ function renderSavedModules() {
       if (!mod) return;
       applyModuleParams(mod);
       renderModulePreview(mod);
-      setActiveTab("modulePage");
+      setActiveTab("modules");
     };
   });
 
@@ -2434,7 +2434,10 @@ generateModuleBtn?.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: finalText,
-        module_type: moduleType
+        module_type: moduleType,
+        // Include color-picker value so it overrides any NLP-parsed color.
+        // <input type="color"> always yields #rrggbb; server normalises to #RRGGBB.
+        color: moduleColor.value || undefined
       })
     });
 
@@ -2492,17 +2495,13 @@ function _toPreviewLitMaterial(phongMat, tintHex) {
   const transparent = !!phongMat.transparent;
   const opacity = phongMat.opacity !== undefined ? phongMat.opacity : 1;
   const diffuse = phongMat.map;
-  if (diffuse && diffuse.image) {
-    const mapTex = diffuse;
+  if (diffuse) {
     if (T.SRGBColorSpace !== undefined) {
-      mapTex.colorSpace = T.SRGBColorSpace;
+      diffuse.colorSpace = T.SRGBColorSpace;
     }
     return new T.MeshBasicMaterial({
-      map: mapTex,
-      color:
-        tint?.clone?.() ??
-        phongMat.color?.clone?.() ??
-        new T.Color(0xffffff),
+      map: diffuse,
+      color: tint?.clone?.() ?? new T.Color(0xffffff),
       side: T.DoubleSide,
       toneMapped: false,
       transparent,
