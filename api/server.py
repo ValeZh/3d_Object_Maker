@@ -27,8 +27,8 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent  # Поднимаемся в корень проекта
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ai_parser.parser import extract_module_parameters
-from src.ai_parser.nlp_parser import ModuleTextParser
+from src.ai_parser.parser import extract_module_parameters, parse_building_text
+from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser
 from src.generator.assembler import assemble_building
 from src.generator.procedural.procedural_batch_runner import run_all_generators
 from src.generator.procedural.procedural_batch_json_parser import parse_and_run
@@ -250,7 +250,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "door":
-            config["entrance"] = {
+            door_cfg: Dict[str, Any] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
                 "entrance_style": "canopy",
@@ -261,7 +261,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "doors": [
                     {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
                 ],
-                # === ДОБАВЛЕНЫ ТЕКСТУРЫ ===
+                "atlas_tile": 256,
                 "texture": {
                     "use_procedural_maps": True,
                     "wall_color_preset": "plaster",
@@ -271,8 +271,14 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 },
                 "no_view": True,
             }
+            hex_col = params.get("color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                rgb = hex_to_rgb(hex_col.strip())
+                door_cfg["door_tex_color"] = rgb
+                door_cfg["wall_tex_color"] = rgb
+            config["entrance_textured"] = door_cfg
             # Отключаем остальные
-            for key in ["wall", "window", "wall_window", "balcony", "entrance_textured"]:
+            for key in ["wall", "window", "wall_window", "balcony", "entrance"]:
                 if key in config:
                     config[key]["enabled"] = False
 
@@ -362,7 +368,10 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                         new_path = path.parent / "door.obj"
                         path.rename(new_path)
                         logger.info(f"✓ Переименовано: entrance.obj → door.obj")
-                        _inject_door_material(new_path, params.get("color"))
+                        # entrance_textured already writes material.mtl with atlas texture;
+                        # only inject fallback diffuse material if no MTL was produced.
+                        if not (new_path.parent / "material.mtl").exists():
+                            _inject_door_material(new_path, params.get("color"))
                         return new_path
 
                     elif module_type == "entrance" and path.name == "entrance_textured.obj":
@@ -839,29 +848,14 @@ async def get_facade_textures():
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+_building_text_parser = BuildingTextParser()
+
+
 @app.post("/api/analyze-building-text")
 async def analyze_building_text(request: Request):
     """
-    🔹 ВКЛАДКА 3: ПАРСИНГ ТЕКСТОВОГО ОПИСАНИЯ ДОМА
-
-    Входные данные:
-    {
-        "text": "9-этажный дом, 3 секции, с балконами"
-    }
-
-    Выходные данные (формат совместим с applyHouseParams на фронтенде):
-    {
-        "house": {
-            "floors": 9,
-            "sections": 3,
-            "width": 18,
-            "depth": 2,
-            "has_balconies": true,
-            "balcony_rate": 0.3,
-            "window_cols": 8,
-            "facade": {"texture_url": "", "texture_scale": 3}
-        }
-    }
+    ВКЛАДКА 3: ПАРСИНГ ТЕКСТОВОГО ОПИСАНИЯ ДОМА
+    AI (DeepSeek через parser.py), fallback — regex (nlp_parser.py).
     """
     try:
         payload = await request.json()
@@ -870,55 +864,20 @@ async def analyze_building_text(request: Request):
         if not text:
             return JSONResponse({"error": "Пустой текст"}, status_code=400)
 
-        logger.info(f"📝 Анализ текста дома: '{text}'")
+        logger.info(f"Анализ текста дома: '{text}'")
 
-        import re
+        import asyncio
+        loop = asyncio.get_event_loop()
+        ai_result = await loop.run_in_executor(None, parse_building_text, text)
+        if ai_result is not None:
+            logger.info(f"AI parse succeeded: {ai_result}")
+            return ai_result
 
-        t = text.lower()
-
-        def _int(pattern, default):
-            m = re.search(pattern, t)
-            return int(m.group(1)) if m else default
-
-        def _float(pattern, default):
-            m = re.search(pattern, t)
-            return float(m.group(1).replace(",", ".")) if m else default
-
-        floors = _int(r"(\d+)\s*(?:этаж|floor|storey|story)", 9)
-        sections = _int(r"(\d+)\s*(?:секци|подъезд|entranc|section)", 3)
-        width = _int(r"(?:ширин[аы]|width)\s*(\d+)", 18)
-        depth = _int(r"(?:глубин[аы]|depth)\s*(\d+)", 2)
-        window_cols = _int(r"(\d+)\s*(?:окон|window)", 8)
-        balcony_rate = _float(r"балкон[ыа]?\s*(\d+(?:[.,]\d+)?)", 0.3)
-        if balcony_rate > 1.0:
-            balcony_rate = balcony_rate / 100.0
-
-        has_balconies = bool(
-            re.search(r"балкон|balcon", t) and
-            not re.search(r"без балкон|no balcon", t)
-        )
-
-        result = {
-            "house": {
-                "floors": max(1, min(floors, 25)),
-                "sections": max(1, min(sections, 10)),
-                "width": max(6, min(width, 30)),
-                "depth": max(1, min(depth, 6)),
-                "has_balconies": has_balconies,
-                "balcony_rate": round(max(0.0, min(balcony_rate, 1.0)), 2),
-                "window_cols": max(2, min(window_cols, width)),
-                "facade": {
-                    "texture_url": "",
-                    "texture_scale": 3,
-                },
-            }
-        }
-
-        logger.info(f"✓ Параметры дома извлечены: {result}")
-        return result
+        logger.info("AI parse failed — using regex fallback")
+        return _building_text_parser.parse(text)
 
     except Exception as e:
-        logger.error(f"Ошибка анализа текста дома: {e}")
+        logger.error(f"Ошибка анализа текста дома: {e}", exc_info=True)
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
@@ -934,19 +893,27 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Build the wall_window config section for run_all_generators
+        wall_height = float(wall_params.get("height", 3.0))
+        win_height  = float(window_params.get("height", 1.4))
+        # Centre the window vertically within the wall, leaving at least 0.15m
+        # headroom above and 0.2m sill below so the wall mesh doesn't degenerate.
+        sill_z = max(0.2, (wall_height - win_height) / 2)
+        if sill_z + win_height > wall_height - 0.12:
+            sill_z = max(0.1, wall_height - win_height - 0.12)
+
         wall_window_cfg: Dict[str, Any] = {
             "enabled": True,
             "out_dir": str(output_dir),
             # Wall geometry from wall module params
             "wall_length": float(wall_params.get("width", 3.0)),
-            "wall_height": float(wall_params.get("height", 3.0)),
+            "wall_height": wall_height,
             "wall_thickness": float(wall_params.get("thickness", 0.25)),
-            # Window position (centred by default)
+            # Window position (centred vertically; sill computed above)
             "window_center_x": 0.0,
-            "window_sill_z": 1.0,
+            "window_sill_z": sill_z,
             # Window geometry from window module params
             "width": float(window_params.get("width", 1.1)),
-            "height": float(window_params.get("height", 1.4)),
+            "height": win_height,
             "mullions_vertical": int(window_params.get("mullions_vertical", 1)),
             "no_view": True,
             # PBR maps
@@ -1031,16 +998,17 @@ async def generate_house(request: Request):
         payload = await request.json()
         house_name = payload.get("house_name", "Дом")
 
-        # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL И WINDOW ===
+        # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL, WINDOW И BALCONY ===
         wall_module_id = payload.get("wall_module_id")
         window_module_id = payload.get("window_module_id")
+        balcony_module_id = payload.get("balcony_module_id") or None
         wall_dimensions = {"width": 4.0, "height": 3.0}
 
         wall_params = None
         window_params = None
         modules_registry = load_modules_registry()
 
-        # Ищем wall и window в реестре
+        # Ищем wall, window и balcony в реестре
         for module in modules_registry:
             module_id = module.get("module_id")
 
@@ -1054,6 +1022,9 @@ async def generate_house(request: Request):
                 window_params = module.get("params", {})
                 logger.info(f"✓ Window параметры: {window_params}")
 
+            if module_id == balcony_module_id:
+                logger.info(f"✓ Balcony module найден в реестре: {module_id}")
+
         # === REQUIRE BOTH WALL AND WINDOW ===
         if not wall_params:
             return JSONResponse({"error": "Wall module not found in registry"}, status_code=400)
@@ -1062,8 +1033,15 @@ async def generate_house(request: Request):
 
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")
-        window_module_id = create_wall_window_module(wall_params, window_params)
-        logger.info(f"✓ Wall_window created: {window_module_id}")
+        try:
+            window_module_id = create_wall_window_module(wall_params, window_params)
+            logger.info(f"✓ Wall_window created: {window_module_id}")
+        except Exception as ww_err:
+            logger.warning(
+                f"⚠️ Wall_window generation failed: {ww_err}. "
+                "Assembly will proceed using plain walls for window cells."
+            )
+            window_module_id = None
 
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
@@ -1081,10 +1059,11 @@ async def generate_house(request: Request):
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
             "balcony_rate": payload.get("balcony_rate", 0.25),
-            # Specific UUIDs so the assembler loads the freshly generated composite,
-            # not an arbitrary first match from the output directory.
-            "wall_module_id":   wall_module_id,
-            "window_module_id": window_module_id,
+            # Specific UUIDs so the assembler loads freshly generated modules
+            # rather than an arbitrary first alphabetical match from disk.
+            "wall_module_id":    wall_module_id,
+            "window_module_id":  window_module_id,
+            "balcony_module_id": balcony_module_id,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")

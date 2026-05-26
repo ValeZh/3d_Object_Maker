@@ -16,18 +16,31 @@ Per-facade pipeline (TWO PHASES):
     Step 4  Remaining WALL cells promoted to WALL_WINDOW
             using a deterministic interval derived from texture_scale
 
-  PHASE 2 — Build (one mesh per cell, no overlaps)
-    DOOR         → door module, scaled to span; 180° Z-flip on front facade
-    BALCONY      → wall mesh (underlying) + balcony overlay placed in front
-    BALCONY_UPPER→ wall mesh (underlying wall continues behind upper span)
-    WALL_WINDOW  → wall_window composite, scaled to cell
-    WALL         → plain wall, scaled to cell
+  PHASE 2 — Build (one mesh per cell, plus overlays)
+    DOOR         → plain wall mesh behind door (same as BALCONY) PLUS door
+                   module overlay offset outward; 180° Z-flip on front facade
+    BALCONY      → plain wall mesh (underlying) PLUS balcony overlay in front;
+                   180° Z-flip on front facade overlay only
+    BALCONY_UPPER→ plain wall mesh only (overlay handled by BALCONY row)
+    WALL_WINDOW  → wall_window composite, scaled to cell; 180° Z-flip on front
+                   facade only — module convention: window face at +Y, which is
+                   already the back facade outward direction (no back flip needed)
+    WALL         → plain wall, scaled to cell; 180° Z-flip on front facade only
 
-    After all cell meshes: each facade-mesh is 180° Z-flipped on the FRONT
-    facade so modules face outward.
+    Door and front-facade balcony overlays are offset outward so their back
+    face sits flush with the wall outer surface (no wall clipping).
 
     After all facades are assembled: a -90° X rotation is applied to the
     entire building scene, converting from internal Z-up to Three.js Y-up.
+
+ASSET IMMUTABILITY CONTRACT
+  ModuleLoader caches raw OBJ parts without ANY vertex modifications.
+  The orientation-fix matrix is computed analytically from the raw bounding
+  box and stored separately.  Every mesh placement:
+    1. Copies the raw part(s)          — src.copy()
+    2. Applies a composed 4×4 matrix  — m.apply_transform(T)
+     where T = T_pos @ T_flip @ T_scale @ T_center @ T_orient
+  The raw templates in cache are NEVER modified after loading.
 
 Rules:
   • No standalone window module — wall_window is the only window representation
@@ -64,8 +77,9 @@ class CellState(Enum):
         return self in (CellState.DOOR, CellState.BALCONY, CellState.BALCONY_UPPER)
 
     def needs_wall_mesh(self) -> bool:
-        """All non-DOOR cells produce a wall or wall_window mesh in phase 2."""
-        return self != CellState.DOOR
+        """Every cell produces a wall (or wall_window) mesh in phase 2.
+        DOOR cells emit a plain wall behind the door overlay."""
+        return True
 
 
 class FacadeGrid:
@@ -110,153 +124,246 @@ class FacadeGrid:
 # ========================= MODULE LOADER =========================
 
 class ModuleLoader:
-    """Loads, orients, and caches trimesh objects from OBJ files."""
+    """
+    Loads OBJ assets and caches them as immutable raw parts.
+
+    CONTRACT: raw OBJ vertices are NEVER modified after loading.
+
+    The orientation-fix transform (needed because procedural exporters write
+    OBJs with -90°X applied) is stored as a 4×4 matrix and composed into the
+    per-placement transform at assembly time, not applied to the template.
+
+    Wall-window OBJs contain two `usemtl` groups; keeping them as separate
+    Trimesh parts (never concatenating) preserves both materials.
+    """
 
     def __init__(self, modules_dir: Path, preferred_ids: Optional[Dict[str, str]] = None):
         self.modules_dir = Path(modules_dir)
-        # Maps module_type → specific UUID subdirectory to load.
-        # When set, the loader targets that UUID directory directly instead of
-        # picking the first alphabetical match — critical for freshly generated
-        # composites that must not be confused with older modules of the same type.
+        # Maps module_type → specific UUID subdirectory to load preferentially.
         self._preferred: Dict[str, str] = preferred_ids or {}
-        self._cache: Dict[str, Optional[trimesh.Trimesh]] = {}
+        # Raw OBJ parts per module — vertices NEVER modified after this cache is populated.
+        self._parts_cache: Dict[str, List[trimesh.Trimesh]] = {}
+        # Orientation-fix matrix per module — computed analytically, no vertex mutation.
+        self._orient_cache: Dict[str, np.ndarray] = {}
 
-    def load(self, module_type: str) -> Optional[trimesh.Trimesh]:
-        if module_type not in self._cache:
-            self._cache[module_type] = self._from_disk(module_type)
-        return self._cache[module_type]
+    # ── Public API ────────────────────────────────────────────────
+
+    def raw_parts(self, module_type: str) -> List[trimesh.Trimesh]:
+        """Return immutable raw OBJ parts. Never apply transforms directly to these."""
+        if module_type not in self._parts_cache:
+            self._parts_cache[module_type] = self._load_raw(module_type)
+        return self._parts_cache[module_type]
+
+    def orient_matrix(self, module_type: str) -> np.ndarray:
+        """4×4 matrix that corrects the module's export-time coordinate rotation.
+
+        Procedural exporters apply -90°X before writing OBJ so the file looks
+        upright in standard viewers.  The correction is +90°X.  Wall_window is
+        already Z-up; its correction matrix is identity.
+
+          wall:      raw sy(3m, height) > raw sz(0.25m, thickness) → +90°X ✓
+          balcony:   raw sy > raw sz                                → +90°X ✓
+          door:      raw sy > raw sz                                → +90°X ✓
+          wall_win:  raw sy(0.25m) < raw sz(3m)                   → identity ✓
+        """
+        if module_type not in self._orient_cache:
+            parts = self.raw_parts(module_type)
+            self._orient_cache[module_type] = _detect_orient_matrix(parts)
+        return self._orient_cache[module_type]
 
     def bbox(self, module_type: str) -> Tuple[float, float, float]:
-        """(width_x, depth_y, height_z) from bounding box."""
-        mesh = self.load(module_type)
-        if mesh is None:
-            return (1.0, 0.3, 1.0)
-        b = mesh.bounds
-        return (b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2])
+        """(width_x, depth_y, height_z) in Z-up oriented space.
 
-    def _from_disk(self, module_type: str) -> Optional[trimesh.Trimesh]:
+        Computed analytically from raw bounds + orient matrix — no vertex mutation.
+        """
+        parts = self.raw_parts(module_type)
+        if not parts:
+            return (1.0, 0.3, 1.0)
+        mn, mx = _oriented_bounds(parts, self.orient_matrix(module_type))
+        d = mx - mn
+        return (float(d[0]), float(d[1]), float(d[2]))
+
+    # ── Internal ──────────────────────────────────────────────────
+
+    def _locate_obj(self, module_type: str) -> Optional[Path]:
         module_dir = self.modules_dir / module_type
         if not module_dir.exists():
             logger.warning(f"Module dir not found: {module_dir}")
             return None
-
-        # Preferred UUID takes priority; fall back to alphabetical first match.
         preferred_id = self._preferred.get(module_type)
         if preferred_id:
             preferred_path = module_dir / preferred_id / f"{module_type}.obj"
             if preferred_path.exists():
-                obj_files = [preferred_path]
                 logger.debug(f"Using preferred module {module_type}/{preferred_id}")
-            else:
-                logger.warning(
-                    f"Preferred module {module_type}/{preferred_id} not found at "
-                    f"{preferred_path}; falling back to alphabetical search."
-                )
-                obj_files = sorted(module_dir.glob(f"*/{module_type}.obj"))
-        else:
-            obj_files = sorted(module_dir.glob(f"*/{module_type}.obj"))
-
+                return preferred_path
+            logger.warning(
+                f"Preferred module {module_type}/{preferred_id} not found at "
+                f"{preferred_path}; falling back to alphabetical search."
+            )
+        obj_files = sorted(module_dir.glob(f"*/{module_type}.obj"))
         if not obj_files:
             logger.warning(f"No OBJ for module '{module_type}'")
             return None
+        return obj_files[0]
 
+    def _load_raw(self, module_type: str) -> List[trimesh.Trimesh]:
+        """Load OBJ and return all sub-geometry parts.  NO vertex modifications."""
+        obj_path = self._locate_obj(module_type)
+        if obj_path is None:
+            return []
         try:
-            loaded = trimesh.load(str(obj_files[0]), process=False)
+            loaded = trimesh.load(str(obj_path), process=False)
         except Exception as exc:
-            logger.error(f"Failed to load {module_type}: {exc}", exc_info=True)
-            return None
+            logger.error(f"Failed to load '{module_type}': {exc}", exc_info=True)
+            return []
 
-        # For multi-geometry Scenes prefer the first geometry to retain its visual.
         if isinstance(loaded, trimesh.Scene):
             parts = [g for g in loaded.geometry.values()
                      if isinstance(g, trimesh.Trimesh)]
-            if not parts:
-                return None
-            # Use single geometry directly (preserves TextureVisuals/ColorVisuals).
-            # Multi-part collapse loses per-part materials; prefer first part.
-            loaded = parts[0] if len(parts) == 1 else trimesh.util.concatenate(parts)
+        elif isinstance(loaded, trimesh.Trimesh):
+            parts = [loaded]
+        else:
+            logger.warning(f"Unexpected type for '{module_type}': {type(loaded)}")
+            return []
 
-        if not isinstance(loaded, trimesh.Trimesh):
-            logger.warning(f"Unexpected type for {module_type}: {type(loaded)}")
-            return None
-
-        mesh = self._fix_orientation(loaded)
-        ww, wd, wh = mesh.bounds[1] - mesh.bounds[0]
-        logger.info(
-            f"Loaded '{module_type}': {obj_files[0].parent.name}/{obj_files[0].name} "
-            f"[{ww:.2f}×{wd:.2f}×{wh:.2f}m]"
-        )
-        return mesh
-
-    @staticmethod
-    def _fix_orientation(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-        """Rotate so Z is the vertical (height) axis — internal Z-up convention."""
-        b = mesh.bounds
-        sx, sy, sz = b[1] - b[0]
-        if sz < 0.3 * max(sx, sy, 1e-6) and sy > sz:
-            rot = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
-            mesh.apply_transform(rot)
-        return mesh
+        if parts:
+            raw_mins = np.min([p.bounds[0] for p in parts], axis=0)
+            raw_maxs = np.max([p.bounds[1] for p in parts], axis=0)
+            d = raw_maxs - raw_mins
+            logger.info(
+                f"Loaded '{module_type}': {obj_path.parent.name}/{obj_path.name} "
+                f"[raw {d[0]:.2f}×{d[1]:.2f}×{d[2]:.2f}m, {len(parts)} part(s)]"
+            )
+        return parts
 
 
-# ========================= MESH UTILITIES =========================
-
-def _bbox_center(mesh: trimesh.Trimesh) -> np.ndarray:
-    return (mesh.bounds[0] + mesh.bounds[1]) * 0.5
-
-
-def _scale_exact(mesh: trimesh.Trimesh, target_x: float, target_z: float) -> None:
-    """Scale mesh so X span = target_x, Z span = target_z. In-place."""
-    b   = mesh.bounds
-    sx  = b[1][0] - b[0][0]
-    sz  = b[1][2] - b[0][2]
-    if sx < 1e-6 or sz < 1e-6:
-        return
-    c = _bbox_center(mesh)
-    mesh.apply_translation(-c)
-    mesh.apply_transform(np.diag([target_x / sx, 1.0, target_z / sz, 1.0]))
-    mesh.apply_translation(c)
+# ========================= PLACEMENT MATH =========================
+# All functions are pure — they take raw parts + parameters and return
+# a 4×4 matrix or (min, max) bounds.  No meshes are mutated.
 
 
-def _scale_fit(mesh: trimesh.Trimesh, max_x: float, max_z: float) -> None:
-    """Scale mesh DOWN to fit within max_x × max_z, aspect ratio preserved. In-place."""
-    b  = mesh.bounds
-    sx = b[1][0] - b[0][0]
-    sz = b[1][2] - b[0][2]
-    if sx < 1e-6 or sz < 1e-6:
-        return
-    scale = min(max_x / sx, max_z / sz)
-    if scale >= 1.0:
-        return
-    c = _bbox_center(mesh)
-    mesh.apply_translation(-c)
-    mesh.apply_transform(np.diag([scale, scale, scale, 1.0]))
-    mesh.apply_translation(c)
+def _detect_orient_matrix(parts: List[trimesh.Trimesh]) -> np.ndarray:
+    """Return +90°X rotation if the OBJ was exported with -90°X, else identity."""
+    if not parts:
+        return np.eye(4)
+    raw_mins = np.min([p.bounds[0] for p in parts], axis=0)
+    raw_maxs = np.max([p.bounds[1] for p in parts], axis=0)
+    sx, sy, sz = raw_maxs - raw_mins
+    if sy > sz:
+        return trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
+    return np.eye(4)
 
 
-def _position(mesh: trimesh.Trimesh,
-              center_x: float,
-              z_bottom: float,
-              y_center: float) -> None:
-    """Move mesh: X center = center_x, Z bottom = z_bottom, Y center = y_center."""
-    b = mesh.bounds
-    mesh.apply_translation([
-        center_x - (b[0][0] + b[1][0]) * 0.5,
-        y_center  - (b[0][1] + b[1][1]) * 0.5,
-        z_bottom  - b[0][2],
-    ])
+def _oriented_bounds(
+    parts: List[trimesh.Trimesh],
+    T_orient: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Bounding box after T_orient, computed analytically — no vertex mutation."""
+    raw_mins = np.min([p.bounds[0] for p in parts], axis=0)
+    raw_maxs = np.max([p.bounds[1] for p in parts], axis=0)
+    # Transform all 8 corners of the raw AABB and compute the resulting AABB.
+    mn, mx = raw_mins, raw_maxs
+    corners = np.array([
+        [mn[0], mn[1], mn[2], 1.0],
+        [mx[0], mn[1], mn[2], 1.0],
+        [mn[0], mx[1], mn[2], 1.0],
+        [mx[0], mx[1], mn[2], 1.0],
+        [mn[0], mn[1], mx[2], 1.0],
+        [mx[0], mn[1], mx[2], 1.0],
+        [mn[0], mx[1], mx[2], 1.0],
+        [mx[0], mx[1], mx[2], 1.0],
+    ], dtype=float)
+    transformed = (T_orient @ corners.T).T[:, :3]
+    return transformed.min(axis=0), transformed.max(axis=0)
 
 
-def _flip_facing(mesh: trimesh.Trimesh) -> None:
+def _build_cell_transform(
+    T_orient: np.ndarray,
+    parts: List[trimesh.Trimesh],
+    target_x: float,
+    target_z: float,
+    center_x: float,
+    z_bottom: float,
+    y_center: float,
+    is_front: bool,
+) -> np.ndarray:
+    """Compose a 4×4 placement transform for a grid cell.
+
+    Pipeline (right-to-left application order):
+      T_orient  — correct export-time axis rotation
+      T_center  — translate oriented bbox centre to origin (scale/flip pivot)
+      T_scale   — stretch X to target_x, Z to target_z (Y depth unchanged)
+      T_flip    — 180° Z rotation for front-facade outward facing (omitted for rear)
+      T_pos     — translate to (center_x, y_center, z_bottom + target_z/2)
+
+    Returns identity if parts are degenerate.
     """
-    Rotate 180° around Z axis so the module faces the other Y direction.
-    Applied to front-facade modules so they face outward instead of inward.
-    In-place, pivoted around the mesh's own bounding-box centre.
+    mn, mx = _oriented_bounds(parts, T_orient)
+    sx = mx[0] - mn[0]
+    sz = mx[2] - mn[2]
+    if sx < 1e-6 or sz < 1e-6:
+        return np.eye(4)
+
+    oc = (mn + mx) * 0.5          # oriented bbox centre — scale/flip pivot
+
+    T_co = trimesh.transformations.translation_matrix(-oc)
+    T_sc = np.diag([target_x / sx, 1.0, target_z / sz, 1.0])
+    T_fl = (trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
+            if is_front else np.eye(4))
+    T_ps = trimesh.transformations.translation_matrix(
+        [center_x, y_center, z_bottom + target_z / 2]
+    )
+    return T_ps @ T_fl @ T_sc @ T_co @ T_orient
+
+
+def _build_fit_transform(
+    T_orient: np.ndarray,
+    parts: List[trimesh.Trimesh],
+    max_x: float,
+    max_z: float,
+    center_x: float,
+    z_bottom: float,
+    y_center: float,
+    is_front: bool,
+    center_vertically: bool,
+) -> np.ndarray:
+    """Compose a 4×4 placement transform that fits parts within max_x × max_z.
+
+    Uses uniform scale (preserves aspect ratio, never enlarges).
+    If center_vertically, the placed mesh is centred within max_z.
     """
-    c = _bbox_center(mesh)
-    mesh.apply_translation(-c)
-    mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1]))
-    mesh.apply_translation(c)
+    mn, mx = _oriented_bounds(parts, T_orient)
+    sx = mx[0] - mn[0]
+    sz = mx[2] - mn[2]
+    if sx < 1e-6 or sz < 1e-6:
+        return np.eye(4)
+
+    scale    = min(max_x / sx, max_z / sz, 1.0)   # never enlarge
+    placed_z = sz * scale
+    z_offset = (max_z - placed_z) / 2 if center_vertically else 0.0
+
+    oc = (mn + mx) * 0.5
+
+    T_co = trimesh.transformations.translation_matrix(-oc)
+    T_sc = np.diag([scale, scale, scale, 1.0])
+    T_fl = (trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
+            if is_front else np.eye(4))
+    T_ps = trimesh.transformations.translation_matrix(
+        [center_x, y_center, z_bottom + z_offset + placed_z / 2]
+    )
+    return T_ps @ T_fl @ T_sc @ T_co @ T_orient
+
+
+def _emit(
+    meshes: List[trimesh.Trimesh],
+    parts: List[trimesh.Trimesh],
+    T: np.ndarray,
+) -> None:
+    """Clone each part, apply composed transform T, append to meshes list."""
+    for part in parts:
+        m = part.copy()
+        m.apply_transform(T)
+        meshes.append(m)
 
 
 # ========================= ASSEMBLER =========================
@@ -284,6 +391,8 @@ class GridFacadeAssembler:
             preferred_ids["wall"] = params["wall_module_id"]
         if params.get("window_module_id"):
             preferred_ids["window"] = params["window_module_id"]
+        if params.get("balcony_module_id"):
+            preferred_ids["balcony"] = params["balcony_module_id"]
 
         self.loader = ModuleLoader(Path(modules_dir), preferred_ids=preferred_ids)
 
@@ -295,8 +404,8 @@ class GridFacadeAssembler:
         self.balcony_rate: float = max(0.0, min(1.0,
                                        float(params.get("balcony_rate", 0.25))))
 
-        wall = self.loader.load("wall")
-        if wall is None:
+        wall_parts = self.loader.raw_parts("wall")
+        if not wall_parts:
             raise RuntimeError("Wall module is required but could not be loaded.")
 
         ww, wd, wh     = self.loader.bbox("wall")
@@ -355,8 +464,8 @@ class GridFacadeAssembler:
                           entrance_cols: List[int]) -> List[Tuple[int, int]]:
         placements: List[Tuple[int, int]] = []
 
-        door_orig = self.loader.load("door")
-        if door_orig is None:
+        door_parts = self.loader.raw_parts("door")
+        if not door_parts:
             logger.warning("Door module missing — entrance columns will be plain wall.")
             return placements
 
@@ -391,8 +500,8 @@ class GridFacadeAssembler:
         if self.balcony_rate <= 0:
             return placements
 
-        bal_orig = self.loader.load("balcony")
-        if bal_orig is None:
+        bal_parts = self.loader.raw_parts("balcony")
+        if not bal_parts:
             return placements
 
         bw, _, bh = self.loader.bbox("balcony")
@@ -481,80 +590,90 @@ class GridFacadeAssembler:
         """
         Build meshes from the completed plan.
 
-        Every non-DOOR cell gets a wall or wall_window mesh.
-        BALCONY/BALCONY_UPPER cells get a plain wall mesh (the balcony overlaid
-        on top of it is placed as a separate overlay mesh with a Y offset so it
-        sits in front of the wall surface — not replacing it).
+        For every cell: clone raw OBJ part(s), apply a single composed 4×4
+        transform (orient → center → scale → flip → position), add to list.
+        Raw templates in ModuleLoader cache are NEVER modified.
 
-        Front-facade modules are flipped 180° around Z so they face outward.
+        Wall-window parts are kept separate (not concatenated) so each retains
+        its own TextureVisuals (wall albedo + window atlas).
         """
         meshes: List[trimesh.Trimesh] = []
 
-        wall_orig = self.loader.load("wall")
-        ww_orig   = self.loader.load("window")   # wall_window composite
-        door_orig = self.loader.load("door")
-        bal_orig  = self.loader.load("balcony")
+        wall_parts = self.loader.raw_parts("wall")
+        ww_parts   = self.loader.raw_parts("window")    # wall_window composite parts
+        door_parts = self.loader.raw_parts("door")
+        bal_parts  = self.loader.raw_parts("balcony")
+
+        wall_T = self.loader.orient_matrix("wall")
+        ww_T   = self.loader.orient_matrix("window")
+
+        if not wall_parts:
+            return meshes
 
         # ── Per-cell wall / wall_window meshes ────────────────────
         for floor in range(self.floors):
             z_bottom = floor * self.cell_height
             for col in range(self.cols):
-                s = grid.state(col, floor)
+                s  = grid.state(col, floor)
+                cx = (col + 0.5) * self.cell_width
 
-                if s == CellState.DOOR:
-                    continue  # handled as span mesh below
-
-                if s == CellState.WALL_WINDOW:
-                    src = ww_orig if ww_orig is not None else wall_orig
+                if s == CellState.WALL_WINDOW and ww_parts:
+                    src_parts = ww_parts
+                    T_orient  = ww_T
                 else:
-                    # WALL, BALCONY, BALCONY_UPPER all get a plain wall
-                    src = wall_orig
+                    # WALL, DOOR, BALCONY, BALCONY_UPPER — all emit plain wall
+                    src_parts = wall_parts
+                    T_orient  = wall_T
 
-                if src is None:
-                    continue
+                T = _build_cell_transform(
+                    T_orient, src_parts,
+                    self.cell_width, self.cell_height,
+                    cx, z_bottom, y_center, is_front,
+                )
+                _emit(meshes, src_parts, T)
 
-                m = src.copy()
-                _scale_exact(m, self.cell_width, self.cell_height)
-                if is_front:
-                    _flip_facing(m)
-                _position(m, (col + 0.5) * self.cell_width, z_bottom, y_center)
-                meshes.append(m)
-
-        # ── Door span meshes ──────────────────────────────────────
-        if door_orig is not None:
-            _, _, dh = self.loader.bbox("door")
-            for start_col, h_span in door_placements:
-                door = door_orig.copy()
-                _scale_exact(door, h_span * self.cell_width, min(dh, self.cell_height))
-                if is_front:
-                    _flip_facing(door)
-                cx = (start_col + h_span / 2) * self.cell_width
-                _position(door, cx, 0.0, y_center)
-                meshes.append(door)
-
-        # ── Balcony overlay meshes (placed IN FRONT of wall) ─────
-        if bal_orig is not None and bal_placements:
-            _, bd, bh = self.loader.bbox("balcony")
-            # Outward direction: front facade → -Y; back facade → +Y
+        # ── Door span overlays ────────────────────────────────────
+        if door_parts:
+            door_T            = self.loader.orient_matrix("door")
+            door_mn, door_mx  = _oriented_bounds(door_parts, door_T)
+            dd  = door_mx[1] - door_mn[1]   # oriented door depth (Y)
+            dh  = min(door_mx[2] - door_mn[2], self.cell_height)  # oriented height, capped
+            # Offset door outward so its back face aligns with wall outer surface.
             outward = -1.0 if is_front else 1.0
-            # Place balcony so its back face meets the wall's outer face
-            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0)
+            door_y  = y_center + outward * (self.wall_depth / 2.0 + max(dd, 0.01) / 2.0)
+
+            for start_col, h_span in door_placements:
+                cx = (start_col + h_span / 2) * self.cell_width
+                T  = _build_cell_transform(
+                    door_T, door_parts,
+                    h_span * self.cell_width, dh,
+                    cx, 0.0, door_y, is_front,
+                )
+                _emit(meshes, door_parts, T)
+
+        # ── Balcony overlays (placed IN FRONT of wall) ───────────
+        if bal_parts and bal_placements:
+            bal_T           = self.loader.orient_matrix("balcony")
+            bal_mn, bal_mx  = _oriented_bounds(bal_parts, bal_T)
+            bd  = bal_mx[1] - bal_mn[1]   # oriented balcony depth (Y)
+            bh  = bal_mx[2] - bal_mn[2]   # oriented balcony height (Z)
+            outward = -1.0 if is_front else 1.0
+            bal_y   = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0)
 
             for start_col, floor, h_span, v_span in bal_placements:
-                bal      = bal_orig.copy()
-                span_w   = h_span * self.cell_width
-                z_bottom = floor  * self.cell_height
-
-                if v_span == 1:
-                    _scale_fit(bal, span_w, self.cell_height)
-                    placed_h = bal.bounds[1][2] - bal.bounds[0][2]
-                    z_bottom += (self.cell_height - placed_h) / 2
-                else:
-                    _scale_fit(bal, span_w, bh)
-
-                cx = (start_col + h_span / 2) * self.cell_width
-                _position(bal, cx, z_bottom, bal_y)
-                meshes.append(bal)
+                span_w    = h_span * self.cell_width
+                z_bottom  = floor  * self.cell_height
+                cx        = (start_col + h_span / 2) * self.cell_width
+                # v_span==1: fit to one cell height, centre vertically.
+                # v_span==2: fit to the balcony's natural height (bh).
+                max_z      = self.cell_height if v_span == 1 else bh
+                center_v   = v_span == 1
+                T = _build_fit_transform(
+                    bal_T, bal_parts,
+                    span_w, max_z,
+                    cx, z_bottom, bal_y, is_front, center_v,
+                )
+                _emit(meshes, bal_parts, T)
 
         return meshes
 
@@ -596,34 +715,42 @@ class GridFacadeAssembler:
     # ── Side facades (walls only) ─────────────────────────────────
 
     def _build_side_facade(self, x_pos: float, is_left: bool) -> List[trimesh.Trimesh]:
+        """
+        Side walls: scale to cell dimensions, then rotate ±90° around Z so the
+        panel width axis (X) becomes the building depth axis (Y).
+        Composed as a single matrix applied to copies of the raw template.
+        """
         meshes: List[trimesh.Trimesh] = []
-        wall_orig = self.loader.load("wall")
-        if wall_orig is None:
+        wall_parts = self.loader.raw_parts("wall")
+        if not wall_parts:
             logger.error("Wall module missing — side facade empty.")
             return meshes
 
-        angle = -np.pi / 2 if is_left else np.pi / 2
+        wall_T         = self.loader.orient_matrix("wall")
+        wall_mn, wall_mx = _oriented_bounds(wall_parts, wall_T)
+        sx = wall_mx[0] - wall_mn[0]
+        sz = wall_mx[2] - wall_mn[2]
+        if sx < 1e-6 or sz < 1e-6:
+            return meshes
+
+        oc      = (wall_mn + wall_mx) * 0.5
+        scale_x = self.cell_width  / sx
+        scale_z = self.cell_height / sz
+        angle   = -np.pi / 2 if is_left else np.pi / 2
+
+        T_co   = trimesh.transformations.translation_matrix(-oc)
+        T_sc   = np.diag([scale_x, 1.0, scale_z, 1.0])
+        T_side = trimesh.transformations.rotation_matrix(angle, [0, 0, 1])
 
         for floor in range(self.floors):
-            z_bottom = floor * self.cell_height
+            z_bottom     = floor * self.cell_height
             for d in range(self.depth_cells):
-                w = wall_orig.copy()
-                _scale_exact(w, self.cell_width, self.cell_height)
-
-                c = _bbox_center(w)
-                w.apply_translation(-c)
-                w.apply_transform(
-                    trimesh.transformations.rotation_matrix(angle, [0, 0, 1])
+                depth_center = (d + 0.5) * self.cell_width
+                T_ps = trimesh.transformations.translation_matrix(
+                    [x_pos, depth_center, z_bottom + self.cell_height / 2]
                 )
-                w.apply_translation(c)
-
-                b = w.bounds
-                w.apply_translation([
-                    x_pos                             - (b[0][0] + b[1][0]) * 0.5,
-                    (d + 0.5) * self.cell_width       - (b[0][1] + b[1][1]) * 0.5,
-                    z_bottom                          - b[0][2],
-                ])
-                meshes.append(w)
+                T = T_ps @ T_side @ T_sc @ T_co @ wall_T
+                _emit(meshes, wall_parts, T)
 
         label = "left" if is_left else "right"
         logger.info(f"{label.capitalize()} side facade: {len(meshes)} walls")

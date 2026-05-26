@@ -2495,17 +2495,13 @@ function _toPreviewLitMaterial(phongMat, tintHex) {
   const transparent = !!phongMat.transparent;
   const opacity = phongMat.opacity !== undefined ? phongMat.opacity : 1;
   const diffuse = phongMat.map;
-  if (diffuse && diffuse.image) {
-    const mapTex = diffuse;
+  if (diffuse) {
     if (T.SRGBColorSpace !== undefined) {
-      mapTex.colorSpace = T.SRGBColorSpace;
+      diffuse.colorSpace = T.SRGBColorSpace;
     }
     return new T.MeshBasicMaterial({
-      map: mapTex,
-      color:
-        tint?.clone?.() ??
-        phongMat.color?.clone?.() ??
-        new T.Color(0xffffff),
+      map: diffuse,
+      color: tint?.clone?.() ?? new T.Color(0xffffff),
       side: T.DoubleSide,
       toneMapped: false,
       transparent,
