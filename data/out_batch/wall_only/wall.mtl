@@ -1,0 +1,5 @@
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd wall_diffuse.png

@@ -1,18 +1,37 @@
 """
-assembler.py — Single-phase panel building assembler using Trimesh.
+assembler.py — Simple building assembler.
 
-Pipeline per facade:
-  1. Build a 2D FacadeType grid (WALL / WINDOW / BALCONY / ENTRANCE)
-  2. Place module meshes in one pass; wide/tall overlays reserve adjacent cells
-  3. Collect all parts into a trimesh.Scene (per-mesh materials preserved)
+Receives:
+  floors, sections (entrance count), columns (width in cells), depth (in cells),
+  has_balcony, texture_scale, and module IDs for wall / wall_window / balcony / entrance.
 
-wall/window → scaled to exact cell; balcony/door → natural size with wall behind.
-Side facades: wall panels rotated ±90°Z. Assembly is Z-up; -90°X at end → Y-up.
+The wall_window module is pre-built by the server (wall params + window params merged
+via the batch runner) before this assembler is called.
+
+Grid: columns × floors cells per front/back facade. Cell size = wall module native size.
+
+Facade rules:
+  front  — entrances (floor 0) + balcony / wall_window (texture_scale density)
+  back   — balcony / wall_window (no entrances)
+  left   — wall only  (depth × floors)
+  right  — wall only  (depth × floors)
+
+Entrance column positions  (0-indexed):
+  sections=3, columns=18  →  columns [3, 9, 15]
+  formula: col[i] = int((i + 0.5) × columns / sections)
+
+Module density per cell = 0.1 + texture_scale × 0.1
+  texture_scale 1 → 20 %,  texture_scale 8 → 90 %
+
+No scaling. No per-cell conditional rotation. No reservation system.
+Each module is loaded at its native size, centered, given a fixed face rotation,
+then translated to its grid position.
+
+Assembly space: Z-up.  Final global -90°X rotation → Y-up for Three.js.
 """
 
 import logging
 import random
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -22,85 +41,77 @@ import trimesh
 logger = logging.getLogger(__name__)
 
 
-class FacadeType(Enum):
-    WALL     = "wall"
-    WINDOW   = "window"    # served by wall_window composite
-    BALCONY  = "balcony"
-    ENTRANCE = "entrance"
-
-
-# ── ModuleLoader ──────────────────────────────────────────────────────────────
+# ── Module loader ──────────────────────────────────────────────────────────────
 
 class ModuleLoader:
-    """
-    Loads OBJ modules and caches geometry parts without vertex modification.
+    """Load and cache OBJ/MTL modules from  modules_dir/{type}/{uuid}/{type}.obj."""
 
-    preferred_ids maps module_type → UUID subdirectory so the assembler loads
-    the freshly generated module from server.py, not an alphabetical fallback.
-    """
-
-    def __init__(
-        self,
-        modules_dir: Path,
-        preferred_ids: Optional[Dict[str, str]] = None,
-    ):
+    def __init__(self, modules_dir: Path, preferred_ids: Optional[Dict[str, str]] = None):
         self.modules_dir = Path(modules_dir)
         self._preferred  = preferred_ids or {}
         self._cache: Dict[str, List[trimesh.Trimesh]] = {}
 
     def parts(self, module_type: str) -> List[trimesh.Trimesh]:
-        """Return cached OBJ parts. Raw parts are never modified after caching."""
         if module_type not in self._cache:
             self._cache[module_type] = self._load(module_type)
         return self._cache[module_type]
 
-    def _locate_obj(self, module_type: str) -> Optional[Path]:
-        module_dir = self.modules_dir / module_type
-        if not module_dir.exists():
-            logger.warning(f"Module dir missing: {module_dir}")
+    def _locate(self, module_type: str) -> Optional[Path]:
+        d = self.modules_dir / module_type
+        if not d.exists():
+            logger.warning(f"Module directory missing: {d}")
             return None
         preferred = self._preferred.get(module_type)
         if preferred:
-            p = module_dir / preferred / f"{module_type}.obj"
+            p = d / preferred / f"{module_type}.obj"
             if p.exists():
                 return p
-            logger.warning(
-                f"Preferred module {module_type}/{preferred} not found; "
-                "falling back to first alphabetical match."
-            )
-        files = sorted(module_dir.glob(f"*/{module_type}.obj"))
+            logger.warning(f"Preferred {module_type}/{preferred} not found, using fallback.")
+        files = sorted(d.glob(f"*/{module_type}.obj"))
         if not files:
-            logger.warning(f"No OBJ found for '{module_type}'")
+            logger.warning(f"No OBJ file found for module type '{module_type}'")
             return None
         return files[0]
 
     def _load(self, module_type: str) -> List[trimesh.Trimesh]:
-        path = self._locate_obj(module_type)
+        # Всегда загружаем свежим - не кешируем visual
+        path = self._locate(module_type)
         if path is None:
             return []
+
         try:
-            loaded = trimesh.load(str(path), process=False)
+            import os
+            old_cwd = os.getcwd()
+            os.chdir(path.parent)
+            try:
+                loaded = trimesh.load(str(path), process=False, skip_materials=False)
+            finally:
+                os.chdir(old_cwd)
         except Exception as e:
             logger.error(f"Failed to load '{module_type}': {e}", exc_info=True)
             return []
+
         if isinstance(loaded, trimesh.Scene):
             parts = [g for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh)]
         elif isinstance(loaded, trimesh.Trimesh):
             parts = [loaded]
         else:
-            logger.warning(f"Unexpected geometry type for '{module_type}': {type(loaded)}")
+            logger.warning(f"Unexpected type for '{module_type}': {type(loaded)}")
             return []
+
         if parts:
-            mn, mx = _combined_bounds(parts)
+            mn = np.min([p.bounds[0] for p in parts], axis=0)
+            mx = np.max([p.bounds[1] for p in parts], axis=0)
             d = mx - mn
             logger.info(
-                f"Loaded '{module_type}': {path.parent.name}/{path.name} "
-                f"[{d[0]:.2f}×{d[1]:.2f}×{d[2]:.2f}m, {len(parts)} part(s)]"
+                f"Loaded '{module_type}' from {path.parent.name}/"
+                f"{path.name}  [{d[0]:.2f} × {d[1]:.2f} × {d[2]:.2f} m,  {len(parts)} part(s)]"
             )
+
         return parts
 
 
-# ── Geometry helpers ──────────────────────────────────────────────────────────
+# ── Geometry utilities ─────────────────────────────────────────────────────────
 
 def _combined_bounds(parts: List[trimesh.Trimesh]) -> Tuple[np.ndarray, np.ndarray]:
     mn = np.min([p.bounds[0] for p in parts], axis=0)
@@ -108,79 +119,58 @@ def _combined_bounds(parts: List[trimesh.Trimesh]) -> Tuple[np.ndarray, np.ndarr
     return mn, mx
 
 
-def _transform_bounds(
-    mn: np.ndarray,
-    mx: np.ndarray,
-    T: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Apply a 4×4 transform to all 8 AABB corners and return the new AABB."""
+def _transform_bounds(mn, mx, T):
     corners = np.array([
         [mn[0], mn[1], mn[2], 1], [mx[0], mn[1], mn[2], 1],
         [mn[0], mx[1], mn[2], 1], [mx[0], mx[1], mn[2], 1],
         [mn[0], mn[1], mx[2], 1], [mx[0], mn[1], mx[2], 1],
         [mn[0], mx[1], mx[2], 1], [mx[0], mx[1], mx[2], 1],
     ], dtype=float)
-    transformed = (T @ corners.T).T[:, :3]
-    return transformed.min(axis=0), transformed.max(axis=0)
+    t = (T @ corners.T).T[:, :3]
+    return t.min(axis=0), t.max(axis=0)
 
 
 def _orient_matrix(parts: List[trimesh.Trimesh]) -> np.ndarray:
     """
-    Return +90°X if the module is Y-tall (height along Y → corrects to Z-up).
-    Wall, balcony, door OBJs are typically Y-tall. Wall_window is already Z-up.
+    If the module is Y-tall (height along Y, typical for wall/balcony/entrance OBJs),
+    apply +90°X to bring it into Z-up space.  Wall_window is already Z-up → identity.
     """
     if not parts:
         return np.eye(4)
     mn, mx = _combined_bounds(parts)
-    sz, sy = float((mx - mn)[2]), float((mx - mn)[1])
-    if sz < 0.5 and sy > 0.5:
+    d = mx - mn
+    if d[2] < 0.5 and d[1] > 0.5:
         return trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
     return np.eye(4)
 
 
-def _oriented_extents(
-    parts: List[trimesh.Trimesh],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return (T_orient, mn_oriented, mx_oriented, centroid_oriented)."""
-    T_or = _orient_matrix(parts)
-    mn, mx = _combined_bounds(parts)
-    mn_o, mx_o = _transform_bounds(mn, mx, T_or)
-    centroid = (mn_o + mx_o) * 0.5
-    return T_or, mn_o, mx_o, centroid
+# ── Assembler ──────────────────────────────────────────────────────────────────
 
-
-def _clone_transformed(
-    parts: List[trimesh.Trimesh],
-    T: np.ndarray,
-) -> List[trimesh.Trimesh]:
-    """Clone all parts and apply transform T. Raw cached parts are never modified."""
-    result = []
-    for p in parts:
-        m = p.copy()
-        m.apply_transform(T)
-        result.append(m)
-    return result
-
-
-# ── Assembler ─────────────────────────────────────────────────────────────────
-
-class BuildingAssembler:
+class SimpleAssembler:
     """
-    Single-phase grid facade assembler for panel buildings.
+    Builds a box building by placing identical modules on a grid.
 
-    Assigns FacadeType to each cell, places modules in one pass per facade.
-    Wide/tall overlays reserve adjacent cells during placement — no pre-planning.
-    Front+back: all four types. Left+right sides: wall only, rotated ±90°Z.
+    Per-face orientations (Z-up space, module face direction is -Y by default):
+      front  Y = 0      →  identity        (faces -Y outward toward street)
+      back   Y = bld_d  →  180 ° Z         (faces +Y outward)
+      left   X = 0      →  -90 ° Z         (faces -X outward)
+      right  X = bld_w  →  +90 ° Z         (faces +X outward)
+    These are fixed constants, not per-cell logic.
     """
+
+    _FACE_ROT: Dict[str, np.ndarray] = {
+        "front": np.eye(4),
+        "back":  trimesh.transformations.rotation_matrix( np.pi,        [0, 0, 1]),
+        "left":  trimesh.transformations.rotation_matrix(-np.pi / 2,    [0, 0, 1]),
+        "right": trimesh.transformations.rotation_matrix( np.pi / 2,    [0, 0, 1]),
+    }
 
     def __init__(self, params: Dict[str, Any], modules_dir: Path):
         preferred_ids: Dict[str, str] = {}
-        if params.get("wall_module_id"):
-            preferred_ids["wall"] = params["wall_module_id"]
-        if params.get("window_module_id"):
-            preferred_ids["window"] = params["window_module_id"]
-        if params.get("balcony_module_id"):
-            preferred_ids["balcony"] = params["balcony_module_id"]
+        if params.get("wall_module_id"):         preferred_ids["wall"]        = params["wall_module_id"]
+        if params.get("wall_window_module_id"):  preferred_ids["wall_window"] = params["wall_window_module_id"]
+        if params.get("balcony_module_id"):      preferred_ids["balcony"]     = params["balcony_module_id"]
+        if params.get("entrance_module_id"):     preferred_ids["door"]        = params["entrance_module_id"]
 
         self.loader = ModuleLoader(Path(modules_dir), preferred_ids)
 
@@ -188,302 +178,189 @@ class BuildingAssembler:
         self.cols          = max(1, int(params.get("columns",       10)))
         self.sections      = max(0, int(params.get("sections",       3)))
         self.depth         = max(1, int(params.get("depth",          2)))
-        self.texture_scale = max(1, min(8, int(params.get("texture_scale", 3))))
+        self.texture_scale = max(1, min(8, int(params.get("texture_scale", 1))))
         self.has_balcony   = bool(params.get("has_balcony", False))
 
         wall_parts = self.loader.parts("wall")
         if not wall_parts:
-            raise RuntimeError("Wall module required but not found.")
+            raise RuntimeError("Wall module not found — cannot determine cell size.")
 
-        _, mn_o, mx_o, _ = _oriented_extents(wall_parts)
+        T_or = _orient_matrix(wall_parts)
+        mn, mx = _combined_bounds(wall_parts)
+        mn_o, mx_o = _transform_bounds(mn, mx, T_or)
         d = mx_o - mn_o
+
         self.cell_w = float(d[0]) if d[0] > 0.01 else 4.0
         self.cell_h = float(d[2]) if d[2] > 0.01 else 3.0
-        self.wall_d = float(d[1]) if d[1] > 0.01 else 0.3
 
         self.bld_w = self.cols   * self.cell_w
         self.bld_h = self.floors * self.cell_h
         self.bld_d = self.depth  * self.cell_w
 
         logger.info(
-            f"BuildingAssembler: grid {self.cols}×{self.floors} | "
-            f"cell {self.cell_w:.2f}×{self.cell_h:.2f}m | "
-            f"building {self.bld_w:.1f}×{self.bld_h:.1f}×{self.bld_d:.1f}m | "
-            f"texture_scale={self.texture_scale} has_balcony={self.has_balcony}"
+            f"SimpleAssembler  grid={self.cols}×{self.floors}  "
+            f"cell={self.cell_w:.2f}×{self.cell_h:.2f} m  "
+            f"building={self.bld_w:.1f}×{self.bld_h:.1f}×{self.bld_d:.1f} m  "
+            f"scale={self.texture_scale}  balcony={self.has_balcony}"
         )
 
-    # ── Grid building ─────────────────────────────────────────────────────────
+    # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _entrance_cols(self) -> Set[int]:
-        """Column indices that contain entrance doors (evenly spaced per section)."""
+        """
+        Evenly space entrance columns across the facade width.
+        sections=3, cols=18  →  {3, 9, 15}
+        """
         if self.sections <= 0:
             return set()
         spacing = self.cols / self.sections
-        return {
-            max(0, min(self.cols - 1, int(round((i + 0.5) * spacing - 0.5))))
-            for i in range(self.sections)
-        }
+        return {int((i + 0.5) * spacing) for i in range(self.sections)}
 
-    def _random_cell_type(self) -> FacadeType:
-        """Pick WALL / WINDOW / BALCONY using texture_scale-based probabilities."""
-        s      = self.texture_scale
-        wall_p = max(0.0, 0.7 - (s - 1) * 0.1)
-        win_p  = (0.2 + (s - 1) * 0.057) if self.has_balcony else (0.3 + (s - 1) * 0.1)
-        r      = random.random()
-        if r < wall_p:
-            return FacadeType.WALL
-        if r < wall_p + win_p:
-            return FacadeType.WINDOW
-        return FacadeType.BALCONY if self.has_balcony else FacadeType.WINDOW
+    def _density(self) -> float:
+        """Module density: texture_scale 1 → 20 %, texture_scale 8 → 90 %."""
+        return 0.1 + self.texture_scale * 0.1
 
-    def _build_front_grid(self, entrance_cols: Set[int]) -> List[List[FacadeType]]:
-        """
-        Front facade grid:
-          floor 0  — entrance at entrance columns, window everywhere else
-          floor ≥1 — window above entrance columns, probabilistic otherwise
-        """
-        grid = [[FacadeType.WALL] * self.cols for _ in range(self.floors)]
-        for col in range(self.cols):
-            grid[0][col] = (
-                FacadeType.ENTRANCE if col in entrance_cols else FacadeType.WINDOW
-            )
-        for floor in range(1, self.floors):
-            for col in range(self.cols):
-                grid[floor][col] = (
-                    FacadeType.WINDOW if col in entrance_cols
-                    else self._random_cell_type()
-                )
-        return grid
+    def _pick(self, col: int, floor: int, entrance_cols: Set[int], has_entrance: bool) -> str:
+        """Return the module type for one grid cell."""
+        if has_entrance and floor == 0 and col in entrance_cols:
+            return "door"
+        if random.random() < self._density():
+            if self.has_balcony and floor >= 1 and random.random() < 0.5:
+                return "balcony"
+            return "wall_window"
+        return "wall"
 
-    def _build_back_grid(self) -> List[List[FacadeType]]:
-        """
-        Back facade grid:
-          floor 0  — all windows (no doors on back)
-          floor ≥1 — probabilistic WALL / WINDOW / BALCONY
-        """
-        grid = [[FacadeType.WALL] * self.cols for _ in range(self.floors)]
-        for col in range(self.cols):
-            grid[0][col] = FacadeType.WINDOW
-        for floor in range(1, self.floors):
-            for col in range(self.cols):
-                grid[floor][col] = self._random_cell_type()
-        return grid
-
-    # ── Module placement ──────────────────────────────────────────────────────
-
-    def _place_scaled(
-        self,
-        meshes: List[trimesh.Trimesh],
-        module_type: str,
-        cx: float,
-        z_bottom: float,
-        y_center: float,
-        is_front: bool,
+    def _place(
+            self,
+            meshes: List[trimesh.Trimesh],
+            module_type: str,
+            x: float,
+            y: float,
+            z: float,
+            face: str,
+            debug: bool = False,
     ) -> None:
-        """Scale wall or window to exact cell dimensions. Front modules flipped 180°Z."""
-        parts = self.loader.parts(module_type)
+        parts = self.loader._load(module_type)
+        if not parts and module_type != "wall":
+            parts = self.loader._load("wall")
         if not parts:
+            if debug:
+                logger.warning(f"❌ [{face}] {module_type}: NO PARTS")
             return
 
-        T_or, mn_o, mx_o, oc = _oriented_extents(parts)
-        sx = mx_o[0] - mn_o[0]
-        sz = mx_o[2] - mn_o[2]
-        if sx < 1e-6 or sz < 1e-6:
-            return
+        if debug:
+            logger.info(f"✓ [{face}] {module_type}: loaded {len(parts)} part(s)")
 
-        T_co = trimesh.transformations.translation_matrix(-oc)
-        T_sc = np.diag([self.cell_w / sx, 1.0, self.cell_h / sz, 1.0])
-        T_fl = (trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
-                if is_front else np.eye(4))
-        T_ps = trimesh.transformations.translation_matrix(
-            [cx, y_center, z_bottom + self.cell_h / 2]
-        )
-        T = T_ps @ T_fl @ T_sc @ T_co @ T_or
-        meshes.extend(_clone_transformed(parts, T))
+        T_or = _orient_matrix(parts)
+        mn, mx = _combined_bounds(parts)
+        mn_o, mx_o = _transform_bounds(mn, mx, T_or)
+        centroid = (mn_o + mx_o) / 2
 
-    def _place_overlay(
-        self,
-        meshes: List[trimesh.Trimesh],
-        module_type: str,
-        cx: float,
-        z_bottom: float,
-        y_overlay: float,
-        is_front: bool,
-        reserved: Set[Tuple[int, int]],
-        floor: int,
-        col: int,
-    ) -> None:
-        """
-        Place balcony or door at natural size (no scaling).
-        Wide modules reserve the right neighbour and center across two cells.
-        Tall modules reserve the cell above (becomes plain wall).
-        """
-        parts = self.loader.parts(module_type)
-        if not parts:
-            return
+        T_co = trimesh.transformations.translation_matrix(-centroid)
+        T_pos = trimesh.transformations.translation_matrix([x, y, z])
+        R = self._FACE_ROT[face]
 
-        T_or, mn_o, mx_o, oc = _oriented_extents(parts)
-        mod_w = mx_o[0] - mn_o[0]
-        mod_h = mx_o[2] - mn_o[2]
-
-        # Wide module: span two cells
-        if mod_w > self.cell_w and col + 1 < self.cols:
-            reserved.add((floor, col + 1))
-            cx_place = (col + 1) * self.cell_w   # midpoint between cell col and col+1
+        if module_type == "balcony":
+            R_balcony = trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
+            T = T_pos @ R @ R_balcony @ T_co @ T_or
         else:
-            cx_place = cx
+            T = T_pos @ R @ T_co @ T_or
 
-        # Tall module: block the cell above
-        if mod_h > self.cell_h and floor + 1 < self.floors:
-            reserved.add((floor + 1, col))
+        for part in parts:
+            m = part.copy()
 
-        T_co = trimesh.transformations.translation_matrix(-oc)
-        T_fl = (trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
-                if is_front else np.eye(4))
-        T_ps = trimesh.transformations.translation_matrix(
-            [cx_place, y_overlay, z_bottom + mod_h / 2]
-        )
-        T = T_ps @ T_fl @ T_co @ T_or
-        meshes.extend(_clone_transformed(parts, T))
+            has_visual = hasattr(part, 'visual') and part.visual is not None
+            has_image = has_visual and hasattr(part.visual, 'image') and part.visual.image is not None
 
-    # ── Facade builders ───────────────────────────────────────────────────────
+            if debug:
+                logger.info(
+                    f"    Part: visual={type(part.visual).__name__ if has_visual else 'None'}, image={has_image}")
 
-    def _build_fb_facade(
-        self,
-        grid: List[List[FacadeType]],
-        y_center: float,
-        is_front: bool,
-        has_doors: bool,
+            if has_visual:
+                m.visual = part.visual.copy()
+
+            m.apply_transform(T)
+            meshes.append(m)
+
+    # ── Facade builders ────────────────────────────────────────────────────────
+
+    def _build_front_back(
+            self,
+            face: str,
+            y_pos: float,
+            has_entrance: bool,
     ) -> List[trimesh.Trimesh]:
-        """
-        Build a front or back facade.
-        WALL → wall mesh; WINDOW → wall_window (falls back to wall if missing);
-        BALCONY/ENTRANCE → wall underneath + overlay in front.
-        Reserved cells (overflow from wide/tall overlays) become plain wall.
-        """
+        """Build front or back facade."""
+        entrance_cols = self._entrance_cols() if has_entrance else set()
         meshes: List[trimesh.Trimesh] = []
-        win_parts  = self.loader.parts("window")
-        bal_parts  = self.loader.parts("balcony") if self.has_balcony else []
-        door_parts = self.loader.parts("door")   if has_doors         else []
 
-        # Overlays sit just outside the wall surface
-        outward   = -1.0 if is_front else 1.0
-        overlay_y = y_center + outward * (self.wall_d / 2 + 0.01)
-        reserved: Set[Tuple[int, int]] = set()
+        back_count = 0  # Счетчик для логирования back
 
         for floor in range(self.floors):
-            z_bottom = floor * self.cell_h
+            z = floor * self.cell_h + self.cell_h / 2
             for col in range(self.cols):
-                cx        = (col + 0.5) * self.cell_w
-                cell_type = FacadeType.WALL if (floor, col) in reserved else grid[floor][col]
+                x = (col + 0.5) * self.cell_w
+                mod = self._pick(col, floor, entrance_cols, has_entrance)
 
-                if cell_type == FacadeType.WALL:
-                    self._place_scaled(meshes, "wall", cx, z_bottom, y_center, is_front)
+                if mod in ("balcony", "door"):
+                    self._place(meshes, "wall", x, y_pos, z, face)
+                    self._place(meshes, mod, x, y_pos, z, face, debug=(face == "back" and back_count < 3))
+                    back_count += 1
+                else:
+                    self._place(meshes, mod, x, y_pos, z, face, debug=(face == "back" and back_count < 3))
+                    back_count += 1
 
-                elif cell_type == FacadeType.WINDOW:
-                    mod = "window" if win_parts else "wall"
-                    self._place_scaled(meshes, mod, cx, z_bottom, y_center, is_front)
-
-                elif cell_type == FacadeType.BALCONY:
-                    self._place_scaled(meshes, "wall", cx, z_bottom, y_center, is_front)
-                    if bal_parts:
-                        self._place_overlay(
-                            meshes, "balcony", cx, z_bottom, overlay_y,
-                            is_front, reserved, floor, col,
-                        )
-
-                elif cell_type == FacadeType.ENTRANCE:
-                    self._place_scaled(meshes, "wall", cx, z_bottom, y_center, is_front)
-                    if door_parts:
-                        self._place_overlay(
-                            meshes, "door", cx, z_bottom, overlay_y,
-                            is_front, reserved, floor, col,
-                        )
-
-        label = "front" if is_front else "back"
-        logger.info(f"{label.capitalize()} facade: {len(meshes)} mesh parts")
+        logger.info(f"{face.capitalize()} facade: {len(meshes)} mesh parts added\n")
         return meshes
 
-    def _build_side_facade(self, x_pos: float, is_left: bool) -> List[trimesh.Trimesh]:
-        """Wall panels only, scaled to cell, rotated ±90°Z to align with building depth."""
+    def _build_side(self, face: str, x_pos: float) -> List[trimesh.Trimesh]:
+        """Build left or right facade — wall panels only."""
         meshes: List[trimesh.Trimesh] = []
-        wall_parts = self.loader.parts("wall")
-        if not wall_parts:
-            logger.error("Wall module missing — side facade skipped.")
-            return meshes
-
-        T_or, mn_o, mx_o, oc = _oriented_extents(wall_parts)
-        sx = mx_o[0] - mn_o[0]
-        sz = mx_o[2] - mn_o[2]
-        if sx < 1e-6 or sz < 1e-6:
-            return meshes
-
-        angle  = -np.pi / 2 if is_left else np.pi / 2
-        T_co   = trimesh.transformations.translation_matrix(-oc)
-        T_sc   = np.diag([self.cell_w / sx, 1.0, self.cell_h / sz, 1.0])
-        T_side = trimesh.transformations.rotation_matrix(angle, [0, 0, 1])
 
         for floor in range(self.floors):
-            z_bottom = floor * self.cell_h
-            for d in range(self.depth):
-                depth_center = (d + 0.5) * self.cell_w
-                T_ps = trimesh.transformations.translation_matrix(
-                    [x_pos, depth_center, z_bottom + self.cell_h / 2]
-                )
-                T = T_ps @ T_side @ T_sc @ T_co @ T_or
-                meshes.extend(_clone_transformed(wall_parts, T))
+            z = floor * self.cell_h + self.cell_h / 2
+            for row in range(self.depth):
+                y = (row + 0.5) * self.cell_w
+                self._place(meshes, "wall", x_pos, y, z, face)
 
-        label = "left" if is_left else "right"
-        logger.info(f"{label.capitalize()} side facade: {len(meshes)} mesh parts")
+        logger.info(f"{face.capitalize()} facade: {len(meshes)} mesh parts")
         return meshes
 
-    # ── Main assembly ─────────────────────────────────────────────────────────
+    # ── Main assembly ──────────────────────────────────────────────────────────
 
     def assemble(self) -> trimesh.Scene:
         """
-        Assemble all facades into a trimesh.Scene in Y-up orientation.
-        Unique node names preserve per-mesh materials on export.
+        Assemble all four facades + structural base into a trimesh.Scene.
         Final -90°X converts from Z-up assembly space to Three.js Y-up.
         """
-        entrance_cols = self._entrance_cols()
-        logger.info(f"Assembly start — entrance cols: {sorted(entrance_cols)}")
+        meshes: List[trimesh.Trimesh] = []
 
-        front_grid = self._build_front_grid(entrance_cols)
-        back_grid  = self._build_back_grid()
-
-        all_meshes: List[trimesh.Trimesh] = []
-
-        # Solid structural base volume
+        # Solid interior volume so the building does not look hollow
         base = trimesh.creation.box(extents=[self.bld_w, self.bld_d, self.bld_h])
         base.apply_translation([self.bld_w / 2, self.bld_d / 2, self.bld_h / 2])
-        all_meshes.append(base)
+        meshes.append(base)
 
-        # Front facade — doors present, modules flipped 180°Z to face outward (-Y)
-        all_meshes.extend(
-            self._build_fb_facade(front_grid, y_center=0.0, is_front=True, has_doors=True)
-        )
-        # Back facade — no doors, modules face +Y outward by default
-        all_meshes.extend(
-            self._build_fb_facade(back_grid, y_center=self.bld_d, is_front=False, has_doors=False)
-        )
-        # Side facades — plain wall panels only
-        all_meshes.extend(self._build_side_facade(x_pos=0.0,       is_left=True))
-        all_meshes.extend(self._build_side_facade(x_pos=self.bld_w, is_left=False))
+        meshes.extend(self._build_front_back("front", y_pos=0.0,        has_entrance=True))
+        meshes.extend(self._build_front_back("back",  y_pos=self.bld_d, has_entrance=False))
+        meshes.extend(self._build_side("left",  x_pos=0.0))
+        meshes.extend(self._build_side("right", x_pos=self.bld_w))
 
-        # Z-up → Y-up conversion for Three.js compatibility
         rot_yup = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
         scene   = trimesh.Scene()
-        for i, mesh in enumerate(all_meshes):
-            mesh.apply_transform(rot_yup)
-            scene.add_geometry(mesh, node_name=f"mesh_{i:04d}")
+        for i, m in enumerate(meshes):
+            m.apply_transform(rot_yup)
+            scene.add_geometry(m, node_name=f"mesh_{i:04d}")
 
-        logger.info(f"Assembly complete — {len(all_meshes)} mesh parts in scene")
+        logger.info(f"Assembly complete: {len(meshes)} mesh parts")
         return scene
 
     def export(self, output_path: Path) -> bool:
-        """Assemble and export to OBJ + MTL at output_path."""
         try:
             scene = self.assemble()
+
+            # Скопировать текстуры и переписать MTL пути
+            self._prepare_for_export(output_path)
+
             scene.export(str(output_path))
             logger.info(f"Exported: {output_path}")
             return True
@@ -491,10 +368,48 @@ class BuildingAssembler:
             logger.error(f"Export failed: {e}", exc_info=True)
             return False
 
+    def _prepare_for_export(self, output_path: Path) -> None:
+        """Скопировать текстуры и переписать MTL чтобы указывал на них."""
+        import shutil
 
-# ── Public API ────────────────────────────────────────────────────────────────
+        output_dir = output_path.parent
+        texture_dir = output_dir / "textures"
+        texture_dir.mkdir(exist_ok=True)
+
+        # Копируем ВСЕ PNG текстуры из всех модулей в одну папку
+        copied_textures = set()
+        for module_type in ["wall", "window", "wall_window", "balcony", "door"]:
+            type_dir = self.loader.modules_dir / module_type
+            if type_dir.exists():
+                for png_file in type_dir.rglob("*.png"):
+                    if png_file.name not in copied_textures:
+                        dest = texture_dir / png_file.name
+                        shutil.copy2(png_file, dest)
+                        copied_textures.add(png_file.name)
+
+        logger.info(f"Copied {len(copied_textures)} textures to {texture_dir}")
+
+        # Переписать MTL чтобы указывал на textures/
+        mtl_path = output_dir / "house.mtl"
+        mtl_content = "# Combined materials\n\n"
+
+        for module_type in ["wall", "window", "wall_window", "balcony", "door"]:
+            type_dir = self.loader.modules_dir / module_type
+            if type_dir.exists():
+                for mtl_file in type_dir.rglob("*.mtl"):
+                    content = mtl_file.read_text()
+                    # Заменить все пути на textures/
+                    content = content.replace("map_Kd ", "map_Kd textures/")
+                    content = content.replace("map_Bump ", "map_Bump textures/")
+                    content = content.replace("map_Pr ", "map_Pr textures/")
+                    mtl_content += content + "\n"
+
+        mtl_path.write_text(mtl_content)
+        logger.info(f"Created MTL: {mtl_path}")
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
 
 def assemble_building(params: Dict[str, Any], models_dir: Path, output_path: Path) -> bool:
     """Entry point called by server.py."""
-    assembler = BuildingAssembler(params, models_dir)
-    return assembler.export(output_path)
+    return SimpleAssembler(params, models_dir).export(output_path)

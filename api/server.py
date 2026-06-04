@@ -885,11 +885,11 @@ async def analyze_building_text(request: Request):
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
     Builds a wall_window module from wall + window params via procedural_batch_runner.
-    Returns the module_id saved in the registry (type "window", assembler picks it up).
+    Returns the module_id saved in the registry (type "wall_window").
     """
     try:
         module_id = str(uuid.uuid4())[:8]
-        output_dir = MODULES_DIR / "window" / module_id
+        output_dir = MODULES_DIR / "wall_window" / module_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Build the wall_window config section for run_all_generators
@@ -943,13 +943,6 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         if not obj_path or not obj_path.exists():
             raise Exception("wall_window generator returned no output file")
 
-        # Assembler looks for {type}.obj = window.obj; rename so it can find it
-        if obj_path.name != "window.obj":
-            new_path = obj_path.parent / "window.obj"
-            obj_path.rename(new_path)
-            obj_path = new_path
-            logger.info("✓ Renamed wall_window.obj → window.obj")
-
         combined_params = {
             "wall_length": wall_window_cfg["wall_length"],
             "wall_height": wall_window_cfg["wall_height"],
@@ -961,13 +954,13 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
             "mullions_vertical": wall_window_cfg["mullions_vertical"],
         }
 
-        zip_path = create_module_zip(module_id, "window", combined_params, obj_path)
+        zip_path = create_module_zip(module_id, "wall_window", combined_params, obj_path)
         if not zip_path:
             raise Exception("Failed to create ZIP for wall_window")
 
         module_record = {
             "module_id": module_id,
-            "module_type": "window",
+            "module_type": "wall_window",
             "module_name": (
                 f"Wall+Window "
                 f"{window_params.get('width', 1.1):.1f}×{window_params.get('height', 1.4):.1f}"
@@ -1001,6 +994,7 @@ async def generate_house(request: Request):
         # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL, WINDOW И BALCONY ===
         wall_module_id = payload.get("wall_module_id")
         window_module_id = payload.get("window_module_id")
+        door_module_id = payload.get("door_module_id")
         balcony_module_id = payload.get("balcony_module_id") or None
         wall_dimensions = {"width": 4.0, "height": 3.0}
 
@@ -1034,14 +1028,14 @@ async def generate_house(request: Request):
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")
         try:
-            window_module_id = create_wall_window_module(wall_params, window_params)
-            logger.info(f"✓ Wall_window created: {window_module_id}")
+            wall_window_module_id = create_wall_window_module(wall_params, window_params)
+            logger.info(f"✓ Wall_window created: {wall_window_module_id}")
         except Exception as ww_err:
             logger.warning(
                 f"⚠️ Wall_window generation failed: {ww_err}. "
                 "Assembly will proceed using plain walls for window cells."
             )
-            window_module_id = None
+            wall_window_module_id = None
 
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
@@ -1062,9 +1056,10 @@ async def generate_house(request: Request):
             "has_balcony": bool(payload.get("has_balconies", False)) and balcony_module_id is not None,
             # Specific UUIDs so the assembler loads freshly generated modules
             # rather than an arbitrary first alphabetical match from disk.
-            "wall_module_id":    wall_module_id,
-            "window_module_id":  window_module_id,
-            "balcony_module_id": balcony_module_id,
+            "wall_module_id":         wall_module_id,
+            "wall_window_module_id":  wall_window_module_id,
+            "entrance_module_id":     door_module_id,
+            "balcony_module_id":      balcony_module_id,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")
