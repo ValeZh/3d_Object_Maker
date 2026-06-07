@@ -121,11 +121,21 @@ class ModuleLoader:
         # composites that must not be confused with older modules of the same type.
         self._preferred: Dict[str, str] = preferred_ids or {}
         self._cache: Dict[str, Optional[trimesh.Trimesh]] = {}
+        self._parts_cache: Dict[str, List[trimesh.Trimesh]] = {}
 
     def load(self, module_type: str) -> Optional[trimesh.Trimesh]:
         if module_type not in self._cache:
             self._cache[module_type] = self._from_disk(module_type)
         return self._cache[module_type]
+
+    def load_parts(self, module_type: str) -> List[trimesh.Trimesh]:
+        """Return all geometry parts for multi-material modules (e.g. wall_window)."""
+        self.load(module_type)  # populates _parts_cache for multi-part modules
+        cached = self._parts_cache.get(module_type)
+        if cached:
+            return cached
+        single = self._cache.get(module_type)
+        return [single] if single is not None else []
 
     def bbox(self, module_type: str) -> Tuple[float, float, float]:
         """(width_x, depth_y, height_z) from bounding box."""
@@ -167,15 +177,23 @@ class ModuleLoader:
             logger.error(f"Failed to load {module_type}: {exc}", exc_info=True)
             return None
 
-        # For multi-geometry Scenes prefer the first geometry to retain its visual.
+        # For multi-geometry Scenes, keep parts separate to preserve per-part materials.
         if isinstance(loaded, trimesh.Scene):
             parts = [g for g in loaded.geometry.values()
                      if isinstance(g, trimesh.Trimesh)]
             if not parts:
                 return None
-            # Use single geometry directly (preserves TextureVisuals/ColorVisuals).
-            # Multi-part collapse loses per-part materials; prefer first part.
-            loaded = parts[0] if len(parts) == 1 else trimesh.util.concatenate(parts)
+            if len(parts) > 1:
+                fixed = [self._fix_orientation(p) for p in parts]
+                self._parts_cache[module_type] = fixed
+                ww, wd, wh = fixed[0].bounds[1] - fixed[0].bounds[0]
+                logger.info(
+                    f"Loaded '{module_type}' ({len(fixed)} parts): "
+                    f"{obj_files[0].parent.name}/{obj_files[0].name} "
+                    f"[{ww:.2f}×{wd:.2f}×{wh:.2f}m]"
+                )
+                return fixed[0]
+            loaded = parts[0]
 
         if not isinstance(loaded, trimesh.Trimesh):
             logger.warning(f"Unexpected type for {module_type}: {type(loaded)}")
@@ -515,11 +533,46 @@ class GridFacadeAssembler:
                     continue  # handled as span mesh below
 
                 if s == CellState.WALL_WINDOW:
-                    src = ww_orig if ww_orig is not None else wall_orig
+                    ww_parts = self.loader.load_parts("wall_window")
+                    if len(ww_parts) > 1:
+                        copies = [p.copy() for p in ww_parts]
+                        cb_min = np.min([m.bounds[0] for m in copies], axis=0)
+                        cb_max = np.max([m.bounds[1] for m in copies], axis=0)
+                        if not is_front:
+                            cc = (cb_min + cb_max) * 0.5
+                            rot = trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1])
+                            for m in copies:
+                                m.apply_translation(-cc)
+                                m.apply_transform(rot)
+                                m.apply_translation(cc)
+                            cb_min = np.min([m.bounds[0] for m in copies], axis=0)
+                            cb_max = np.max([m.bounds[1] for m in copies], axis=0)
+                        sx = cb_max[0] - cb_min[0]
+                        sz = cb_max[2] - cb_min[2]
+                        if sx > 1e-6 and sz > 1e-6:
+                            scale = min(self.cell_width / sx, self.cell_height / sz)
+                            if scale < 1.0:
+                                cc = (cb_min + cb_max) * 0.5
+                                s_mat = np.diag([scale, scale, scale, 1.0])
+                                for m in copies:
+                                    m.apply_translation(-cc)
+                                    m.apply_transform(s_mat)
+                                    m.apply_translation(cc)
+                                cb_min = np.min([m.bounds[0] for m in copies], axis=0)
+                                cb_max = np.max([m.bounds[1] for m in copies], axis=0)
+                        t = np.array([
+                            (col + 0.5) * self.cell_width - (cb_min[0] + cb_max[0]) * 0.5,
+                            y_center - (cb_min[1] + cb_max[1]) * 0.5,
+                            z_bottom - cb_min[2],
+                        ])
+                        for m in copies:
+                            m.apply_translation(t)
+                        meshes.extend(copies)
+                        continue
+                    src = ww_parts[0] if ww_parts else (ww_orig if ww_orig is not None else wall_orig)
                 else:
                     # WALL, BALCONY, BALCONY_UPPER all get a plain wall
                     src = wall_orig
-
 
                 if src is None:
                     continue
@@ -535,6 +588,20 @@ class GridFacadeAssembler:
                 meshes.append(m)
 
         # ── Door span meshes ──────────────────────────────────────
+        # Wall behind each door cell so the wall surface is visible through/around doors.
+        if wall_orig is not None:
+            for start_col, h_span in door_placements:
+                for dc in range(h_span):
+                    wall_behind = wall_orig.copy()
+                    if not is_front:
+                        _flip_facing(wall_behind)
+                    _scale_fit(wall_behind, self.cell_width, self.cell_height)
+                    _position(wall_behind, (start_col + dc + 0.5) * self.cell_width, 0.0, y_center)
+                    meshes.append(wall_behind)
+
+        # Door mesh offset slightly forward so it protrudes from the wall face.
+        _door_y_offset = 1.03  # metres
+        door_y = y_center - _door_y_offset if is_front else y_center + _door_y_offset
         if door_orig is not None:
             _, _, dh = self.loader.bbox("door")
             for start_col, h_span in door_placements:
@@ -543,7 +610,7 @@ class GridFacadeAssembler:
                 if is_front:
                     _flip_facing(door)
                 cx = (start_col + h_span / 2) * self.cell_width
-                _position(door, cx, 0.0, y_center)
+                _position(door, cx, 0.0, door_y)
                 meshes.append(door)
 
         # ── Balcony overlay meshes (placed IN FRONT of wall) ─────
@@ -552,7 +619,7 @@ class GridFacadeAssembler:
             # Outward direction: front facade → -Y; back facade → +Y
             outward = -1.0 if is_front else 1.0
             # Place balcony so its back face meets the wall's outer face
-            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0)
+            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0 - 0.5)
 
             for start_col, floor, h_span, v_span in bal_placements:
                 bal      = bal_orig.copy()
@@ -713,7 +780,7 @@ class GridFacadeAssembler:
 
         # Copy ALL PNG textures from all module types
         copied = set()
-        for module_type in ["wall", "window", "door", "balcony"]:
+        for module_type in ["wall", "window", "door", "balcony", "wall_window"]:
             type_dir = self.loader.modules_dir / module_type
             if type_dir.exists():
                 for png in type_dir.rglob("*.png"):
@@ -727,7 +794,7 @@ class GridFacadeAssembler:
         mtl_path = output_dir / "house.mtl"
         mtl_content = ""
 
-        for module_type in ["wall", "window", "door", "balcony"]:
+        for module_type in ["wall", "window", "door", "balcony", "wall_window"]:
             type_dir = self.loader.modules_dir / module_type
             if type_dir.exists():
                 for mtl_file in type_dir.rglob("*.mtl"):

@@ -938,6 +938,8 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         glass_color = window_params.get("glass_color")
         if isinstance(glass_color, str) and glass_color.strip().startswith("#"):
             wall_window_cfg["glass_texture_color"] = hex_to_rgb(glass_color.strip())
+        else:
+            wall_window_cfg["glass_texture_color"] = [135, 206, 235]  # default sky blue
 
         logger.info(f"🔨 Generating wall_window via batch runner for module {module_id}")
         results = run_all_generators({"wall_window": wall_window_cfg}, default_out_root=output_dir)
