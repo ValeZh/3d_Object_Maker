@@ -54,6 +54,7 @@ from src.generator.procedural.texturing import (
     write_wall_window_mtl,
     write_wall_window_obj,
 )
+from src.generator.procedural.procedural_texture_maps.procedural_color_texture import make_plaster_facade_texture
 from src.generator.procedural.texturing.color_tint import apply_texture_color_tint, parse_texture_color_tint
 from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
 from src.generator.procedural.unfolding import frame_glass_atlas_uv_mesh, wall_mesh_expanded_uv
@@ -102,12 +103,22 @@ def build_wall_with_window(
         mullion_offset_z=mullion_offset_z,
         partial_horizontal_bars=partial_horizontal_bars,
     )
-    ft = _frame_thickness(p.width, p.height)
+
+    # Clamp window dimensions so they always fit inside the wall with a visible border.
+    # This prevents callers from accidentally passing wall/panel dimensions as window dimensions.
+    _min_border_x = max(0.1, wall_length * 0.05)
+    _min_border_z_top = 0.12
+    window_width  = min(p.width,  wall_length - 2 * _min_border_x)
+    window_height = min(p.height, wall_height - float(window_sill_z) - _min_border_z_top)
+    window_width  = max(window_width,  0.1)
+    window_height = max(window_height, 0.1)
+
+    ft = _frame_thickness(window_width, window_height)
     glass_t = max(p.depth * 0.12, 0.004)
 
     mf, mg = build_window_frame_glass_meshes(
-        width=p.width,
-        height=p.height,
+        width=window_width,
+        height=window_height,
         depth=p.depth,
         profile=p.profile,
         kind=p.kind,
@@ -122,7 +133,7 @@ def build_wall_with_window(
         with_glass=True,
     )
 
-    tz = float(window_sill_z) + p.height * 0.5
+    tz = float(window_sill_z) + window_height * 0.5
     tvec = np.array([float(window_center_x), 0.0, tz], dtype=np.float64)
     mf_w = mf.copy()
     mg_w = mg.copy()
@@ -200,17 +211,13 @@ def export_wall_with_window(
     if glass_texture is not None and gp is None:
         print(f"[warn] glass_texture missing, procedural glass: {glass_texture}")
 
-    if fp is not None or gp is not None:
-        make_atlas_from_sources(
-            frame_path=fp,
-            glass_path=gp,
-            half_size=max(atlas_half_size, 64),
-            frame_color=frame_texture_color,
-            glass_color=glass_texture_color,
-        ).save(tex_path)
-    else:
-        paths = ensure_window_textures(_REPO_ROOT / "data" / "textures")
-        shutil.copyfile(paths["atlas"], tex_path)
+    make_atlas_from_sources(
+        frame_path=fp,
+        glass_path=gp,
+        half_size=max(atlas_half_size, 64),
+        frame_color=frame_texture_color,
+        glass_color=glass_texture_color,
+    ).save(tex_path)
 
     window_normal_name: str | None = None
     window_roughness_name: str | None = None
@@ -298,9 +305,27 @@ def export_wall_with_window(
             wall_roughness_name = "wall_roughness.png"
             make_roughness_map_from_albedo(wim, min_roughness=0.35, max_roughness=0.92).save(out_dir / wall_roughness_name)
     else:
-        wv = np.asarray(b.wall.vertices, dtype=np.float64)
-        wf = np.asarray(b.wall.faces, dtype=np.int64)
-        wuv = None
+        wt = parse_texture_color_tint(wall_texture_color)
+        if wt is not None:
+            # No texture file provided but a colour was given — generate procedural plaster and tint it.
+            wim = apply_texture_color_tint(make_plaster_facade_texture(1024, base_rgb=(152, 148, 138), seed=21), wt)
+            wall_tex_name = "wall_diffuse.png"
+            wim.save(out_dir / wall_tex_name)
+            if generate_normal_maps:
+                wall_normal_name = "wall_normal.png"
+                make_normal_map_from_albedo(wim, strength=3.2).save(out_dir / wall_normal_name)
+            if generate_roughness_maps:
+                wall_roughness_name = "wall_roughness.png"
+                make_roughness_map_from_albedo(wim, min_roughness=0.35, max_roughness=0.92).save(
+                    out_dir / wall_roughness_name
+                )
+            wv, wf, wuv = wall_mesh_expanded_uv(
+                b.wall, hx=hx, L=float(wall_length), T=float(wall_thickness), H=float(wall_height),
+            )
+        else:
+            wv = np.asarray(b.wall.vertices, dtype=np.float64)
+            wf = np.asarray(b.wall.faces, dtype=np.int64)
+            wuv = None
 
     win_v = np.asarray(win_export.vertices, dtype=np.float64)
     win_f = np.asarray(win_export.faces, dtype=np.int64)

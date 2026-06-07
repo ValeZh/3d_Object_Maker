@@ -899,7 +899,9 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         # headroom above and 0.2m sill below so the wall mesh doesn't degenerate.
         sill_z = max(0.2, (wall_height - win_height) / 2)
         if sill_z + win_height > wall_height - 0.12:
-            sill_z = max(0.1, wall_height - win_height - 0.12)
+            sill_z = wall_height - win_height - 0.12
+            if sill_z < 0.15:  # если слишком низко, оставить центровано
+                sill_z = max(0.2, (wall_height - win_height) / 2)
 
         wall_window_cfg: Dict[str, Any] = {
             "enabled": True,
@@ -927,6 +929,7 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         wall_color = wall_params.get("color")
         if isinstance(wall_color, str) and wall_color.strip().startswith("#"):
             wall_window_cfg["wall_texture_color"] = hex_to_rgb(wall_color.strip())
+            logger.info(f"wall_window_cfg = {wall_window_cfg}")
 
         frame_color = window_params.get("color") or window_params.get("frame_color")
         if isinstance(frame_color, str) and frame_color.strip().startswith("#"):
