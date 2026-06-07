@@ -250,17 +250,28 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "door":
+            total_width = float(params.get("width", 2.0))
+            door_height = float(params.get("height", 2.0))
+            niche_z_bottom = 0.12
+            niche_z_top = niche_z_bottom + door_height
+            # Center door panel within entrance width; panel defaults to 80% of total.
+            panel_width = float(params.get("door_width", total_width * 0.8))
+            u0 = max(0.0, (1.0 - panel_width / total_width) / 2)
+            u1 = min(1.0, 1.0 - u0)
             door_cfg: Dict[str, Any] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
-                "entrance_style": "canopy",
-                "width": params.get("width", 2.0),
-                "depth": params.get("depth", 1.75),
+                "entrance_style": "niche",
+                "width": total_width,
+                "depth": float(params.get("depth", 1.75)),
                 "has_left_wall": True,
                 "has_right_wall": True,
-                "doors": [
-                    {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
-                ],
+                "niche_clear_height": door_height,
+                "niche_door_z_bottom": niche_z_bottom,
+                "niche_door_z_top": niche_z_top,
+                "niche_door_u0": round(u0, 4),
+                "niche_door_u1": round(u1, 4),
+                "double_door": True,
                 "atlas_tile": 256,
                 "texture": {
                     "use_procedural_maps": True,

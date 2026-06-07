@@ -600,13 +600,16 @@ class GridFacadeAssembler:
                     meshes.append(wall_behind)
 
         # Door mesh offset slightly forward so it protrudes from the wall face.
-        _door_y_offset = 1.03  # metres
+        _door_y_offset = 1.24  # metres
         door_y = y_center - _door_y_offset if is_front else y_center + _door_y_offset
         if door_orig is not None:
-            _, _, dh = self.loader.bbox("door")
             for start_col, h_span in door_placements:
                 door = door_orig.copy()
-                _scale_exact(door, h_span * self.cell_width, min(dh, self.cell_height))
+                c = _bbox_center(door)
+                door.apply_translation(-c)
+                door.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+                door.apply_translation(c)
+                _flip_facing(door)
                 if is_front:
                     _flip_facing(door)
                 cx = (start_col + h_span / 2) * self.cell_width
@@ -619,7 +622,7 @@ class GridFacadeAssembler:
             # Outward direction: front facade → -Y; back facade → +Y
             outward = -1.0 if is_front else 1.0
             # Place balcony so its back face meets the wall's outer face
-            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0 - 0.5)
+            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0 - 1.45)
 
             for start_col, floor, h_span, v_span in bal_placements:
                 bal      = bal_orig.copy()

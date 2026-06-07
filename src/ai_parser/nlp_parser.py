@@ -158,7 +158,7 @@ class ModuleTextParser:
         self.PARAM_PATTERNS = {
             "height": [
                 r"(?:height|высот[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # height 1.75, высота 1.75м
-                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|высот[аы])",
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|height|высот[аы])",
                 # 1.75м height, 1.75 метра высоты
             ],
             "width": [
@@ -382,14 +382,17 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.BALCONY:
-            # Для балкона: depth, width, style, color
+            # Для балкона: depth, width, height, style, color
             depth = self._extract_value(text, "depth")
             width = self._extract_value(text, "width")
+            height = self._extract_value(text, "height")
 
             if depth is not None:
                 params["depth"] = depth
             if width is not None:
                 params["width"] = width
+            if height is not None:
+                params["height"] = height
 
             style = self._extract_string(text, "style")
             if style:
