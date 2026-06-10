@@ -321,6 +321,17 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 tpl["depth"] = float(params["depth"])
             if params.get("height") is not None:
                 tpl["height"] = float(params["height"])
+            if params.get("has_roof") is not None:
+                tpl["has_roof"] = bool(params["has_roof"])
+            elif str(params.get("style", "")).lower() in ("enclosed", "closed", "лоджия", "закрытый"):
+                tpl["has_roof"] = True
+            if params.get("roof_thickness") is not None:
+                tpl["roof_thickness"] = float(params["roof_thickness"])
+            if params.get("roof_overhang") is not None:
+                tpl["roof_overhang"] = float(params["roof_overhang"])
+            roof_hex = params.get("roof_color")
+            if isinstance(roof_hex, str) and roof_hex.strip().startswith("#"):
+                tpl["roof_tex_color"] = hex_to_rgb(roof_hex.strip())
 
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):

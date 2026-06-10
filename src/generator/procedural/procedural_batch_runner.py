@@ -143,6 +143,7 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
             "side_basket_color_preset": "side_basket_proc_preset",
             "side_jamb_color_preset": "side_jamb_proc_preset",
             "side_separator_color_preset": "side_separator_proc_preset",
+            "roof_color_preset": "roof_proc_preset",
             "tiles_per_side": "procedural_tiles_per_side",
             "grout_width": "procedural_grout_width",
         }
@@ -158,9 +159,12 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
             "side_basket_tex_color",
             "side_jamb_tex_color",
             "side_separator_tex_color",
+            "roof_tex_color",
         ):
             if tint_key in tex:
                 kwargs[tint_key] = tex[tint_key]
+        if "roof_tex" in tex:
+            kwargs["roof_tex"] = tex["roof_tex"]
 
 
 def _prepare_call(

@@ -84,8 +84,12 @@ def send_module_text_to_deepseek(text: str, module_type: Optional[str] = None) -
   "depth": <глубина в метрах, 0.8-2.0>,
   "width": <ширина в метрах, 1.0-4.0>,
   "style": "<open или enclosed>",
+  "has_roof": <true/false — крыша сверху, для лоджии/enclosed обычно true>,
+  "roof_thickness": <толщина крыши в метрах, 0.1-0.25>,
+  "roof_overhang": <свес крыши в метрах, 0-0.15>,
   "parapet_height": <высота перил в метрах, по умолчанию 1.1>,
-  "color": "<цвет>"
+  "color": "<цвет стен>",
+  "roof_color": "<цвет крыши, hex #RRGGBB>"
 }}
 
 Для ВХОДА/ПОДЪЕЗДА (entrance):
