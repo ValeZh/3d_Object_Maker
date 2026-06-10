@@ -258,12 +258,11 @@ The JSON must have exactly these fields:
   "width": <integer 6-30, number of facade columns>,
   "depth": <integer 1-6>,
   "has_balconies": <boolean>,
-  "balcony_rate": <float 0.0-1.0>,
   "window_cols": <integer 2-width>,
   "texture_scale": <integer 1-8>
 }}
 
-Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, balcony_rate=0.3, window_cols=8, texture_scale=3.
+Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, window_cols=8, texture_scale=3.
 Clamp all values. window_cols <= width. Return ONLY JSON.
 
 User description: "{text}"
@@ -309,7 +308,6 @@ User description: "{text}"
         width = max(6, min(30, int(parsed.get("width", 18))))
         depth = max(1, min(6, int(parsed.get("depth", 2))))
         has_balconies = bool(parsed.get("has_balconies", True))
-        balcony_rate = max(0.0, min(1.0, float(parsed.get("balcony_rate", 0.3))))
         window_cols = max(2, min(width, int(parsed.get("window_cols", 8))))
         texture_scale = max(1, min(8, int(parsed.get("texture_scale", 3))))
 
@@ -320,7 +318,6 @@ User description: "{text}"
                 "width": width,
                 "depth": depth,
                 "has_balconies": has_balconies,
-                "balcony_rate": round(balcony_rate, 2),
                 "window_cols": window_cols,
                 "facade": {"texture_url": "", "texture_scale": texture_scale},
             }

@@ -2760,14 +2760,12 @@ def export_balcony(
     _uv = np.asarray(work.visual.uv, dtype=np.float64)
     work.visual = trimesh.visual.texture.TextureVisuals(uv=_uv, image=atlas_img)
 
-    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
     work.apply_transform(
-        trimesh.transformations.rotation_matrix(
-            -np.pi / 2,  # -90° по X
-            [1, 0, 0]
-        )
+        trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
     )
-    # === КОНЕЦ ===
+    work.apply_transform(
+        trimesh.transformations.rotation_matrix(np.pi, [0, 0, 2])
+    )
 
     obj_path = out_dir / "balcony.obj"
     work.export(str(obj_path), include_texture=True)
