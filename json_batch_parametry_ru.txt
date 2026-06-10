@@ -1,0 +1,247 @@
+Параметры JSON-батча процедурных генераторов (краткий справочник + примеры значений)
+===================================================================================
+Оркестратор: src/generator/procedural/procedural_batch_runner.py
+Запуск: python -m src.generator.procedural.procedural_batch_json_parser <файл.json>
+
+Корень JSON — объект с опциональными секциями:
+  balcony | entrance | entrance_textured | window | wall | wall_window
+
+
+Общие поля любой секции
+-----------------------
+  enabled          — bool. Пример: true, false
+  out_dir, output  — строка пути (output = синоним out_dir). Пример: "data/out_batch/my_run"
+  no_view          — bool (превью Open3D для window/wall/wall_window). Пример: true
+
+Цвета тинта (RGB умножение): массив из 3 чисел, 0..255 или 0..1.
+  Пример: [210, 45, 45]  или  [0.82, 0.18, 0.18]
+
+
+Вложенный объект texture { ... }
+---------------------------------
+  bump_strength, normal_strength — float, сила normal в MTL. Пример: 0.65, 0.7
+  generate_normal — bool. Пример: true
+  generate_roughness — bool. Пример: true
+
+Доп. ключи texture — см. блоки секций ниже.
+
+
+================================================================
+1) СЕКЦИЯ balcony
+================================================================
+--- Геометрия и режимы ---
+  width_back, width_front — float, м. Пример: 1.6, 2.0
+  depth, height             — float, м. Пример: 1.15, 2.15
+  simple_box                — bool. Пример: false
+  floor_corner_*            — [x,y] или null. Пример: [-0.8, 0.0], null
+  vertical_prism            — bool. Пример: true
+  window_left_wall, window_right_wall — bool. Пример: false
+  floor_thickness           — float, м. Пример: 0.14
+  wall_thickness            — float, м. Пример: 0.0, 0.12
+  parapet_z_frac            — float 0..1. Пример: 0.42
+  parapet_height            — float или null. Пример: null, 0.95
+  window_mode               — "none" | "frame_only" | "with_glass". Пример: "with_glass"
+  front_window_mode         — null или "none"|"frame_only"|"with_glass"|"open". Пример: "with_glass"
+  open_left_above_parapet, open_right_above_parapet — bool. Пример: false
+  window_depth              — float, м. Пример: 0.14
+  tilt_left_deg, tilt_right_deg — float. Пример: 0.0
+  wall_upper_z_frac         — float 0..1. Пример: 0.35
+  side_upper_mode           — "glass" | "wall". Пример: "wall"
+  mullions_vertical, mullions_horizontal — int ≥ 0. Пример: 2, 0
+  mullion_offset_x, mullion_offset_z     — float. Пример: 0.0
+  partial_horizontal_bars   — массив [ячейка, z-доля]. Пример: [[2, 0.78]]
+  window_kind               — "fixed"|"double_hung"|"casement"|"french". Пример: "fixed"
+  parapet_sill              — bool. Пример: true
+  sill_thickness, sill_depth — float, м. Пример: 0.06, 0.1
+  side_parapet_split_frac, side_parapet_separator_depth — float. Пример: 0.0, 0.022
+  inner_wall_windows        — массив объектов (см. низ файла)
+  inner_wall_doors          — массив объектов (см. низ файла)
+
+--- Пути к текстурам атласа (строки) ---
+  wall_lower_tex, wall_upper_tex, frame_tex, glass_tex,
+  side_basket_tex, side_jamb_tex, side_separator_tex
+  Пример: "data/textures/window_frame.png"  или опустить ключ
+
+--- Тинты (массивы RGB) ---
+  wall_lower_tex_color, wall_upper_tex_color, frame_tex_color, glass_tex_color,
+  side_basket_tex_color, side_jamb_tex_color, side_separator_tex_color
+  Пример: [200, 195, 185]
+
+--- Процедурные поля (плоско, альтернатива части ключей в texture) ---
+  use_procedural_maps — bool. Пример: true
+  *_proc_preset       — строка пресета цвета. Пример: "ceramic_tile", "wood"
+  procedural_tiles_per_side — int. Пример: 8, 10
+  procedural_grout_width      — float 0.01..0.2. Пример: 0.055, 0.06
+  generate_normal_map, generate_roughness_map — bool. Пример: true
+  bump_strength       — float. Пример: 0.7
+  atlas_tile          — int, размер тайла атласа, px. Пример: 256
+
+--- Вложенный texture для balcony ---
+  use_procedural_maps — bool. Пример: true
+  wall_lower_color_preset, wall_upper_color_preset, frame_color_preset, glass_color_preset,
+  side_basket_color_preset, side_jamb_color_preset, side_separator_color_preset
+    — "plaster"|"uniform_noise"|"vertical_stripes"|"wood"|"ceramic_tile". Пример: "ceramic_tile"
+  tiles_per_side — int. Пример: 10
+  grout_width    — float. Пример: 0.055
+  generate_normal, generate_roughness — bool. Пример: true
+  bump_strength / normal_strength — float. Пример: 0.65
+  Тинты внутри texture — те же имена *_tex_color, пример: [180, 170, 160]
+
+
+================================================================
+2) СЕКЦИЯ entrance
+================================================================
+  no_view — bool. Пример: false
+  entrance_style — "canopy" | "niche". Пример: "canopy"
+
+Режим niche (числа в м, bool, доли 0..1):
+  niche_clear_height — 2.52
+  niche_ceiling_thickness — 0.16
+  niche_floor_z — 0.13
+  step_front_depth — 0.36
+  plinth_height — 0.13
+  double_door — true
+  niche_door_u0, niche_door_u1 — 0.24, 0.76
+  niche_door_z_bottom, niche_door_z_top — null или 0.1, 2.0
+  door_frame_depth — 0.06
+  door_frame_width — 0.09
+  door_leaf_gap — 0.025
+  door_midrail_z_frac — 0.58
+  door_recess_y — 0.045
+
+Режим canopy:
+  width, depth — 3.6, 1.75
+  canopy_thickness — 0.2
+  canopy_z_bottom — 2.45
+  platform_height — 0.16
+  platform_depth — 0.4
+  platform_width — null или 3.2
+  has_left_wall, has_right_wall — false, true
+  wall_thickness — 0.2
+  partition_thickness — 0.22
+  partitions_x — [0.0] или [-0.4, 0.4]
+  right_support_pole — true
+  pole_radius — 0.055
+  pole_front_inset, pole_side_inset — 0.12
+  doors — см. массив doors внизу
+  door_plane_y — 0.04
+  door_plane_thickness — 0.03
+
+
+================================================================
+3) СЕКЦИЯ entrance_textured
+================================================================
+  Плюс все поля entrance.
+
+  atlas_tile — int. Пример: 256
+  wall_tex, roof_tex, door_tex — строка пути или опустить. Пример: "data/textures/wall_plaster.png"
+  wall_tex_color, roof_tex_color, door_tex_color — [R,G,B]. Пример: [180, 175, 165]
+  use_procedural_maps — true
+  wall_proc_preset, roof_proc_preset, door_proc_preset — "wood", "plaster", …
+  generate_normal_map, generate_roughness_map — true
+  bump_strength — 0.7
+
+texture { }:
+  use_procedural_maps — true
+  wall_color_preset, roof_color_preset, door_color_preset — "plaster", "wood", "ceramic_tile"
+  generate_normal, generate_roughness — true
+  bump_strength — 0.7
+
+
+================================================================
+4) СЕКЦИЯ window
+================================================================
+  width, height, depth — 1.2, 1.5, 0.12
+  profile — "rect" | "arch" | "round". Пример: "rect"
+  kind — "fixed"|"double_hung"|"casement"|"french". Пример: "fixed"
+  mullions_vertical, mullions_horizontal — 1, 0
+  mullion_offset_x, mullion_offset_z — 0.0
+  partial_horizontal_bars — [[2, 0.78]] или []
+  frame_texture, glass_texture — "data/textures/window_frame.png"
+  frame_normal_texture, glass_normal_texture — путь или опустить
+  frame_texture_color, glass_texture_color — [200, 200, 200]
+  atlas_half_size — 256, 512
+  generate_normal_atlas, generate_roughness_atlas — true
+  bump_strength — 0.7
+
+Процедурные карты (texture.use_procedural_maps: true или плоско):
+  material_preset — "plaster" | "wood"
+  frame_color_preset, glass_color_preset — "plaster", "uniform_noise", …
+  frame_normal_preset, glass_normal_preset — "fine_noise", "flat", "wood_grain", …
+  procedural_tiles_per_side — 8
+  procedural_grout_width — 0.06
+
+texture { } (пример):
+  "texture": { "use_procedural_maps": true, "frame_color_preset": "wood",
+    "glass_color_preset": "uniform_noise", "generate_normal": true, "bump_strength": 0.65 }
+
+
+================================================================
+5) СЕКЦИЯ wall
+================================================================
+  wall_length, wall_thickness, wall_height — 4.0, 0.25, 3.0
+  wall_texture, wall_normal_texture, wall_roughness_texture — путь к PNG или опустить
+  wall_texture_color — [152, 148, 138]
+  use_procedural_maps — true
+  wall_color_preset — "ceramic_tile", "plaster", …
+  wall_normal_preset — "stucco_like", "ceramic_tile", "fine_noise", …
+  procedural_tiles_per_side — 9
+  procedural_grout_width — 0.055
+  bump_strength — 0.8
+
+texture { }:
+  "texture": { "use_procedural_maps": true, "wall_color_preset": "ceramic_tile",
+    "wall_normal_preset": "ceramic_tile", "tiles_per_side": 9, "grout_width": 0.055 }
+
+
+================================================================
+6) СЕКЦИЯ wall_window
+================================================================
+  wall_length, wall_thickness, wall_height — 4.0, 0.25, 3.0
+  window_center_x, window_sill_z — 0.0, 1.0
+  width, height, depth — 1.2, 1.5, 0.12 (окно)
+  profile, kind — "rect", "fixed"
+  mullions_vertical, mullions_horizontal — 1, 0
+  mullion_offset_x, mullion_offset_z — 0.0
+  partial_horizontal_bars — []
+  frame_texture, glass_texture, wall_texture — пути как в примере batch_red_window_green_wall.json
+  frame_texture_color, glass_texture_color, wall_texture_color — [210,45,45], …
+  atlas_half_size — 256
+  generate_normal_maps, generate_roughness_maps — true
+  bump_strength — 0.7
+
+texture { } — только bump/normal/roughness флаги, пример:
+  "texture": { "generate_normal": true, "generate_roughness": true, "bump_strength": 0.7 }
+
+
+================================================================
+Вложенные объекты в массивах
+================================================================
+
+doors (entrance canopy) — один элемент:
+  { "u0": 0.06, "u1": 0.44, "z_bottom": 0.12, "z_top": 2.05 }
+
+inner_wall_windows (balcony) — пример:
+  {
+    "u0": 0.06, "u1": 0.24, "z_bottom": 1.45, "z_top": 1.95,
+    "window_mode": "with_glass", "mullions_vertical": 1, "mullions_horizontal": 0,
+    "window_depth": 0.14, "window_kind": "fixed"
+  }
+
+inner_wall_doors (balcony) — пример:
+  {
+    "u0": 0.32, "u1": 0.68, "z_bottom": 0.02, "z_top": 2.12,
+    "style": "french", "frame_width": 0.09, "frame_depth": 0.08,
+    "leaf_gap": 0.025, "midrail_z_frac": 0.58, "y_outer": 0.06
+  }
+
+
+================================================================
+Строковые пресеты (примеры одного и того же типа)
+================================================================
+  Цвет процедурных карт: "plaster", "uniform_noise", "vertical_stripes", "wood", "ceramic_tile"
+  Normal (окно и др.): "fine_noise", "stucco_like", "wood_grain", "ceramic_tile", "flat", "soft_frosted"
+
+---
+Полная схема на английском: docs/procedural_orchestrator_params.txt
+Примеры JSON: scripts/balcony_examples/*.json
