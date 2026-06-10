@@ -11,9 +11,11 @@
   • Отдельно фронт над парапетом: --front-window-mode (open = дыра, none = стена, frame_only | with_glass).
   • Проём без геометрии на боку: --open-side-left / --open-side-right (над парапетом; по сторонам BL—FL и BR—FR соответственно).
   • Толщина вертикальных стен (зад/бок/парапет): wall_thickness / --wall-thickness (м); вынос наружу в −n_in (в плане XY к центру пола). 0 — одна грань.
-  • Атлас 7 PNG (колонки): низ | верх | рама | стекло | бок «корзина» | бок у окна | грань между ними.
+  • Опционально крыша: --has-roof / --no-roof (плоская плита на верхнем кольце); --roof-thickness, --roof-overhang.
+  • Атлас 8 PNG (колонки): низ | верх | рама | стекло | бок «корзина» | бок у окна | перегородка | крыша.
     Низ/верх/рама/стекло: --wall-lower-tex, --wall-upper-tex, --frame-tex, --glass-tex.
-    Боковые зоны: --side-basket-tex, --side-jamb-tex, --side-separator-tex; доля полосы у окна — --side-parapet-split-frac (0 = без разреза).
+    Боковые зоны: --side-basket-tex, --side-jamb-tex, --side-separator-tex; крыша: --roof-tex, --roof-tex-color.
+    Доля полосы у окна — --side-parapet-split-frac (0 = без разреза).
     Грань-перегородка и разрез не добавляются на стороне, где есть боковое окно (если window_mode не none).
 
 Оси: X — вдоль фасада, Y — наружу от здания, Z — вверх. Для углов основания задаёте (x,y) при z=0.
@@ -59,6 +61,7 @@ from src.generator.procedural.procedural_window import (
 )
 from src.generator.procedural.texturing import make_window_frame_texture, make_window_glass_texture
 from src.generator.procedural.texturing.pbr_map_utils import make_normal_map_from_albedo, make_roughness_map_from_albedo
+from src.generator.procedural.texturing.surface_texture_assets import make_roof_shingles_pack
 from src.generator.procedural.unfolding import faceted_triplanar_uv
 from src.generator.procedural.procedural_texture_maps.procedural_color_texture import (
     make_ceramic_tile_color_texture,
@@ -69,8 +72,8 @@ from src.generator.procedural.procedural_texture_maps.procedural_color_texture i
 )
 
 
-# Плитки атласа (слева направо): низ | верх | рама | стекло | бок корзина | бок у окна | перегородка
-BALCONY_ATLAS_NUM_TILES = 7
+# Плитки атласа (слева направо): низ | верх | рама | стекло | бок корзина | бок у окна | перегородка | крыша
+BALCONY_ATLAS_NUM_TILES = 8
 BALCONY_TILE_WALL_LOWER = 0
 BALCONY_TILE_WALL_UPPER = 1
 BALCONY_TILE_FRAME = 2
@@ -78,6 +81,7 @@ BALCONY_TILE_GLASS = 3
 BALCONY_TILE_SIDE_BASKET = 4
 BALCONY_TILE_SIDE_JAMB = 5
 BALCONY_TILE_SIDE_SEPARATOR = 6
+BALCONY_TILE_ROOF = 7
 
 # Сторона квадрата тайла атласа (px); задаётся в export_balcony для inset в _scale_uv_to_tile.
 _BALCONY_ATLAS_TILE_PX: int = 512
@@ -130,6 +134,10 @@ USER_BALCONY: dict[str, Any] = {
     # u0,u1 (0..1 вдоль BL→BR), z_bottom,z_top (м мира); опционально window_mode, mullions_*, window_depth, window_kind, …
     "inner_wall_windows": [],
     "inner_wall_doors": [],
+    # Крыша (плоская плита на верхнем кольце): has_roof=false — без крыши.
+    "has_roof": False,
+    "roof_thickness": 0.14,
+    "roof_overhang": 0.06,
 }
 
 
@@ -462,6 +470,8 @@ def _proc_preset_texture(
             grout_width_frac=float(max(0.01, min(0.2, grout_width))),
             seed=seed,
         )
+    if kind in ("roof_shingles", "shingles", "roof"):
+        return make_roof_shingles_pack(s, seed=seed)["albedo"]
     return _proc_wall_texture(s, default_rgb)
 
 
@@ -475,6 +485,7 @@ def make_balcony_atlas(
     side_basket_path: Path | str | None = None,
     side_jamb_path: Path | str | None = None,
     side_separator_path: Path | str | None = None,
+    roof_path: Path | str | None = None,
     wall_lower_color: Tuple[int, int, int] | None = None,
     wall_upper_color: Tuple[int, int, int] | None = None,
     frame_color: Tuple[int, int, int] | None = None,
@@ -482,6 +493,7 @@ def make_balcony_atlas(
     side_basket_color: Tuple[int, int, int] | None = None,
     side_jamb_color: Tuple[int, int, int] | None = None,
     side_separator_color: Tuple[int, int, int] | None = None,
+    roof_color: Tuple[int, int, int] | None = None,
     wall_lower_proc_preset: str | None = None,
     wall_upper_proc_preset: str | None = None,
     frame_proc_preset: str | None = None,
@@ -489,10 +501,11 @@ def make_balcony_atlas(
     side_basket_proc_preset: str | None = None,
     side_jamb_proc_preset: str | None = None,
     side_separator_proc_preset: str | None = None,
+    roof_proc_preset: str | None = None,
     procedural_tiles_per_side: int = 8,
     procedural_grout_width: float = 0.06,
 ) -> Image.Image:
-    """Атлас BALCONY_ATLAS_NUM_TILES×1: низ | верх | рама | стекло | бок корзина | бок у окна | перегородка."""
+    """Атлас BALCONY_ATLAS_NUM_TILES×1: низ | верх | рама | стекло | бок корзина | бок у окна | перегородка | крыша."""
     t = max(tile, 64)
     wl = (
         _open_rgb(Path(wall_lower_path)).resize((t, t), _resample())
@@ -593,6 +606,19 @@ def make_balcony_atlas(
         )
     )
     sep = apply_texture_color_tint(sep, side_separator_color)
+    rf = (
+        _open_rgb(Path(roof_path)).resize((t, t), _resample())
+        if roof_path and Path(roof_path).expanduser().resolve().is_file()
+        else _proc_preset_texture(
+            size=t,
+            preset=roof_proc_preset,
+            default_rgb=(122, 82, 62),
+            tiles_per_side=procedural_tiles_per_side,
+            grout_width=procedural_grout_width,
+            seed=109,
+        )
+    )
+    rf = apply_texture_color_tint(rf, roof_color)
     n = BALCONY_ATLAS_NUM_TILES
     out = Image.new("RGB", (t * n, t))
     out.paste(wl, (0, 0))
@@ -602,6 +628,7 @@ def make_balcony_atlas(
     out.paste(sb, (4 * t, 0))
     out.paste(sj, (5 * t, 0))
     out.paste(sep, (6 * t, 0))
+    out.paste(rf, (7 * t, 0))
     return out
 
 
@@ -1714,6 +1741,104 @@ def _balcony_floor_textured_parts(
     return [("wall_lower", fp) for fp in (f_top, f_bot)]
 
 
+def _expand_corners_xy_outward(
+    corners: List[np.ndarray],
+    floor_cxy: np.ndarray,
+    overhang: float,
+) -> List[np.ndarray]:
+    """Сдвиг углов четырёхугольника наружу от центра пола на overhang (м) в XY."""
+    oh = max(float(overhang), 0.0)
+    if oh <= 1e-9:
+        return [np.asarray(c, dtype=np.float64) for c in corners]
+    fc = np.asarray(floor_cxy, dtype=np.float64)[:2]
+    out: List[np.ndarray] = []
+    for c in corners:
+        p = np.asarray(c, dtype=np.float64)
+        d = p[:2] - fc
+        ln = float(np.linalg.norm(d))
+        if ln < 1e-9:
+            out.append(p.copy())
+            continue
+        p2 = p.copy()
+        p2[:2] = p[:2] + (d / ln) * oh
+        out.append(p2)
+    return out
+
+
+def _balcony_roof_textured_parts(
+    bot_TBL: np.ndarray,
+    bot_TBR: np.ndarray,
+    bot_TFR: np.ndarray,
+    bot_TFL: np.ndarray,
+    roof_thickness: float,
+    *,
+    full_height: float,
+    floor_cxy: np.ndarray,
+    BL: np.ndarray,
+    FL: np.ndarray,
+    FR: np.ndarray,
+    BR: np.ndarray,
+    overhang: float = 0.0,
+) -> List[Tuple[str, trimesh.Trimesh]]:
+    """
+    Плоская крыша-плита: верх на full_height, низ на верхнем кольце стен.
+    Без отдельной нижней грани — потолок закрывают верхние грани стен.
+    Боковые грани плиты + свес (overhang) только на верхнем контуре.
+    """
+    z_bot = float(np.asarray(bot_TBL, dtype=np.float64)[2])
+    z_top = max(float(full_height), z_bot + max(float(roof_thickness), 0.04))
+    z_up = np.array([0.0, 0.0, z_top - z_bot], dtype=np.float64)
+    tbl_b, tfl_b, tfr_b, tbr_b = (
+        np.asarray(bot_TBL, dtype=np.float64),
+        np.asarray(bot_TFL, dtype=np.float64),
+        np.asarray(bot_TFR, dtype=np.float64),
+        np.asarray(bot_TBR, dtype=np.float64),
+    )
+    tbl_t, tfl_t, tfr_t, tbr_t = _expand_corners_xy_outward(
+        [tbl_b + z_up, tfl_b + z_up, tfr_b + z_up, tbr_b + z_up],
+        floor_cxy,
+        overhang,
+    )
+    d_safe = _floor_y_span(BL, FL, FR, BR)
+    xs = np.array([BL[0], FL[0], FR[0], BR[0]], dtype=np.float64)
+    xmin_f, xmax_f = float(xs.min()), float(xs.max())
+    xspan = max(xmax_f - xmin_f, 1e-6)
+
+    def _uv_roof(p: np.ndarray) -> np.ndarray:
+        return np.array(
+            [(float(p[0]) - xmin_f) / xspan, float(p[1]) / d_safe],
+            dtype=np.float64,
+        )
+
+    def _roof_side_quad(
+        a_b: np.ndarray,
+        b_b: np.ndarray,
+        b_t: np.ndarray,
+        a_t: np.ndarray,
+        *,
+        flip: bool,
+    ) -> trimesh.Trimesh:
+        uv = np.stack([_uv_roof(a_b), _uv_roof(b_b), _uv_roof(b_t), _uv_roof(a_t)])
+        return _textured_quad([a_b, b_b, b_t, a_t], BALCONY_TILE_ROOF, uv, flip=flip)
+
+    uv_top = np.stack(
+        [_uv_roof(tbl_t), _uv_roof(tfl_t), _uv_roof(tfr_t), _uv_roof(tbr_t)]
+    )
+    r_top = _textured_quad(
+        [tbl_t, tfl_t, tfr_t, tbr_t],
+        BALCONY_TILE_ROOF,
+        uv_top,
+        flip=False,
+    )
+    sides = [
+        _roof_side_quad(tbl_b, tbr_b, tbr_t, tbl_t, flip=True),
+        _roof_side_quad(tfl_b, tfr_b, tfr_t, tfl_t, flip=False),
+        _roof_side_quad(tbl_b, tfl_b, tfl_t, tbl_t, flip=False),
+        _roof_side_quad(tbr_b, tfr_b, tfr_t, tbr_t, flip=True),
+    ]
+    return [("roof", r_top)] + [("roof", s) for s in sides]
+
+
 def _simple_box_back_and_sides(
     BL: np.ndarray,
     BR: np.ndarray,
@@ -1993,6 +2118,9 @@ def build_balcony_meshes(
     open_left_above_parapet: bool = False,
     open_right_above_parapet: bool = False,
     wall_thickness: float = 0.0,
+    has_roof: bool = False,
+    roof_thickness: float = 0.14,
+    roof_overhang: float = 0.06,
 ) -> Tuple[List[Tuple[str, trimesh.Trimesh]], List[Tuple[str, trimesh.Trimesh]]]:
     """
     Парапет снизу по периметру фронта/боков, сверху — окно на всю ширину фронта.
@@ -2028,8 +2156,11 @@ def build_balcony_meshes(
         Zp = float(H) * max(0.0, min(1.0, float(parapet_z_frac)))
     Zp = float(np.clip(Zp, 0.07, H - 0.1))
 
+    rt_roof = max(float(roof_thickness), 0.04) if has_roof else 0.0
+    H_body = max(H - rt_roof, Zp + 0.05) if has_roof else H
+
     band = max(0.0, min(1.0, float(wall_upper_z_frac)))
-    z_cut_back = H * (1.0 - band)
+    z_cut_back = H_body * (1.0 - band)
 
     BL, BR, FL, FR = _resolve_floor_quad(
         width_back,
@@ -2041,7 +2172,7 @@ def build_balcony_meshes(
         floor_corner_front_right,
     )
     TBL, TBR, TFR, TFL = _compute_top_ring(
-        BL, BR, FL, FR, H, vertical_prism, tilt_left_deg, tilt_right_deg
+        BL, BR, FL, FR, H_body, vertical_prism, tilt_left_deg, tilt_right_deg
     )
     y_front = 0.5 * (float(FL[1]) + float(FR[1]))
     floor_cxy = _floor_center_xy(BL, BR, FL, FR)
@@ -2150,7 +2281,7 @@ def build_balcony_meshes(
             sill = trimesh.creation.box(extents=[w_f, sd, st])
             sill.apply_translation([cx_f, y_front + sd * 0.5 + 0.01, Zp + st * 0.48])
             parts.append(("divider_frame", sill))
-        win_h = H - Zp
+        win_h = H_body - Zp
         window_parts: List[Tuple[str, trimesh.Trimesh]] = []
         _flb_p = np.asarray(FL, dtype=np.float64).copy()
         _flb_p[2] -= T
@@ -2165,7 +2296,7 @@ def build_balcony_meshes(
                 mode=front_mode,
                 FL_zp=FL_zp,
                 FR_zp=FR_zp,
-                H=H,
+                H=H_body,
                 Zp=Zp,
                 window_depth=window_depth,
                 window_kind=window_kind,
@@ -2209,7 +2340,7 @@ def build_balcony_meshes(
                     p_back_zp=pb_l,
                     p_front_zp=pf_l,
                     z_bottom=Zp,
-                    z_top=H,
+                    z_top=H_body,
                     window_depth=window_depth,
                     window_kind=window_kind,
                     mullions_vertical=mullions_vertical,
@@ -2246,7 +2377,7 @@ def build_balcony_meshes(
                     p_back_zp=pb_r,
                     p_front_zp=pf_r,
                     z_bottom=Zp,
-                    z_top=H,
+                    z_top=H_body,
                     window_depth=window_depth,
                     window_kind=window_kind,
                     mullions_vertical=mullions_vertical,
@@ -2280,6 +2411,23 @@ def build_balcony_meshes(
             )
             parts.append(("wall_upper", lo_u))
             parts.append(("wall_upper", hi_u))
+        if has_roof:
+            parts.extend(
+                _balcony_roof_textured_parts(
+                    TBL,
+                    TBR,
+                    TFR,
+                    TFL,
+                    roof_thickness,
+                    full_height=H,
+                    floor_cxy=floor_cxy,
+                    BL=BL,
+                    FL=FL,
+                    FR=FR,
+                    BR=BR,
+                    overhang=roof_overhang,
+                )
+            )
         return parts, window_parts
 
     ol = bool(open_left_above_parapet)
@@ -2320,7 +2468,7 @@ def build_balcony_meshes(
         e_bh = e_b / lb
     zb_back = float(BL_b[2])
     z_lo_span_ext = max(float(z_cut_back) - zb_back, 1e-6)
-    z_hi_span = max(H - z_cut_back, 1e-6)
+    z_hi_span = max(H_body - z_cut_back, 1e-6)
 
     def _uv_back_lo(p: np.ndarray) -> np.ndarray:
         uu = float(np.dot(np.asarray(p, dtype=np.float64) - BL, e_bh)) / lb
@@ -2470,7 +2618,7 @@ def build_balcony_meshes(
             mode=front_mode,
             FL_zp=FL_zp,
             FR_zp=FR_zp,
-            H=H,
+            H=H_body,
             Zp=Zp,
             window_depth=window_depth,
             window_kind=window_kind,
@@ -2509,7 +2657,7 @@ def build_balcony_meshes(
                 p_back_zp=pb_l,
                 p_front_zp=pf_l,
                 z_bottom=Zp,
-                z_top=H,
+                z_top=H_body,
                 window_depth=window_depth,
                 window_kind=window_kind,
                 mullions_vertical=mullions_vertical,
@@ -2542,7 +2690,7 @@ def build_balcony_meshes(
                 p_back_zp=pb_r,
                 p_front_zp=pf_r,
                 z_bottom=Zp,
-                z_top=H,
+                z_top=H_body,
                 window_depth=window_depth,
                 window_kind=window_kind,
                 mullions_vertical=mullions_vertical,
@@ -2560,7 +2708,7 @@ def build_balcony_meshes(
         window_parts, inner_d, BL_b, BR_b, TBL, TBR, BL, BR, floor_cxy
     )
 
-    win_h = H - Zp
+    win_h = H_body - Zp
     if front_mode == "none" and win_h > 0.05:
         lo_u, hi_u = _make_wall_stack(
             FL_zp,
@@ -2574,6 +2722,24 @@ def build_balcony_meshes(
         )
         wall_parts.append(("wall_upper", lo_u))
         wall_parts.append(("wall_upper", hi_u))
+
+    if has_roof:
+        wall_parts.extend(
+            _balcony_roof_textured_parts(
+                TBL,
+                TBR,
+                TFR,
+                TFL,
+                roof_thickness,
+                full_height=H,
+                floor_cxy=floor_cxy,
+                BL=BL,
+                FL=FL,
+                FR=FR,
+                BR=BR,
+                overhang=roof_overhang,
+            )
+        )
 
     return wall_parts, window_parts
 
@@ -2590,6 +2756,7 @@ def export_balcony(
     side_basket_tex: str | Path | None = None,
     side_jamb_tex: str | Path | None = None,
     side_separator_tex: str | Path | None = None,
+    roof_tex: str | Path | None = None,
     use_procedural_maps: bool = False,
     wall_lower_proc_preset: str | None = None,
     wall_upper_proc_preset: str | None = None,
@@ -2598,6 +2765,7 @@ def export_balcony(
     side_basket_proc_preset: str | None = None,
     side_jamb_proc_preset: str | None = None,
     side_separator_proc_preset: str | None = None,
+    roof_proc_preset: str | None = None,
     procedural_tiles_per_side: int = 8,
     procedural_grout_width: float = 0.06,
     generate_normal_map: bool = True,
@@ -2617,6 +2785,7 @@ def export_balcony(
         "side_basket_tex_color",
         "side_jamb_tex_color",
         "side_separator_tex_color",
+        "roof_tex_color",
     )
     kw_rest = dict(kwargs)
     tex_color_raw = {k: kw_rest.pop(k, None) for k in _BALCONY_TEX_COLOR_KEYS}
@@ -2627,6 +2796,7 @@ def export_balcony(
     sb_c = parse_texture_color_tint(tex_color_raw["side_basket_tex_color"])
     sj_c = parse_texture_color_tint(tex_color_raw["side_jamb_tex_color"])
     sep_c = parse_texture_color_tint(tex_color_raw["side_separator_tex_color"])
+    rf_c = parse_texture_color_tint(tex_color_raw["roof_tex_color"])
 
     u = USER_BALCONY
     p = {**u, **kw_rest}
@@ -2672,6 +2842,9 @@ def export_balcony(
         open_left_above_parapet=bool(p.get("open_left_above_parapet", False)),
         open_right_above_parapet=bool(p.get("open_right_above_parapet", False)),
         wall_thickness=float(p.get("wall_thickness", 0.0)),
+        has_roof=bool(p.get("has_roof", False)),
+        roof_thickness=float(p.get("roof_thickness", 0.14)),
+        roof_overhang=float(p.get("roof_overhang", 0.06)),
     )
 
     atlas_img = make_balcony_atlas(
@@ -2683,6 +2856,7 @@ def export_balcony(
         side_basket_path=side_basket_tex,
         side_jamb_path=side_jamb_tex,
         side_separator_path=side_separator_tex,
+        roof_path=roof_tex,
         wall_lower_color=wl_c,
         wall_upper_color=wu_c,
         frame_color=fr_c,
@@ -2690,6 +2864,7 @@ def export_balcony(
         side_basket_color=sb_c,
         side_jamb_color=sj_c,
         side_separator_color=sep_c,
+        roof_color=rf_c,
         wall_lower_proc_preset=wall_lower_proc_preset if use_procedural_maps else None,
         wall_upper_proc_preset=wall_upper_proc_preset if use_procedural_maps else None,
         frame_proc_preset=frame_proc_preset if use_procedural_maps else None,
@@ -2697,6 +2872,7 @@ def export_balcony(
         side_basket_proc_preset=side_basket_proc_preset if use_procedural_maps else None,
         side_jamb_proc_preset=side_jamb_proc_preset if use_procedural_maps else None,
         side_separator_proc_preset=side_separator_proc_preset if use_procedural_maps else None,
+        roof_proc_preset=roof_proc_preset if use_procedural_maps else None,
         procedural_tiles_per_side=procedural_tiles_per_side,
         procedural_grout_width=procedural_grout_width,
     )
@@ -2733,6 +2909,8 @@ def export_balcony(
             tile_i = BALCONY_TILE_SIDE_JAMB
         elif name == "side_separator":
             tile_i = BALCONY_TILE_SIDE_SEPARATOR
+        elif name == "roof":
+            tile_i = BALCONY_TILE_ROOF
         else:
             tile_i = BALCONY_TILE_WALL_LOWER
         m2.visual = trimesh.visual.texture.TextureVisuals(uv=_scale_uv_to_tile(uv, tile_i))
@@ -2760,14 +2938,12 @@ def export_balcony(
     _uv = np.asarray(work.visual.uv, dtype=np.float64)
     work.visual = trimesh.visual.texture.TextureVisuals(uv=_uv, image=atlas_img)
 
-    # === РАЗВОРАЧИВАЕМ НА -90° ПО X ===
     work.apply_transform(
-        trimesh.transformations.rotation_matrix(
-            -np.pi / 2,  # -90° по X
-            [1, 0, 0]
-        )
+        trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0])
     )
-    # === КОНЕЦ ===
+    work.apply_transform(
+        trimesh.transformations.rotation_matrix(np.pi, [0, 0, 2])
+    )
 
     obj_path = out_dir / "balcony.obj"
     work.export(str(obj_path), include_texture=True)
@@ -2948,6 +3124,22 @@ def _build_cli() -> argparse.ArgumentParser:
     ap.add_argument("--no-sill", action="store_true", help="Убрать горизонтальный отлив на линии парапета")
     ap.add_argument("--sill-thickness", type=float, default=None)
     ap.add_argument("--sill-depth", type=float, default=None)
+    ap.add_argument(
+        "--has-roof",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Плоская крыша на верхнем кольце балкона (лоджия)",
+    )
+    ap.add_argument("--roof-thickness", type=float, default=None, help="Толщина плиты крыши (м)")
+    ap.add_argument("--roof-overhang", type=float, default=None, help="Свес крыши наружу от контура (м)")
+    ap.add_argument("--roof-tex", type=str, default=None, help="PNG крыши (8-я колонка атласа из 8)")
+    ap.add_argument(
+        "--roof-tex-color",
+        type=str,
+        default=None,
+        metavar="R,G,B",
+        help="Оттенок текстуры крыши, например 130,95,70",
+    )
     return ap
 
 
@@ -3055,6 +3247,13 @@ def main(argv: List[str] | None = None) -> None:
             door_specs.append(_parse_inner_wall_door_cli(spec_s))
     if door_specs:
         kw["inner_wall_doors"] = door_specs
+    if args.has_roof is not None:
+        kw["has_roof"] = args.has_roof
+    if args.roof_thickness is not None:
+        kw["roof_thickness"] = args.roof_thickness
+    if args.roof_overhang is not None:
+        kw["roof_overhang"] = args.roof_overhang
+    roof_tint = parse_texture_color_tint(args.roof_tex_color) if args.roof_tex_color else None
 
     out = Path(args.output).resolve() if args.output else None
     export_balcony(
@@ -3068,6 +3267,8 @@ def main(argv: List[str] | None = None) -> None:
         side_basket_tex=args.side_basket_tex,
         side_jamb_tex=args.side_jamb_tex,
         side_separator_tex=args.side_separator_tex,
+        roof_tex=args.roof_tex,
+        roof_tex_color=roof_tint,
         **kw,
     )
 

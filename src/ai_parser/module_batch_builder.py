@@ -185,6 +185,18 @@ def build_section_for_api_module(
             section["depth"] = float(overlay_flat["depth"])
         if overlay_flat.get("height") is not None:
             section["height"] = float(overlay_flat["height"])
+        if overlay_flat.get("has_roof") is not None:
+            section["has_roof"] = bool(overlay_flat["has_roof"])
+        elif str(overlay_flat.get("style", "")).lower() in ("enclosed", "closed", "лоджия", "закрытый"):
+            section["has_roof"] = True
+        if overlay_flat.get("roof_thickness") is not None:
+            section["roof_thickness"] = float(overlay_flat["roof_thickness"])
+        if overlay_flat.get("roof_overhang") is not None:
+            section["roof_overhang"] = float(overlay_flat["roof_overhang"])
+        roof_hex = overlay_flat.get("roof_color")
+        roof_rgb = _maybe_hex_rgb(hex_to_rgb, roof_hex) if isinstance(roof_hex, str) else None
+        if roof_rgb:
+            section.setdefault("roof_tex_color", roof_rgb)
         hx = overlay_flat.get("color") or overlay_flat.get("frame_color")
         rgb = _maybe_hex_rgb(hex_to_rgb, hx) if isinstance(hx, str) else None
         if rgb:

@@ -8,6 +8,9 @@
     "width_front": 2.95,
     "depth": 1.42,
     "height": 2.48,
+    "has_roof": true,
+    "roof_thickness": 0.15,
+    "roof_overhang": 0.07,
     "parapet_z_frac": 0.44,
     "parapet_sill": true,
     "sill_thickness": 0.07,
@@ -35,6 +38,7 @@
       "side_basket_color_preset": "ceramic_tile",
       "side_jamb_color_preset": "ceramic_tile",
       "side_separator_color_preset": "wood",
+      "roof_color_preset": "roof_shingles",
       "tiles_per_side": 12,
       "grout_width": 0.048
     },
@@ -42,6 +46,7 @@
     "wall_upper_tex_color": [232, 226, 216],
     "frame_tex_color": [112, 82, 58],
     "glass_tex_color": [175, 198, 218],
+    "roof_tex_color": [118, 78, 55],
     "inner_wall_windows": [
       {
         "u0": 0.05,

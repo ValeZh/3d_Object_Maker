@@ -250,17 +250,28 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "door":
+            total_width = float(params.get("width", 2.0))
+            door_height = float(params.get("height", 2.0))
+            niche_z_bottom = 0.12
+            niche_z_top = niche_z_bottom + door_height
+            # Center door panel within entrance width; panel defaults to 80% of total.
+            panel_width = float(params.get("door_width", total_width * 0.8))
+            u0 = max(0.0, (1.0 - panel_width / total_width) / 2)
+            u1 = min(1.0, 1.0 - u0)
             door_cfg: Dict[str, Any] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
-                "entrance_style": "canopy",
-                "width": params.get("width", 2.0),
-                "depth": params.get("depth", 1.75),
+                "entrance_style": "niche",
+                "width": total_width,
+                "depth": float(params.get("depth", 1.75)),
                 "has_left_wall": True,
                 "has_right_wall": True,
-                "doors": [
-                    {"u0": 0.1, "u1": 0.9, "z_bottom": 0.12, "z_top": 2.05}
-                ],
+                "niche_clear_height": door_height,
+                "niche_door_z_bottom": niche_z_bottom,
+                "niche_door_z_top": niche_z_top,
+                "niche_door_u0": round(u0, 4),
+                "niche_door_u1": round(u1, 4),
+                "double_door": True,
                 "atlas_tile": 256,
                 "texture": {
                     "use_procedural_maps": True,
@@ -310,6 +321,17 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 tpl["depth"] = float(params["depth"])
             if params.get("height") is not None:
                 tpl["height"] = float(params["height"])
+            if params.get("has_roof") is not None:
+                tpl["has_roof"] = bool(params["has_roof"])
+            elif str(params.get("style", "")).lower() in ("enclosed", "closed", "лоджия", "закрытый"):
+                tpl["has_roof"] = True
+            if params.get("roof_thickness") is not None:
+                tpl["roof_thickness"] = float(params["roof_thickness"])
+            if params.get("roof_overhang") is not None:
+                tpl["roof_overhang"] = float(params["roof_overhang"])
+            roof_hex = params.get("roof_color")
+            if isinstance(roof_hex, str) and roof_hex.strip().startswith("#"):
+                tpl["roof_tex_color"] = hex_to_rgb(roof_hex.strip())
 
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
@@ -885,11 +907,11 @@ async def analyze_building_text(request: Request):
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
     Builds a wall_window module from wall + window params via procedural_batch_runner.
-    Returns the module_id saved in the registry (type "window", assembler picks it up).
+    Returns the module_id saved in the registry (type "wall_window").
     """
     try:
         module_id = str(uuid.uuid4())[:8]
-        output_dir = MODULES_DIR / "window" / module_id
+        output_dir = MODULES_DIR / "wall_window" / module_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Build the wall_window config section for run_all_generators
@@ -899,7 +921,9 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         # headroom above and 0.2m sill below so the wall mesh doesn't degenerate.
         sill_z = max(0.2, (wall_height - win_height) / 2)
         if sill_z + win_height > wall_height - 0.12:
-            sill_z = max(0.1, wall_height - win_height - 0.12)
+            sill_z = wall_height - win_height - 0.12
+            if sill_z < 0.15:  # если слишком низко, оставить центровано
+                sill_z = max(0.2, (wall_height - win_height) / 2)
 
         wall_window_cfg: Dict[str, Any] = {
             "enabled": True,
@@ -927,6 +951,7 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         wall_color = wall_params.get("color")
         if isinstance(wall_color, str) and wall_color.strip().startswith("#"):
             wall_window_cfg["wall_texture_color"] = hex_to_rgb(wall_color.strip())
+            logger.info(f"wall_window_cfg = {wall_window_cfg}")
 
         frame_color = window_params.get("color") or window_params.get("frame_color")
         if isinstance(frame_color, str) and frame_color.strip().startswith("#"):
@@ -935,6 +960,8 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         glass_color = window_params.get("glass_color")
         if isinstance(glass_color, str) and glass_color.strip().startswith("#"):
             wall_window_cfg["glass_texture_color"] = hex_to_rgb(glass_color.strip())
+        else:
+            wall_window_cfg["glass_texture_color"] = [135, 206, 235]  # default sky blue
 
         logger.info(f"🔨 Generating wall_window via batch runner for module {module_id}")
         results = run_all_generators({"wall_window": wall_window_cfg}, default_out_root=output_dir)
@@ -942,13 +969,6 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         obj_path = results.get("wall_window")
         if not obj_path or not obj_path.exists():
             raise Exception("wall_window generator returned no output file")
-
-        # Assembler looks for {type}.obj = window.obj; rename so it can find it
-        if obj_path.name != "window.obj":
-            new_path = obj_path.parent / "window.obj"
-            obj_path.rename(new_path)
-            obj_path = new_path
-            logger.info("✓ Renamed wall_window.obj → window.obj")
 
         combined_params = {
             "wall_length": wall_window_cfg["wall_length"],
@@ -961,13 +981,13 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
             "mullions_vertical": wall_window_cfg["mullions_vertical"],
         }
 
-        zip_path = create_module_zip(module_id, "window", combined_params, obj_path)
+        zip_path = create_module_zip(module_id, "wall_window", combined_params, obj_path)
         if not zip_path:
             raise Exception("Failed to create ZIP for wall_window")
 
         module_record = {
             "module_id": module_id,
-            "module_type": "window",
+            "module_type": "wall_window",
             "module_name": (
                 f"Wall+Window "
                 f"{window_params.get('width', 1.1):.1f}×{window_params.get('height', 1.4):.1f}"
@@ -1001,6 +1021,7 @@ async def generate_house(request: Request):
         # === ПОЛУЧАЕМ ПАРАМЕТРЫ WALL, WINDOW И BALCONY ===
         wall_module_id = payload.get("wall_module_id")
         window_module_id = payload.get("window_module_id")
+        door_module_id = payload.get("door_module_id")
         balcony_module_id = payload.get("balcony_module_id") or None
         wall_dimensions = {"width": 4.0, "height": 3.0}
 
@@ -1034,14 +1055,14 @@ async def generate_house(request: Request):
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")
         try:
-            window_module_id = create_wall_window_module(wall_params, window_params)
-            logger.info(f"✓ Wall_window created: {window_module_id}")
+            wall_window_module_id = create_wall_window_module(wall_params, window_params)
+            logger.info(f"✓ Wall_window created: {wall_window_module_id}")
         except Exception as ww_err:
             logger.warning(
                 f"⚠️ Wall_window generation failed: {ww_err}. "
                 "Assembly will proceed using plain walls for window cells."
             )
-            window_module_id = None
+            wall_window_module_id = None
 
         house_id = str(uuid.uuid4())[:8]
         house_dir = MODULES_DIR / "houses" / house_id
@@ -1058,12 +1079,14 @@ async def generate_house(request: Request):
             "module_height": wall_dimensions.get("height", 3.0),
             "depth": payload.get("depth", 2),
             "texture_scale": payload.get("texture_scale", 1),
-            "balcony_rate": payload.get("balcony_rate", 0.25),
+            # has_balcony: True if the user selected a balcony module
+            "has_balcony": bool(payload.get("has_balconies", False)) and balcony_module_id is not None,
             # Specific UUIDs so the assembler loads freshly generated modules
             # rather than an arbitrary first alphabetical match from disk.
-            "wall_module_id":    wall_module_id,
-            "window_module_id":  window_module_id,
-            "balcony_module_id": balcony_module_id,
+            "wall_module_id":         wall_module_id,
+            "wall_window_module_id":  wall_window_module_id,
+            "entrance_module_id":     door_module_id,
+            "balcony_module_id":      balcony_module_id,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")
