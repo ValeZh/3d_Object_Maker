@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
-ALL_BATCH_SECTIONS = ("balcony", "entrance", "entrance_textured", "window", "wall", "wall_window")
+ALL_BATCH_SECTIONS = ("balcony", "entrance", "entrance_textured", "window", "wall", "wall_window", "roof")
 
 __all__ = [
     "API_TO_BATCH_SECTION",
@@ -38,6 +38,7 @@ API_TO_BATCH_SECTION: Dict[str, str] = {
     "balcony": "balcony",
     "entrance": "entrance_textured",
     "wall_window": "wall_window",
+    "roof": "roof",
 }
 
 
@@ -251,6 +252,31 @@ def build_section_for_api_module(
         drgb = _maybe_hex_rgb(hex_to_rgb, dd) if isinstance(dd, str) else None
         if drgb:
             section.setdefault("texture", {}).setdefault("door_tex_color", drgb)
+
+    elif module_type_api == "roof":
+        defaults = {
+            "enabled": True,
+            "out_dir": str(output_dir),
+            "length": float(overlay_flat.get("length") or overlay_flat.get("width") or 10.0),
+            "width": float(overlay_flat.get("width") or overlay_flat.get("depth") or 8.0),
+            "height": float(overlay_flat.get("height") or 2.2),
+            "roof_type": str(overlay_flat.get("roof_type") or overlay_flat.get("type") or "gable"),
+            "no_view": True,
+            "texture": {
+                "use_procedural_maps": True,
+                "roof_color_preset": "roof_shingles",
+                "generate_normal": True,
+                "generate_roughness": True,
+            },
+        }
+        section = deep_merge(defaults, sub_wo_ent)
+        section = deep_merge(section, overlay_flat)
+        if overlay_tex:
+            section["texture"] = deep_merge(section.get("texture") or {}, overlay_tex)
+        c = overlay_flat.get("color") or overlay_flat.get("roof_color")
+        rgb = _maybe_hex_rgb(hex_to_rgb, c) if isinstance(c, str) else None
+        if rgb:
+            section.setdefault("texture", {}).setdefault("roof_tex_color", rgb)
 
     elif module_type_api == "wall_window":
         wlen = float(
