@@ -73,6 +73,13 @@ class ModuleTextParser:
             r"двускатн",
             r"пирамид",
         ],
+        ModuleType.ROOF: [
+            r"крыш[аи]|roof",
+            r"плоская\s+крыша|flat\s+roof",
+            r"двускатн|gable",
+            r"пирамид|pyramid",
+            r"кровл[яи]|кровля",
+        ],
     }
 
     # Маппинг цветов на HEX коды
@@ -143,11 +150,13 @@ class ModuleTextParser:
             "frame_color": "#8B4513",
         },
         ModuleType.BALCONY: {
+            "height": 2.15,
             "depth": 1.15,
             "width": 2.0,
             "style": "open",
             "parapat_height": 1.1,
             "color": "#AAAAAA",
+            "has_roof": True,
         },
         ModuleType.ENTRANCE: {
             "width": 2.0,
@@ -248,6 +257,17 @@ class ModuleTextParser:
             return value
 
         logger.info(f"🔍 {param_name} не найден в тексте: '{text}'")
+        return None
+
+    def _extract_bool(self, text: str, positive_pattern: str, negative_pattern: str) -> Optional[bool]:
+        """
+        Extract boolean. Negative pattern takes precedence over positive.
+        Returns True, False, or None if neither matches.
+        """
+        if re.search(negative_pattern, text, re.IGNORECASE):
+            return False
+        if re.search(positive_pattern, text, re.IGNORECASE):
+            return True
         return None
 
     def _extract_string(self, text: str, param_name: str) -> Optional[str]:
@@ -398,17 +418,19 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.BALCONY:
-            # Для балкона: depth, width, height, style, color
+            # Для балкона: height, depth, width, style, color, has_roof
             depth = self._extract_value(text, "depth")
             width = self._extract_value(text, "width")
             height = self._extract_value(text, "height")
 
+            logger.info(f"[nlp_parser] balcony extract: height={height} depth={depth} width={width} (text='{text}')")
+
+            if height is not None:
+                params["height"] = height
             if depth is not None:
                 params["depth"] = depth
             if width is not None:
                 params["width"] = width
-            if height is not None:
-                params["height"] = height
 
             style = self._extract_string(text, "style")
             if style:
@@ -419,6 +441,14 @@ class ModuleTextParser:
                 hx = self._get_color_hex(color_raw)
                 if hx:
                     params["color"] = hx
+
+            has_roof = self._extract_bool(
+                text,
+                positive_pattern=r"(?:with\s+)?(?:крыш[аи]|потолок|roof|ceiling)\b",
+                negative_pattern=r"(?:without|no|без)\s+(?:крыш[иеа]|потолк[аеу]|roof|ceiling)",
+            )
+            if has_roof is not None:
+                params["has_roof"] = has_roof
 
         elif module_type == ModuleType.ENTRANCE:
             # Для входа: width, height, depth, style
@@ -452,12 +482,12 @@ class ModuleTextParser:
             if height is not None:
                 params["height"] = height
 
-            tl = text.lower()
-            if re.search(r"плоск|flat|плит", tl):
+            t = text.lower()
+            if re.search(r"плоска|flat|горизонтал|slab|плит", t):
                 params["roof_type"] = "flat"
-            elif re.search(r"пирамид|pyramid", tl):
+            elif re.search(r"пирамид|pyramid|четырёхскат|четырехскат|hip", t):
                 params["roof_type"] = "pyramid"
-            elif re.search(r"двускат|gable|кон[её]к", tl):
+            elif re.search(r"двускатн|gable|конёк|конек|triangle|треугольн|shed", t):
                 params["roof_type"] = "gable"
 
             color_raw = self._extract_string(text, "color")

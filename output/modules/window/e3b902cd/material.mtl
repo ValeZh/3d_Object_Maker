@@ -1,0 +1,10 @@
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd window_atlas.png
+map_Bump -bm 0.700 window_normal_atlas.png
+map_Pr window_roughness_atlas.png

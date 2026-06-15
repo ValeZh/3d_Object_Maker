@@ -179,6 +179,7 @@ let raycaster, mouse;
 let lastHovered = null;
 let currentHouseObjUrl = null;
 let currentHouseServerData = null;
+let _houseColorFromParser = null; // set by applyHouseParams when parser returns house_color
 
 const textureCache = new Map();
 const geometryCache = new Map();
@@ -899,6 +900,9 @@ function getHouseFormData() {
 function applyHouseParams(data) {
   const house = data.house || data;
   const facade = house.facade || {};
+
+  // Capture house_color from parser so it can be forwarded to /api/generate-house
+  _houseColorFromParser = house.house_color || null;
 
   if (house.floors != null) floorsInput.value = house.floors;
   if (house.sections != null) sectionsInput.value = house.sections;
@@ -3057,28 +3061,31 @@ generateHouseBtn?.addEventListener("click", async () => {
   generateHouseBtn.textContent = "🏗️ Building...";
 
   try {
+    console.log("Sending house_color:", _houseColorFromParser);
     const response = await fetch(`${SERVER_URL}/api/generate-house`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    house_name: houseNameValue,
-    floors: formData.house.floors,           // ← было formData.floors
-    sections: formData.house.sections,       // ← было formData.sections
-    width: formData.house.width,             // ← было formData.width
-    depth: formData.house.depth,             // ← было formData.depth
-    window_columns: formData.house.window_cols,  // ← было formData.window_columns
-    texture_scale: formData.house.facade?.texture_scale || 1,
-    has_balconies: formData.house.has_balconies,
-    wall_module_id: formData.modules.wall,
-    window_module_id: formData.modules.window,
-    door_module_id: formData.modules.door,
-    balcony_module_id: formData.modules.balcony
-  })
-});
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        house_name: houseNameValue,
+        floors: formData.house.floors,
+        sections: formData.house.sections,
+        width: formData.house.width,
+        depth: formData.house.depth,
+        window_columns: formData.house.window_cols,
+        texture_scale: formData.house.facade?.texture_scale || 1,
+        has_balconies: formData.house.has_balconies,
+        house_color: _houseColorFromParser,
+        wall_module_id: formData.modules.wall,
+        window_module_id: formData.modules.window,
+        door_module_id: formData.modules.door,
+        balcony_module_id: formData.modules.balcony
+      })
+    });
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
 
+    _houseColorFromParser = null;
     showToast(`House built: ${data.house_name}`, "success");
 
     currentHouseServerData = data;

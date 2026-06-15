@@ -263,11 +263,14 @@ The JSON must have exactly these fields:
   "depth": <integer 1-6>,
   "has_balconies": <boolean>,
   "window_cols": <integer 2-width>,
-  "texture_scale": <integer 1-8>
+  "texture_scale": <integer 1-8>,
+  "color": "<#RRGGBB hex string if a color is mentioned, otherwise null>"
 }}
 
-Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, window_cols=8, texture_scale=3.
-Clamp all values. window_cols <= width. Return ONLY JSON.
+Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, window_cols=8, texture_scale=3, color=null.
+Clamp all values. window_cols <= width.
+For "color": convert any mentioned color name (red, blue, синий, красный, etc.) to its #RRGGBB hex value. If no color is mentioned, use null.
+Return ONLY JSON.
 
 User description: "{text}"
 """
@@ -315,6 +318,14 @@ User description: "{text}"
         window_cols = max(2, min(width, int(parsed.get("window_cols", 8))))
         texture_scale = max(1, min(8, int(parsed.get("texture_scale", 3))))
 
+        # Validate color: accept only #RRGGBB, discard anything else
+        raw_color = parsed.get("color")
+        house_color = None
+        if isinstance(raw_color, str):
+            c = raw_color.strip().lstrip("#")
+            if len(c) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in c):
+                house_color = f"#{c.upper()}"
+
         result = {
             "house": {
                 "floors": floors,
@@ -323,6 +334,7 @@ User description: "{text}"
                 "depth": depth,
                 "has_balconies": has_balconies,
                 "window_cols": window_cols,
+                "house_color": house_color,
                 "facade": {"texture_url": "", "texture_scale": texture_scale},
             }
         }
@@ -341,6 +353,77 @@ User description: "{text}"
     except Exception as exc:
         logger.error(f"DeepSeek error: {exc}")
         return None
+
+
+def parse_roof_text(text: str) -> dict:
+    """
+    Extract roof_type from a natural-language description using DeepSeek.
+    Returns {"module_type": "roof", "roof_type": "gable"|"flat"|"pyramid"}.
+    Falls back to {"module_type": "roof", "roof_type": "gable"} on any error.
+    """
+    _FALLBACK = {"module_type": "roof", "roof_type": "gable"}
+
+    prompt = f"""You are an architect. Extract the roof type from the user description and return ONLY a JSON object.
+
+The JSON must have exactly these fields:
+{{
+  "module_type": "roof",
+  "roof_type": "<flat | gable | pyramid>"
+}}
+
+Rules:
+- flat    → horizontal slab (плоская, flat, horizontal)
+- gable   → two slopes meeting at a ridge (двускатная, gable, shed, triangle)
+- pyramid → four slopes meeting at a peak (пирамидальная, pyramid, hip, четырёхскатная)
+- Default when ambiguous: "gable"
+
+Return ONLY JSON.
+
+User description: "{text}"
+"""
+
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "You are an architect. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 80,
+    }
+
+    try:
+        logger.info(f"DeepSeek: parsing roof type from '{text[:60]}'")
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=15)
+
+        if response.status_code == 402:
+            logger.warning("DeepSeek 402 — using fallback for roof")
+            return _FALLBACK
+        if response.status_code != 200:
+            logger.error(f"DeepSeek error {response.status_code}")
+            return _FALLBACK
+
+        content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if not match:
+            return _FALLBACK
+
+        parsed = json.loads(match.group(0))
+        roof_type = str(parsed.get("roof_type", "gable")).strip().lower()
+        if roof_type not in ("flat", "gable", "pyramid"):
+            roof_type = "gable"
+
+        result = {"module_type": "roof", "roof_type": roof_type}
+        logger.info(f"✓ Roof type parsed: {result}")
+        return result
+
+    except Exception as exc:
+        logger.error(f"parse_roof_text error: {exc}")
+        return _FALLBACK
 
 
 # ============== ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ==============

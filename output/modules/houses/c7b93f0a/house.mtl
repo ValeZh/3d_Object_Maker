@@ -1,0 +1,975 @@
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/entrance_atlas.png
+map_Bump textures/-bm 0.700 entrance_normal_atlas.png
+map_Pr textures/entrance_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# https://github.com/mikedh/trimesh
+
+newmtl material_0
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+Ns 1.00000000
+map_Kd textures/balcony_atlas.png
+map_Bump textures/-bm 0.650 balcony_normal_atlas.png
+map_Pr textures/balcony_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd textures/wall_diffuse.png
+map_Bump textures/-bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr textures/wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd textures/window_atlas.png
+map_Bump textures/-bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr textures/window_roughness_atlas.png
+

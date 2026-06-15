@@ -93,6 +93,7 @@ USER_BALCONY: dict[str, Any] = {
     "depth": 1.15,
     "height": 2.15,
     "simple_box": False,
+    "has_roof": False,
     # Углы основания z=0 (x, y), если все None — из width_back/width_front/depth:
     # левый у стены, правый у стены, передний левый, передний правый (к улице).
     "floor_corner_left_wall": None,

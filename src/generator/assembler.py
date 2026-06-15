@@ -310,6 +310,8 @@ class GridFacadeAssembler:
             preferred_ids["balcony"] = params["balcony_module_id"]
         if params.get("door_module_id"):
             preferred_ids["door"] = params["door_module_id"]
+        if params.get("roof_module_id"):
+            preferred_ids["roof"] = params["roof_module_id"]
 
         self.loader = ModuleLoader(Path(modules_dir), preferred_ids=preferred_ids)
 
@@ -423,7 +425,7 @@ class GridFacadeAssembler:
             return placements
 
         bw, _, bh = self.loader.bbox("balcony")
-        h_span    = max(1, math.ceil(bw / self.cell_width))
+        h_span    = 1  # always one cell; mesh is scaled to fit by _scale_fit
         v_span    = 2 if bh > self.cell_height else 1
 
         blocked   = set(entrance_cols)
@@ -600,16 +602,23 @@ class GridFacadeAssembler:
                     meshes.append(wall_behind)
 
         # Door mesh offset slightly forward so it protrudes from the wall face.
-        _door_y_offset = 1.24  # metres
+        # OBJ is Y-up: index 1 = height, index 2 = depth.
+        # After 90°X + 180°Z rotations: OBJ-Y→Z, OBJ-Z→Y, so we read depth from index 2.
+        _, _, door_depth = self.loader.bbox("door")  # OBJ Z span = depth (lands in Y after rotations)
+        _door_y_offset = door_depth / 2 + 0.18
         door_y = y_center - _door_y_offset if is_front else y_center + _door_y_offset
         if door_orig is not None:
+            _, dh, _ = self.loader.bbox("door")  # OBJ Y span = height (lands in Z after 90°X rotation)
             for start_col, h_span in door_placements:
                 door = door_orig.copy()
+
                 c = _bbox_center(door)
                 door.apply_translation(-c)
                 door.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+                door.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1]))
                 door.apply_translation(c)
-                _flip_facing(door)
+
+                _scale_exact(door, h_span * self.cell_width, min(dh, self.cell_height))
                 if is_front:
                     _flip_facing(door)
                 cx = (start_col + h_span / 2) * self.cell_width
@@ -760,6 +769,51 @@ class GridFacadeAssembler:
         # Side facades (walls only, rotated 90° around Z)
         all_meshes.extend(self._build_side_facade(0.0,                 is_left=True))
         all_meshes.extend(self._build_side_facade(self.building_width, is_left=False))
+
+        # ── Roof ──────────────────────────────────────────────────────
+        # procedural_roof.py is also Z-up (X=length, Y=width, Z=height),
+        # so the roof OBJ is axis-compatible with the assembler's internal
+        # space — no rotation is needed before placement.
+        roof_orig = self.loader.load("roof")
+        if roof_orig is not None:
+            roof = roof_orig.copy()
+
+            # Target footprint matches the building.
+            roof_x = self.building_width
+            roof_y = self.building_depth
+
+            # Roof height: prefer explicit param; default by roof type.
+            roof_params = self.params.get("roof_params") or {}
+            roof_type   = str(roof_params.get("roof_type", "gable")).lower()
+            roof_z      = float(roof_params.get("height",
+                                                1.0 if roof_type == "flat" else 3.0))
+
+            # 3-axis scale (X, Y, Z) around bbox centre.
+            bw, bd, bh = self.loader.bbox("roof")
+            if bw > 1e-6 and bd > 1e-6 and bh > 1e-6:
+                c = _bbox_center(roof)
+                roof.apply_translation(-c)
+                roof.apply_transform(np.diag([
+                    roof_x / bw,
+                    roof_y / bd,
+                    roof_z / bh,
+                    1.0,
+                ]))
+                roof.apply_translation(c)
+
+            # Place roof: centred in X and Y, sitting on top of the walls.
+            _position(roof,
+                      self.building_width  / 2,  # X centre
+                      self.building_height,       # Z bottom = top of walls
+                      self.building_depth  / 2)  # Y centre = mid-depth
+
+            all_meshes.append(roof)
+            logger.info(
+                f"Roof added — type={roof_type!r}, "
+                f"target {roof_x:.1f}×{roof_y:.1f}×{roof_z:.1f}m"
+            )
+        else:
+            logger.warning("Roof module not found — building exported without roof")
 
         # Convert from internal Z-up to Three.js Y-up by rotating -90° around X.
         rot_yup = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])

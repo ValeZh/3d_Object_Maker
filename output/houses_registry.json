@@ -1,0 +1,862 @@
+[
+  {
+    "house_id": "3aebbbd2",
+    "house_name": "House_1780796927874",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "3a978f71",
+      "entrance_module_id": "63322474",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/3aebbbd2/house.obj",
+    "created_at": "2026-06-07T03:48:52.359219"
+  },
+  {
+    "house_id": "784bc74b",
+    "house_name": "House_1780797099199",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "e211db9d",
+      "entrance_module_id": "63322474",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/784bc74b/house.obj",
+    "created_at": "2026-06-07T03:51:43.295050"
+  },
+  {
+    "house_id": "96700b2f",
+    "house_name": "House_1780797336837",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "42269496",
+      "entrance_module_id": "63322474",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/96700b2f/house.obj",
+    "created_at": "2026-06-07T03:55:40.852210"
+  },
+  {
+    "house_id": "3fce0c88",
+    "house_name": "House_1780797614368",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "23054258",
+      "entrance_module_id": "63322474",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/3fce0c88/house.obj",
+    "created_at": "2026-06-07T04:00:18.528117"
+  },
+  {
+    "house_id": "4100d795",
+    "house_name": "House_1780797767203",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "4e9f630b",
+      "entrance_module_id": "63322474",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/4100d795/house.obj",
+    "created_at": "2026-06-07T04:02:51.218111"
+  },
+  {
+    "house_id": "b8fbf5c3",
+    "house_name": "House_1780798513458",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "02e5d39b",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/b8fbf5c3/house.obj",
+    "created_at": "2026-06-07T04:15:17.674619"
+  },
+  {
+    "house_id": "b61e725e",
+    "house_name": "House_1780798689898",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "ff646531",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/b61e725e/house.obj",
+    "created_at": "2026-06-07T04:18:14.008950"
+  },
+  {
+    "house_id": "81744c14",
+    "house_name": "House_1780798733305",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "2f8ac921",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/81744c14/house.obj",
+    "created_at": "2026-06-07T04:18:57.444582"
+  },
+  {
+    "house_id": "a515f5c1",
+    "house_name": "House_1780798758033",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "d461e4df",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/a515f5c1/house.obj",
+    "created_at": "2026-06-07T04:19:22.067781"
+  },
+  {
+    "house_id": "0e264210",
+    "house_name": "House_1780798805235",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "571ab8f9",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/0e264210/house.obj",
+    "created_at": "2026-06-07T04:20:09.339631"
+  },
+  {
+    "house_id": "514c0e43",
+    "house_name": "House_1780798831318",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "8f964ec1",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/514c0e43/house.obj",
+    "created_at": "2026-06-07T04:20:35.298546"
+  },
+  {
+    "house_id": "87d70b4f",
+    "house_name": "House_1780798864311",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "c065b264",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/87d70b4f/house.obj",
+    "created_at": "2026-06-07T04:21:08.367857"
+  },
+  {
+    "house_id": "11e99b87",
+    "house_name": "House_1780798881290",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "21512d1b",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/11e99b87/house.obj",
+    "created_at": "2026-06-07T04:21:25.401793"
+  },
+  {
+    "house_id": "54953acd",
+    "house_name": "House_1780798898097",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "18afec51",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "b4657b95"
+    },
+    "obj_url": "/modules/houses/54953acd/house.obj",
+    "created_at": "2026-06-07T04:21:42.211704"
+  },
+  {
+    "house_id": "5087e17f",
+    "house_name": "House_1780798960848",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "392a61d7",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "26eb9e71"
+    },
+    "obj_url": "/modules/houses/5087e17f/house.obj",
+    "created_at": "2026-06-07T04:22:44.952189"
+  },
+  {
+    "house_id": "6dde65de",
+    "house_name": "House_1780799256045",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "cfbc553e",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "383cca56"
+    },
+    "obj_url": "/modules/houses/6dde65de/house.obj",
+    "created_at": "2026-06-07T04:27:40.198654"
+  },
+  {
+    "house_id": "ccafa786",
+    "house_name": "House_1780799324102",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "6f1fb3e9",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "383cca56"
+    },
+    "obj_url": "/modules/houses/ccafa786/house.obj",
+    "created_at": "2026-06-07T04:28:48.251002"
+  },
+  {
+    "house_id": "1525925c",
+    "house_name": "House_1780799346557",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "22039f00",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "383cca56"
+    },
+    "obj_url": "/modules/houses/1525925c/house.obj",
+    "created_at": "2026-06-07T04:29:10.737681"
+  },
+  {
+    "house_id": "11cd4109",
+    "house_name": "House_1780799372513",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "c80f9f68",
+      "wall_window_module_id": "773cb1be",
+      "entrance_module_id": "35262117",
+      "balcony_module_id": "383cca56"
+    },
+    "obj_url": "/modules/houses/11cd4109/house.obj",
+    "created_at": "2026-06-07T04:29:36.554954"
+  },
+  {
+    "house_id": "40470cde",
+    "house_name": "House_1781532537336",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "214d43ea",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/40470cde/house.obj",
+    "created_at": "2026-06-15T16:09:02.051331"
+  },
+  {
+    "house_id": "d65672f5",
+    "house_name": "House_1781533143618",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "020e7901",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/d65672f5/house.obj",
+    "created_at": "2026-06-15T16:19:08.485078"
+  },
+  {
+    "house_id": "64e0cbcc",
+    "house_name": "House_1781533442597",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "726a4385",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/64e0cbcc/house.obj",
+    "created_at": "2026-06-15T16:24:06.921396"
+  },
+  {
+    "house_id": "841a0ec7",
+    "house_name": "House_1781533478257",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "c7da5afb",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/841a0ec7/house.obj",
+    "created_at": "2026-06-15T16:24:42.619852"
+  },
+  {
+    "house_id": "13cae02a",
+    "house_name": "House_1781533590103",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "13103540",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/13cae02a/house.obj",
+    "created_at": "2026-06-15T16:26:34.457178"
+  },
+  {
+    "house_id": "0aba4734",
+    "house_name": "House_1781533611657",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "29a01e7e",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/0aba4734/house.obj",
+    "created_at": "2026-06-15T16:26:56.027255"
+  },
+  {
+    "house_id": "c7b93f0a",
+    "house_name": "House_1781533629104",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "649d724d",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/c7b93f0a/house.obj",
+    "created_at": "2026-06-15T16:27:14.418690"
+  },
+  {
+    "house_id": "2b5500b3",
+    "house_name": "House_1781533668655",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "54d2a7cf",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/2b5500b3/house.obj",
+    "created_at": "2026-06-15T16:27:53.594085"
+  },
+  {
+    "house_id": "0aee5dac",
+    "house_name": "House_1781533717010",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "6199bf5c",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/0aee5dac/house.obj",
+    "created_at": "2026-06-15T16:28:41.390112"
+  },
+  {
+    "house_id": "af399f18",
+    "house_name": "House_1781533827607",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "fbad12cd",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/af399f18/house.obj",
+    "created_at": "2026-06-15T16:30:32.069166"
+  },
+  {
+    "house_id": "c2347249",
+    "house_name": "House_1781533844206",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "4e0f74ad",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/c2347249/house.obj",
+    "created_at": "2026-06-15T16:30:49.451817"
+  },
+  {
+    "house_id": "34a7e770",
+    "house_name": "House_1781533866044",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "b9c95485",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/34a7e770/house.obj",
+    "created_at": "2026-06-15T16:31:12.038116"
+  },
+  {
+    "house_id": "dd7ccee2",
+    "house_name": "House_1781533904636",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "9305c3cf",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/dd7ccee2/house.obj",
+    "created_at": "2026-06-15T16:31:49.251995"
+  },
+  {
+    "house_id": "fcec2234",
+    "house_name": "House_1781535146296",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "0bc651d9",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/fcec2234/house.obj",
+    "created_at": "2026-06-15T16:52:30.795037"
+  },
+  {
+    "house_id": "fb63c676",
+    "house_name": "House_1781537837033",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "315ca5d7",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/fb63c676/house.obj",
+    "created_at": "2026-06-15T17:37:21.290660"
+  },
+  {
+    "house_id": "5ff612b2",
+    "house_name": "House_1781537953186",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "9f5ab8e0",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/5ff612b2/house.obj",
+    "created_at": "2026-06-15T17:39:17.840546"
+  },
+  {
+    "house_id": "16787f44",
+    "house_name": "House_1781537974704",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "15c14347",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/16787f44/house.obj",
+    "created_at": "2026-06-15T17:39:39.870555"
+  },
+  {
+    "house_id": "43a81c74",
+    "house_name": "House_1781538664589",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "f4f74569",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/43a81c74/house.obj",
+    "created_at": "2026-06-15T17:51:09.339612"
+  },
+  {
+    "house_id": "b08c220b",
+    "house_name": "House_1781538916971",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "fa3d9a7f",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/b08c220b/house.obj",
+    "created_at": "2026-06-15T17:55:21.506618"
+  },
+  {
+    "house_id": "100648cc",
+    "house_name": "House_1781539147466",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "6695f5e9",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/100648cc/house.obj",
+    "created_at": "2026-06-15T17:59:11.988435"
+  },
+  {
+    "house_id": "54dc31a5",
+    "house_name": "House_1781539486821",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "19bcde0f",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/54dc31a5/house.obj",
+    "created_at": "2026-06-15T18:04:51.840022"
+  },
+  {
+    "house_id": "9b996c38",
+    "house_name": "House_1781542345889",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "6df2aa1a",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/9b996c38/house.obj",
+    "created_at": "2026-06-15T18:52:31.042544"
+  },
+  {
+    "house_id": "cc8f5a8f",
+    "house_name": "House_1781542985122",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "1d5aeeda",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/cc8f5a8f/house.obj",
+    "created_at": "2026-06-15T19:03:10.019091"
+  },
+  {
+    "house_id": "36d249cd",
+    "house_name": "House_1781543035136",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "14ef4bd2",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/36d249cd/house.obj",
+    "created_at": "2026-06-15T19:04:00.705135"
+  }
+]

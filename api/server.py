@@ -27,7 +27,8 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent  # Поднимаемся в корень проекта
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ai_parser.parser import extract_module_parameters, parse_building_text
+from src.ai_parser.parser import extract_module_parameters, parse_building_text, parse_roof_text
+from src.generator.procedural.procedural_roof import export_roof
 from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser
 from src.generator.assembler import assemble_building
 from src.generator.procedural.procedural_batch_runner import run_all_generators
@@ -321,6 +322,9 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 tpl["depth"] = float(params["depth"])
             if params.get("height") is not None:
                 tpl["height"] = float(params["height"])
+                logger.info(f"[balcony] height from params: {tpl['height']}")
+            else:
+                logger.info(f"[balcony] height NOT in params → generator will use USER_BALCONY default (2.15m); params keys: {list(params.keys())}")
             if params.get("has_roof") is not None:
                 tpl["has_roof"] = bool(params["has_roof"])
             elif str(params.get("style", "")).lower() in ("enclosed", "closed", "лоджия", "закрытый"):
@@ -332,6 +336,27 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
             roof_hex = params.get("roof_color")
             if isinstance(roof_hex, str) and roof_hex.strip().startswith("#"):
                 tpl["roof_tex_color"] = hex_to_rgb(roof_hex.strip())
+
+            # Scale inner windows/doors z-coords proportionally to the actual height.
+            # Template was authored at 2.15 m (USER_BALCONY default).
+            _DEFAULT_BALCONY_H = 2.15
+            _actual_h = float(tpl.get("height", _DEFAULT_BALCONY_H))
+            _ratio = _actual_h / _DEFAULT_BALCONY_H
+            if abs(_ratio - 1.0) > 0.001:
+                for item in tpl.get("inner_wall_windows", []):
+                    if "z_bottom" in item:
+                        item["z_bottom"] = round(item["z_bottom"] * _ratio, 4)
+                    if "z_top" in item:
+                        item["z_top"] = round(item["z_top"] * _ratio, 4)
+                for item in tpl.get("inner_wall_doors", []):
+                    if "z_bottom" in item:
+                        item["z_bottom"] = round(item["z_bottom"] * _ratio, 4)
+                    if "z_top" in item:
+                        item["z_top"] = round(item["z_top"] * _ratio, 4)
+                logger.info(
+                    f"[balcony] scaled inner windows/doors by ratio {_ratio:.3f} "
+                    f"(height {_DEFAULT_BALCONY_H}→{_actual_h})"
+                )
 
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
@@ -929,6 +954,42 @@ async def analyze_building_text(request: Request):
 
 
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
+def _recreate_wall_with_color(wall_params: Dict[str, Any], new_color: str) -> tuple[str, Dict[str, Any]]:
+    """
+    Clone wall_params, override color, regenerate OBJ + ZIP, save to registry.
+    Returns (new_module_id, updated_params).
+    """
+    module_id = str(uuid.uuid4())[:8]
+    updated_params = {**wall_params, "color": new_color}
+
+    obj_path = generate_module_obj("wall", updated_params, module_id)
+    if not obj_path or not obj_path.exists():
+        raise Exception(f"Wall OBJ generation failed for color-synced module {module_id}")
+
+    zip_path = create_module_zip(module_id, "wall", updated_params, obj_path)
+    if not zip_path:
+        raise Exception(f"ZIP creation failed for color-synced wall module {module_id}")
+
+    module_record = {
+        "module_id": module_id,
+        "module_type": "wall",
+        "module_name": f"Wall (color {new_color})",
+        "params": updated_params,
+        "zip_file": zip_path.name,
+        "created_at": datetime.now().isoformat(),
+        "dimensions": {
+            "width": float(updated_params.get("width", 4.0)),
+            "height": float(updated_params.get("height", 3.0)),
+        },
+    }
+    modules = load_modules_registry()
+    modules.append(module_record)
+    save_modules_registry(modules)
+
+    logger.info(f"✓ Color-synced wall created: {module_id} (color={new_color})")
+    return module_id, updated_params
+
+
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
     Builds a wall_window module from wall + window params via procedural_batch_runner.
@@ -1037,6 +1098,64 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
         logger.error(f"❌ Error creating wall_window: {e}", exc_info=True)
         raise Exception(f"Failed to create wall_window: {str(e)}")
 
+
+def create_roof_module(roof_type: str) -> str:
+    """Generate a 3×3m roof module, save to registry, return module_id."""
+    module_id = str(uuid.uuid4())[:8]
+    params = {"roof_type": roof_type, "length": 3.0, "width": 3.0, "height": 1.5}
+    obj_path = generate_module_obj("roof", params, module_id)
+    if not obj_path or not obj_path.exists():
+        raise Exception(f"Roof OBJ generation failed for module {module_id}")
+    zip_path = create_module_zip(module_id, "roof", params, obj_path)
+    if not zip_path:
+        raise Exception(f"ZIP creation failed for roof module {module_id}")
+    module_record = {
+        "module_id": module_id,
+        "module_type": "roof",
+        "module_name": f"Roof ({roof_type})",
+        "params": params,
+        "zip_file": zip_path.name,
+        "created_at": datetime.now().isoformat(),
+        "dimensions": {"width": params["length"], "height": params["height"]},
+    }
+    modules = load_modules_registry()
+    modules.append(module_record)
+    save_modules_registry(modules)
+    logger.info(f"✓ Roof module created: {module_id} (type={roof_type})")
+    return module_id
+
+
+@app.post("/api/generate-roof-module")
+async def generate_roof_module_endpoint(request: Request):
+    """
+    Create a roof module from text or explicit roof_type.
+    Body: {"text": "gable roof"} or {"roof_type": "pyramid"}
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+        roof_type = payload.get("roof_type", "").strip().lower()
+
+        if text and not roof_type:
+            parsed = parse_roof_text(text)
+            roof_type = parsed.get("roof_type", "gable")
+
+        if roof_type not in ("flat", "gable", "pyramid"):
+            roof_type = "gable"
+
+        module_id = create_roof_module(roof_type)
+        return JSONResponse({
+            "status": "success",
+            "module_id": module_id,
+            "module_type": "roof",
+            "params": {"roof_type": roof_type},
+            "zip_url": f"/api/modules/{module_id}/download",
+        })
+    except Exception as e:
+        logger.error(f"❌ generate_roof_module_endpoint: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @app.post("/api/generate-house")
 async def generate_house(request: Request):
     try:
@@ -1076,6 +1195,22 @@ async def generate_house(request: Request):
             return JSONResponse({"error": "Wall module not found in registry"}, status_code=400)
         if not window_params:
             return JSONResponse({"error": "Window module not found in registry"}, status_code=400)
+
+        # === COLOR SYNC: if house_color overrides the wall module color, regenerate wall ===
+        logger.info(f"DEBUG: payload keys = {list(payload.keys())}")
+        logger.info(f"DEBUG: house_color raw = {payload.get('house_color')!r}")
+        house_color = _normalise_hex(payload.get("house_color"))
+        logger.info(f"DEBUG: house_color normalised = {house_color!r}")
+        if house_color:
+            current_wall_color = _normalise_hex(wall_params.get("color"))
+            if house_color != current_wall_color:
+                logger.info(
+                    f"🎨 house_color={house_color} differs from wall color={current_wall_color}; "
+                    "regenerating wall module"
+                )
+                wall_module_id, wall_params = _recreate_wall_with_color(wall_params, house_color)
+            else:
+                logger.info(f"🎨 house_color={house_color} matches wall module color, no regeneration needed")
 
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")
