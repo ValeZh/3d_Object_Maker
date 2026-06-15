@@ -310,6 +310,8 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 tpl["depth"] = float(params["depth"])
             if params.get("height") is not None:
                 tpl["height"] = float(params["height"])
+            if params.get("has_roof") is not None:
+                tpl["has_roof"] = bool(params["has_roof"])
 
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
