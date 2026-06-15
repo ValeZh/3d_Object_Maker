@@ -17,6 +17,7 @@ class ModuleType(str, Enum):
     DOOR = "door"
     BALCONY = "balcony"
     ENTRANCE = "entrance"
+    ROOF = "roof"
 
 
 @dataclass
@@ -65,6 +66,13 @@ class ModuleTextParser:
         ModuleType.ENTRANCE: [
             r"подъезд|entrance",
             r"входн[ая]?|entry",
+        ],
+        ModuleType.ROOF: [
+            r"крыш[аи]|roof",
+            r"плоская\s+крыша|flat\s+roof",
+            r"двускатн|gable",
+            r"пирамид|pyramid",
+            r"кровл[яи]|кровля",
         ],
     }
 
@@ -150,6 +158,9 @@ class ModuleTextParser:
             "depth": 1.0,
             "style": "standard",
             "color": "#CCCCCC",
+        },
+        ModuleType.ROOF: {
+            "roof_type": "gable",
         },
     }
 
@@ -443,6 +454,16 @@ class ModuleTextParser:
             style = self._extract_string(text, "style")
             if style:
                 params["style"] = self._normalize_style(style)
+
+        elif module_type == ModuleType.ROOF:
+            t = text.lower()
+            if re.search(r"плоска|flat|горизонтал|slab", t):
+                params["roof_type"] = "flat"
+            elif re.search(r"пирамид|pyramid|четырёхскат|четырехскат|hip", t):
+                params["roof_type"] = "pyramid"
+            elif re.search(r"двускатн|gable|конёк|конек|triangle|треугольн|shed", t):
+                params["roof_type"] = "gable"
+            # default stays "gable" from DEFAULTS
 
         # Объединяем с defaults
         final_params = {**defaults, **params}

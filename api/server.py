@@ -27,7 +27,8 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent  # Поднимаемся в корень проекта
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ai_parser.parser import extract_module_parameters, parse_building_text
+from src.ai_parser.parser import extract_module_parameters, parse_building_text, parse_roof_text
+from src.generator.procedural.procedural_roof import export_roof
 from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser
 from src.generator.assembler import assemble_building
 from src.generator.procedural.procedural_batch_runner import run_all_generators
@@ -374,6 +375,24 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
             for key in ["wall", "window", "wall_window", "balcony", "entrance"]:
                 if key in config:
                     config[key]["enabled"] = False
+
+        elif module_type == "roof":
+            roof_type = params.get("roof_type", "gable")
+            length = float(params.get("length", 10.0))
+            width = float(params.get("width", 8.0))
+            height = float(params.get("height", 2.2))
+            obj_path = export_roof(
+                output_dir,
+                roof_type=roof_type,
+                length=length,
+                width=width,
+                height=height,
+            )
+            if obj_path and obj_path.exists():
+                logger.info(f"✓ Крыша сгенерирована: {obj_path}")
+                return obj_path
+            logger.warning("⚠️ export_roof не вернул файл")
+            return None
 
         else:
             raise ValueError(f"Unknown module type: {module_type}")
@@ -1051,6 +1070,64 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
     except Exception as e:
         logger.error(f"❌ Error creating wall_window: {e}", exc_info=True)
         raise Exception(f"Failed to create wall_window: {str(e)}")
+
+
+def create_roof_module(roof_type: str) -> str:
+    """Generate a 3×3m roof module, save to registry, return module_id."""
+    module_id = str(uuid.uuid4())[:8]
+    params = {"roof_type": roof_type, "length": 3.0, "width": 3.0, "height": 1.5}
+    obj_path = generate_module_obj("roof", params, module_id)
+    if not obj_path or not obj_path.exists():
+        raise Exception(f"Roof OBJ generation failed for module {module_id}")
+    zip_path = create_module_zip(module_id, "roof", params, obj_path)
+    if not zip_path:
+        raise Exception(f"ZIP creation failed for roof module {module_id}")
+    module_record = {
+        "module_id": module_id,
+        "module_type": "roof",
+        "module_name": f"Roof ({roof_type})",
+        "params": params,
+        "zip_file": zip_path.name,
+        "created_at": datetime.now().isoformat(),
+        "dimensions": {"width": params["length"], "height": params["height"]},
+    }
+    modules = load_modules_registry()
+    modules.append(module_record)
+    save_modules_registry(modules)
+    logger.info(f"✓ Roof module created: {module_id} (type={roof_type})")
+    return module_id
+
+
+@app.post("/api/generate-roof-module")
+async def generate_roof_module_endpoint(request: Request):
+    """
+    Create a roof module from text or explicit roof_type.
+    Body: {"text": "gable roof"} or {"roof_type": "pyramid"}
+    """
+    try:
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+        roof_type = payload.get("roof_type", "").strip().lower()
+
+        if text and not roof_type:
+            parsed = parse_roof_text(text)
+            roof_type = parsed.get("roof_type", "gable")
+
+        if roof_type not in ("flat", "gable", "pyramid"):
+            roof_type = "gable"
+
+        module_id = create_roof_module(roof_type)
+        return JSONResponse({
+            "status": "success",
+            "module_id": module_id,
+            "module_type": "roof",
+            "params": {"roof_type": roof_type},
+            "zip_url": f"/api/modules/{module_id}/download",
+        })
+    except Exception as e:
+        logger.error(f"❌ generate_roof_module_endpoint: {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 
 @app.post("/api/generate-house")
 async def generate_house(request: Request):

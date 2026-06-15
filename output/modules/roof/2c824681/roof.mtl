@@ -1,0 +1,8 @@
+newmtl roof
+Ka 1 1 1
+Kd 0.48 0.32 0.24
+Ks 0 0 0
+map_Kd roof_diffuse.png
+map_Bump -bm 0.700 roof_normal.png
+bump -bm 0.700 roof_normal.png
+map_Pr roof_roughness.png

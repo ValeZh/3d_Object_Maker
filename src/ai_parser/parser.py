@@ -351,6 +351,77 @@ User description: "{text}"
         return None
 
 
+def parse_roof_text(text: str) -> dict:
+    """
+    Extract roof_type from a natural-language description using DeepSeek.
+    Returns {"module_type": "roof", "roof_type": "gable"|"flat"|"pyramid"}.
+    Falls back to {"module_type": "roof", "roof_type": "gable"} on any error.
+    """
+    _FALLBACK = {"module_type": "roof", "roof_type": "gable"}
+
+    prompt = f"""You are an architect. Extract the roof type from the user description and return ONLY a JSON object.
+
+The JSON must have exactly these fields:
+{{
+  "module_type": "roof",
+  "roof_type": "<flat | gable | pyramid>"
+}}
+
+Rules:
+- flat    → horizontal slab (плоская, flat, horizontal)
+- gable   → two slopes meeting at a ridge (двускатная, gable, shed, triangle)
+- pyramid → four slopes meeting at a peak (пирамидальная, pyramid, hip, четырёхскатная)
+- Default when ambiguous: "gable"
+
+Return ONLY JSON.
+
+User description: "{text}"
+"""
+
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "You are an architect. Return ONLY valid JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 80,
+    }
+
+    try:
+        logger.info(f"DeepSeek: parsing roof type from '{text[:60]}'")
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=15)
+
+        if response.status_code == 402:
+            logger.warning("DeepSeek 402 — using fallback for roof")
+            return _FALLBACK
+        if response.status_code != 200:
+            logger.error(f"DeepSeek error {response.status_code}")
+            return _FALLBACK
+
+        content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if not match:
+            return _FALLBACK
+
+        parsed = json.loads(match.group(0))
+        roof_type = str(parsed.get("roof_type", "gable")).strip().lower()
+        if roof_type not in ("flat", "gable", "pyramid"):
+            roof_type = "gable"
+
+        result = {"module_type": "roof", "roof_type": roof_type}
+        logger.info(f"✓ Roof type parsed: {result}")
+        return result
+
+    except Exception as exc:
+        logger.error(f"parse_roof_text error: {exc}")
+        return _FALLBACK
+
+
 # ============== ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ==============
 
 if __name__ == "__main__":

@@ -1,0 +1,18 @@
+# wall: diffuse only (no map) unless wall_tex set — avoids atlas on wall without vt
+newmtl wall
+Ka 1 1 1
+Kd 0.69 0.66 0.62
+Ks 0 0 0
+map_Kd wall_diffuse.png
+map_Bump -bm 0.700 wall_normal.png
+bump -bm 0.700 wall_normal.png
+map_Pr wall_roughness.png
+
+newmtl window
+Ka 1 1 1
+Kd 1 1 1
+Ks 0 0 0
+map_Kd window_atlas.png
+map_Bump -bm 0.700 window_normal_atlas.png
+bump -bm 0.700 window_normal_atlas.png
+map_Pr window_roughness_atlas.png

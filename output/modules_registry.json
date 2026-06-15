@@ -1719,5 +1719,55 @@
       "width": 4.0,
       "height": 4.0
     }
+  },
+  {
+    "module_id": "1f27e65d",
+    "module_type": "roof",
+    "module_name": "roof_21",
+    "params": {
+      "roof_type": "flat",
+      "color": "#C74A4A"
+    },
+    "zip_file": "roof_1f27e65d.zip",
+    "created_at": "2026-06-15T18:52:15.967269",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "2c824681",
+    "module_type": "roof",
+    "module_name": "roof_21",
+    "params": {
+      "roof_type": "flat"
+    },
+    "zip_file": "roof_2c824681.zip",
+    "created_at": "2026-06-15T18:52:20.447237",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "6df2aa1a",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_6df2aa1a.zip",
+    "created_at": "2026-06-15T18:52:26.689119",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
   }
 ]

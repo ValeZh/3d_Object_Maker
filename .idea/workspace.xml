@@ -6,6 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="61f933e6-0b5b-4218-9a91-3ea83b4169fe" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/api/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/api/server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ai_parser/nlp_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/ai_parser/nlp_parser.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ai_parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/ai_parser/parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
