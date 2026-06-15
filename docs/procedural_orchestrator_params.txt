@@ -59,8 +59,9 @@ Optional nested object for PBR/MTL texture settings (read by the orchestrator, n
 - Additional ``balcony`` procedural fields:
   - use_procedural_maps: bool (enables preset selection for missing atlas texture slots)
   - wall_lower_color_preset, wall_upper_color_preset, frame_color_preset, glass_color_preset,
-    side_basket_color_preset, side_jamb_color_preset, side_separator_color_preset
-    (same accepted values as entrance/window color presets)
+    side_basket_color_preset, side_jamb_color_preset, side_separator_color_preset,
+    roof_color_preset
+    (same accepted values as entrance/window color presets; for roof also ``roof_shingles`` / ``shingles`` / ``roof``)
   - tiles_per_side / grout_width: ceramic tuning for slots using ``ceramic_tile``
 For ``wall``, ``entrance_textured`` and ``balcony`` the nested ``texture`` block now also supports procedural preset keys listed above.
 
@@ -89,10 +90,16 @@ Direct function arguments supported by orchestrator:
 - side_basket_tex: string path
 - side_jamb_tex: string path
 - side_separator_tex: string path
+- roof_tex: string path (8th atlas column; optional — procedural fallback if missing)
 
 Optional tint (same slot as the texture above):
 - wall_lower_tex_color, wall_upper_tex_color, frame_tex_color, glass_tex_color
 - side_basket_tex_color, side_jamb_tex_color, side_separator_tex_color
+- roof_tex_color
+
+Atlas layout (balcony_atlas.png): 8 tiles left-to-right —
+wall_lower | wall_upper | frame | glass | side_basket | side_jamb | side_separator | roof.
+``roof_tex`` / ``texture.roof_color_preset`` / ``roof_tex_color`` apply to the roof tile only.
 
 Additional balcony kwargs (from USER_BALCONY, also accepted):
 - width_back: float
@@ -133,6 +140,22 @@ Additional balcony kwargs (from USER_BALCONY, also accepted):
 - side_parapet_separator_depth: float
 - inner_wall_windows: list[dict]
 - inner_wall_doors: list[dict]
+
+Roof (optional flat slab on top of the balcony volume):
+- has_roof: bool (default false). If true, a flat roof slab is added; walls/windows end at ``height - roof_thickness``.
+- roof_thickness: float (default 0.14 m). Vertical thickness of the roof slab; top face stays at ``height``.
+- roof_overhang: float (default 0.06 m). Horizontal overhang of the roof top contour outward from the wall ring (sides only on the expanded top edge).
+
+Roof geometry notes:
+- With ``has_roof: true``, the upper wall ring and front/side glazing are shortened by ``roof_thickness`` so the roof sits inside the declared ``height`` (not floating above it).
+- The roof mesh is a closed slab: one top quad + four side quads; no separate bottom face (interior ceiling is the top of the shortened walls).
+- ``inner_wall_windows`` / ``inner_wall_doors`` with ``z_top`` above ``height - roof_thickness`` may intersect the roof zone — clip openings in JSON if needed.
+
+CLI equivalents (``python -m src.generator.procedural.procedural_balcony export``):
+- ``--has-roof`` / ``--no-has-roof``, ``--roof-thickness``, ``--roof-overhang``, ``--roof-tex``, ``--roof-tex-color R,G,B``
+
+API / AI parser (balcony module): also accepts ``has_roof``, ``roof_thickness``, ``roof_overhang``, ``roof_color`` (hex).
+``style: "enclosed"`` / ``"лоджия"`` implies ``has_roof: true`` when ``has_roof`` is omitted.
 
 
 4) Section: entrance
@@ -333,7 +356,9 @@ Batch / orchestrator behavior (no extra JSON keys required for “default proced
   from ``procedural_texture_maps`` presets, without external files.
 - ``balcony``: texture paths are all optional; missing slots use procedural fallbacks inside ``export_balcony`` (per module logic).
   ``texture.generate_normal`` / ``generate_roughness`` map to companion maps for the atlas where implemented.
-  With ``texture.use_procedural_maps=true`` you can select per-slot procedural color presets for missing textures.
+  With ``texture.use_procedural_maps=true`` you can select per-slot procedural color presets for missing textures
+  (including ``roof_color_preset`` for the 8th atlas tile when ``roof_tex`` is omitted).
+  Set ``has_roof: true`` in the balcony section to generate the roof slab; ``roof_tex`` / ``roof_tex_color`` / presets tint only the roof surfaces.
 
 CLI pre-generation (optional):
 - ``python -m src.generator.procedural.texturing.window_texture_assets [--force]`` — ensure default window PNGs under
@@ -362,3 +387,25 @@ Ready-made example with texture tint keys (paths under data/textures/):
   Run ``python -m src.generator.procedural.texturing.window_texture_assets`` once from repo root if PNGs are missing.
 Ready-made example with procedural presets in JSON:
 - scripts/balcony_examples/batch_procedural_texture_maps_demo.json
+Ready-made balcony examples with roof:
+- scripts/balcony_examples/batch_balcony_with_roof.json — ``has_roof: true``, ``roof_color_preset``, ``roof_tex_color``
+- scripts/balcony_examples/beautiful_balcony_loggia.json — loggia with roof and full texture block
+
+Minimal balcony + roof JSON fragment:
+{
+  "balcony": {
+    "enabled": true,
+    "out_dir": "data/out_batch/balcony_roof",
+    "no_view": true,
+    "has_roof": true,
+    "roof_thickness": 0.16,
+    "roof_overhang": 0.08,
+    "roof_tex_color": [128, 88, 62],
+    "texture": {
+      "use_procedural_maps": true,
+      "roof_color_preset": "roof_shingles",
+      "generate_normal": true,
+      "generate_roughness": true
+    }
+  }
+}

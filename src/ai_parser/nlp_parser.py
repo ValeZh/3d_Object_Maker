@@ -17,6 +17,7 @@ class ModuleType(str, Enum):
     DOOR = "door"
     BALCONY = "balcony"
     ENTRANCE = "entrance"
+    ROOF = "roof"
 
 
 @dataclass
@@ -63,8 +64,14 @@ class ModuleTextParser:
             r"лоджи[я]|loggia",
         ],
         ModuleType.ENTRANCE: [
-            r"подъезд|entrance",
-            r"входн[ая]?|entry",
+            r"подъезд|entry",
+            r"вход\s*в\s*здание",
+        ],
+        ModuleType.ROOF: [
+            r"крыш[аи]|roof",
+            r"кровл[яи]|кровель",
+            r"двускатн",
+            r"пирамид",
         ],
     }
 
@@ -149,6 +156,13 @@ class ModuleTextParser:
             "style": "standard",
             "color": "#CCCCCC",
         },
+        ModuleType.ROOF: {
+            "length": 10.0,
+            "width": 8.0,
+            "height": 2.2,
+            "roof_type": "gable",
+            "color": "#7A523E",
+        },
     }
 
     def __init__(self):
@@ -158,7 +172,7 @@ class ModuleTextParser:
         self.PARAM_PATTERNS = {
             "height": [
                 r"(?:height|высот[аы])\s+(\d+(?:[.,]\d+)?)\s*м?(?:етр)?",  # height 1.75, высота 1.75м
-                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|высот[аы])",
+                r"(\d+(?:[.,]\d+)?)\s*м?(?:etres?|метр(?:а|ов)?)?\s*(?:high|height|высот[аы])",
                 # 1.75м height, 1.75 метра высоты
             ],
             "width": [
@@ -214,6 +228,8 @@ class ModuleTextParser:
             "width": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:width|ширина)",
 
             "depth": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:deep|depth|глубина)",
+
+            "length": r"(\d+(?:\.\d+)?)\s*(?:(?:м|m|meters?)\s+)?(?:length|длина|длин[аы])",
         }
 
         pattern = patterns.get(param_name)
@@ -382,14 +398,17 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.BALCONY:
-            # Для балкона: depth, width, style, color
+            # Для балкона: depth, width, height, style, color
             depth = self._extract_value(text, "depth")
             width = self._extract_value(text, "width")
+            height = self._extract_value(text, "height")
 
             if depth is not None:
                 params["depth"] = depth
             if width is not None:
                 params["width"] = width
+            if height is not None:
+                params["height"] = height
 
             style = self._extract_string(text, "style")
             if style:
@@ -417,6 +436,35 @@ class ModuleTextParser:
             style = self._extract_string(text, "style")
             if style:
                 params["style"] = self._normalize_style(style)
+
+        elif module_type == ModuleType.ROOF:
+            length = self._extract_value(text, "length") or self._extract_value(text, "width")
+            width = self._extract_value(text, "width")
+            height = self._extract_value(text, "height")
+            depth = self._extract_value(text, "depth")
+
+            if length is not None:
+                params["length"] = length
+            if width is not None:
+                params["width"] = width
+            if depth is not None and width is None:
+                params["width"] = depth
+            if height is not None:
+                params["height"] = height
+
+            tl = text.lower()
+            if re.search(r"плоск|flat|плит", tl):
+                params["roof_type"] = "flat"
+            elif re.search(r"пирамид|pyramid", tl):
+                params["roof_type"] = "pyramid"
+            elif re.search(r"двускат|gable|кон[её]к", tl):
+                params["roof_type"] = "gable"
+
+            color_raw = self._extract_string(text, "color")
+            if color_raw:
+                hx = self._get_color_hex(color_raw)
+                if hx:
+                    params["color"] = hx
 
         # Объединяем с defaults
         final_params = {**defaults, **params}

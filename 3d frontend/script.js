@@ -604,7 +604,6 @@ function updateHouseRangeLabels() {
   if (sectionsValue) sectionsValue.textContent = sectionsInput.value;
   if (widthValue) widthValue.textContent = widthInput.value;
   if (depthValue) depthValue.textContent = depthInput.value;
-  if (balconyRateValue) balconyRateValue.textContent = Number(balconyRate.value).toFixed(2);
   if (windowColsValue) windowColsValue.textContent = windowCols.value;
   if (facadeTextureRepeatValue) facadeTextureRepeatValue.textContent = facadeTextureRepeat.value;
 
@@ -719,9 +718,6 @@ function parseHouseTextLocally(text) {
   const color = parseColorFromText(t);
   if (color) result.wall_color = color;
 
-  const balconyRateMatch = t.match(/balcony\s*(density|rate)?\s*(\d+(\.\d+)?)/);
-  if (balconyRateMatch) result.balcony_rate = clamp(parseFloat(balconyRateMatch[2]), 0, 1);
-
   return result;
 }
 
@@ -751,7 +747,6 @@ function applyLocalHouseParse(parsed) {
   if (parsed.depth != null) depthInput.value = clamp(parsed.depth, 1, DEFAULTS.house.maxDepth);
   if (parsed.window_cols != null) windowCols.value = clamp(parsed.window_cols, 2, parseInt(widthInput.value, 10));
   if (parsed.has_balconies != null) hasBalconies.checked = Boolean(parsed.has_balconies);
-  if (parsed.balcony_rate != null) balconyRate.value = clamp(parsed.balcony_rate, 0, 1);
 
   updateHouseRangeLabels();
   updateHouseJsonPreview();
@@ -889,7 +884,6 @@ function getHouseFormData() {
         texture_scale: parseFloat(facadeTextureRepeat?.value || DEFAULTS.facade.textureScale)
       },
       has_balconies: hasBalconies.checked,
-      balcony_rate: parseFloat(balconyRate.value),
       window_cols: parseInt(windowCols.value, 10)
     },
     modules: {
@@ -926,7 +920,6 @@ function applyHouseParams(data) {
   }
 
   if (house.has_balconies != null) hasBalconies.checked = Boolean(house.has_balconies);
-  if (house.balcony_rate != null) balconyRate.value = house.balcony_rate;
   if (house.window_cols != null) windowCols.value = house.window_cols;
 
   if (data.modules) {
@@ -947,7 +940,6 @@ function clearHouseValidation() {
     [sectionsInput, "sectionsError"],
     [widthInput, "widthError"],
     [depthInput, "depthError"],
-    [balconyRate, "balconyRateError"],
     [windowCols, "windowColsError"],
     [wallModule, "wallModuleError"],
     [windowModule, "windowModuleError"],
@@ -966,7 +958,6 @@ function validateHouseForm(showErrors = true) {
   const sections = parseInt(sectionsInput.value, 10);
   const width = parseInt(widthInput.value, 10);
   const depth = parseInt(depthInput.value, 10);
-  const balconyRateValueNum = parseFloat(balconyRate.value);
   const windowColsNum = parseInt(windowCols.value, 10);
 
   const maxReasonableSections = Math.max(1, Math.floor(width / 2));
@@ -1009,11 +1000,6 @@ function validateHouseForm(showErrors = true) {
   if (hasBalconies.checked && !balconyModule.value) {
     errors.push("Balcony module is required when balconies are enabled.");
     if (showErrors) setFieldError(balconyModule, "Select a balcony module or disable balconies.", "balconyModuleError");
-  }
-
-  if (balconyRateValueNum < 0 || balconyRateValueNum > 1) {
-    errors.push("Balcony rate must be between 0 and 1.");
-    if (showErrors) setFieldError(balconyRate, "Balcony rate must be between 0 and 1.", "balconyRateError");
   }
 
   if (showErrors && errors.length) {
@@ -2175,7 +2161,6 @@ function randomizeHouse() {
   );
 
   hasBalconies.checked = Math.random() > 0.2;
-  balconyRate.value = clamp(randFloat(DEFAULTS.randomize.balconyRate[0], DEFAULTS.randomize.balconyRate[1], 0.05), 0, 1);
   facadeTextureRepeat.value = clamp(randInt(DEFAULTS.randomize.textureScale[0], DEFAULTS.randomize.textureScale[1]), 1, 8);
 
   if (facadeTextureSelect) {
@@ -2194,7 +2179,6 @@ function randomizeFacade() {
   const textureOptions = [...(facadeTextureSelect?.options || [])].map(opt => opt.value).filter(Boolean);
 
   hasBalconies.checked = Math.random() > 0.15;
-  balconyRate.value = clamp(randFloat(DEFAULTS.randomize.balconyRate[0], DEFAULTS.randomize.balconyRate[1], 0.05), 0, 1);
   windowCols.value = clamp(
     randInt(DEFAULTS.randomize.windowCols[0], DEFAULTS.randomize.windowCols[1]),
     DEFAULTS.house.minWindowCols,
@@ -3085,7 +3069,6 @@ generateHouseBtn?.addEventListener("click", async () => {
     window_columns: formData.house.window_cols,  // ← было formData.window_columns
     texture_scale: formData.house.facade?.texture_scale || 1,
     has_balconies: formData.house.has_balconies,
-    balcony_density: formData.house.balcony_rate,  // ← переименовано
     wall_module_id: formData.modules.wall,
     window_module_id: formData.modules.window,
     door_module_id: formData.modules.door,
