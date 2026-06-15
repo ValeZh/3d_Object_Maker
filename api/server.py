@@ -371,6 +371,31 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 if key in config:
                     config[key]["enabled"] = False
 
+        elif module_type == "roof":
+            roof_type = str(params.get("roof_type") or params.get("type") or "gable").strip().lower()
+            tex_block = {
+                "use_procedural_maps": True,
+                "roof_color_preset": "roof_shingles",
+                "generate_normal": True,
+                "generate_roughness": True,
+            }
+            hex_col = params.get("color") or params.get("roof_color")
+            if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
+                tex_block["roof_tex_color"] = hex_to_rgb(hex_col.strip())
+            config["roof"] = {
+                "enabled": True,
+                "out_dir": str(output_dir),
+                "length": float(params.get("length", params.get("width", 10.0))),
+                "width": float(params.get("width", params.get("depth", 8.0))),
+                "height": float(params.get("height", 2.2)),
+                "roof_type": roof_type,
+                "texture": tex_block,
+                "no_view": True,
+            }
+            for key in ["wall", "window", "wall_window", "balcony", "entrance", "entrance_textured"]:
+                if key in config:
+                    config[key]["enabled"] = False
+
         else:
             raise ValueError(f"Unknown module type: {module_type}")
 

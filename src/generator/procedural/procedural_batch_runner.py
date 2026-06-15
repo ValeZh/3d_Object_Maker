@@ -6,6 +6,7 @@ from typing import Any, Dict
 from src.generator.procedural.open3d_preview import preview_window_obj_open3d
 from src.generator.procedural.procedural_balcony import export_balcony
 from src.generator.procedural.procedural_entrance import export_entrance, export_entrance_textured
+from src.generator.procedural.procedural_roof import export_roof
 from src.generator.procedural.procedural_wall import export_wall
 from src.generator.procedural.procedural_wall_window import export_wall_with_window
 from src.generator.procedural.procedural_window import (
@@ -165,6 +166,19 @@ def _merge_texture_block(kwargs: dict[str, Any], *, section: str) -> None:
                 kwargs[tint_key] = tex[tint_key]
         if "roof_tex" in tex:
             kwargs["roof_tex"] = tex["roof_tex"]
+    elif section == "roof":
+        if "use_procedural_maps" in tex:
+            kwargs["use_procedural_maps"] = _to_bool(tex["use_procedural_maps"])
+        mapping = {
+            "roof_color_preset": "roof_color_preset",
+        }
+        for src_key, dst_key in mapping.items():
+            if src_key in tex:
+                kwargs[dst_key] = tex[src_key]
+        if "roof_tex_color" in tex:
+            kwargs["roof_texture_color"] = tex["roof_tex_color"]
+        if "roof_tex" in tex:
+            kwargs["roof_texture"] = tex["roof_tex"]
 
 
 def _prepare_call(
@@ -183,7 +197,7 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
     """
     Оркестратор: только вызовы экспорт-функций процедурных генераторов.
     Ожидает словарь конфигурации с ключами:
-      balcony, entrance, entrance_textured, window, wall, wall_window
+      balcony, entrance, entrance_textured, window, wall, wall_window, roof
 
     Секции window и wall_window: опционально no_view (по умолчанию true — без превью).
     При no_view: false — превью через ``open3d_preview``; опционально другой бэкенд: переменная
@@ -250,6 +264,17 @@ def run_all_generators(config: Dict[str, Any], *, default_out_root: Path) -> dic
         no_view = _no_view_from_json(kwargs.pop("no_view", True))
         obj_path = export_wall(out_dir=out_dir, **kwargs)
         out["wall"] = obj_path
+        if not no_view:
+            preview_window_obj_open3d(obj_path)
+
+    roof_cfg = config.get("roof")
+    if isinstance(roof_cfg, dict) and roof_cfg.get("enabled", True):
+        out_dir, kwargs = _prepare_call(roof_cfg, default_out_root=default_out_root, default_name="roof")
+        kwargs.pop("enabled", None)
+        _merge_texture_block(kwargs, section="roof")
+        no_view = _no_view_from_json(kwargs.pop("no_view", True))
+        obj_path = export_roof(out_dir=out_dir, **kwargs)
+        out["roof"] = obj_path
         if not no_view:
             preview_window_obj_open3d(obj_path)
 

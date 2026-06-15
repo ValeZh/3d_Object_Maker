@@ -120,6 +120,7 @@ docs/*
 # Local thesis / report helpers (root)
 /_tmp_vanda_extract.txt
 /chekhov_report.txt
+/chekhov_report_extract.txt
 /generate_economic_part.py
 /generate_report.py
 /insert_mermaid_to_docx.py
@@ -129,6 +130,20 @@ docs/*
 /practice_report2.txt
 /render_mermaid_diagrams.py
 /report_diagrams.py
+
+# Root scratch from docx/odt extraction & stats (local only)
+/*_scan.txt
+/*_extract.txt
+/*_count.txt
+/odt_text.txt
+/section1_equations.txt
+/stats_out.txt
+/verify_edits.txt
+/visual_count_result.txt
+/json_batch_parametry_ru.txt
+
+# Local thesis / document formats
+*.odt
 
 # Local thesis / docx helper artifacts
 /scripts/_diary_extract.txt
@@ -148,3 +163,18 @@ docs/*
 /scripts/render_mermaid_kroki.py
 /scripts/run_thesis_test_scenarios.ps1
 /scripts/txt_to_latex_thesis.py
+/scripts/md_to_docx.py
+/scripts/add_citations_*.py
+/scripts/count_figures_tables_sadoviy.py
+/scripts/count_sadoviy_stats.py
+/scripts/count_visuals_odt.py
+/scripts/edit_sadoviy_odt.py
+/scripts/extract_chekhov_docx.py
+/scripts/patch_odt_fixes.py
+/scripts/scan_formulas_chekhov.py
+/scripts/scan_omml_section1.py
+/scripts/verify_odt.py
+
+# Editor / runner temp
+**/tempCodeRunnerFile.*
+src/Untitled.ipynb
