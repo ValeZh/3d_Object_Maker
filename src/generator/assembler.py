@@ -184,7 +184,7 @@ class ModuleLoader:
             if not parts:
                 return None
             if len(parts) > 1:
-                fixed = [self._fix_orientation(p) for p in parts]
+                fixed = [self._orient_loaded_mesh(p, module_type) for p in parts]
                 self._parts_cache[module_type] = fixed
                 ww, wd, wh = fixed[0].bounds[1] - fixed[0].bounds[0]
                 logger.info(
@@ -199,7 +199,7 @@ class ModuleLoader:
             logger.warning(f"Unexpected type for {module_type}: {type(loaded)}")
             return None
 
-        mesh = self._fix_orientation(loaded)
+        mesh = self._orient_loaded_mesh(loaded, module_type)
         ww, wd, wh = mesh.bounds[1] - mesh.bounds[0]
         logger.info(
             f"Loaded '{module_type}': {obj_files[0].parent.name}/{obj_files[0].name} "
@@ -207,6 +207,14 @@ class ModuleLoader:
         )
         return mesh
 
+    def _orient_loaded_mesh(self, mesh: trimesh.Trimesh, module_type: str) -> trimesh.Trimesh:
+        """Apply auto Z-up fix unless the assembler handles orientation separately."""
+        # Door OBJ is Y-up (height=Y, depth=Z). _build_from_plan applies 90°X (+ Z-flip).
+        # Running _fix_orientation first on thin slabs (depth << height) would Z-up them
+        # here, then the assembler rotates again — leaving the door flat on the ground.
+        if module_type == "door":
+            return mesh
+        return self._fix_orientation(mesh)
 
     @staticmethod
     def _fix_orientation(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -323,6 +331,7 @@ class GridFacadeAssembler:
         self.balcony_rate: float = max(0.0, min(1.0,
                                        float(params.get("balcony_rate", 0.25))))
 
+        self._export_dir: Optional[Path] = None
 
         wall = self.loader.load("wall")
         if wall is None:
@@ -406,6 +415,85 @@ class GridFacadeAssembler:
             logger.debug(f"Door reserved: cols={cols_r}, floor=0")
 
         return placements
+
+    def _build_house_flat_roof(
+        self,
+        roof_w: float,
+        roof_d: float,
+        roof_thickness: float,
+        roof_params: Dict[str, Any],
+    ) -> trimesh.Trimesh:
+        """Flat roof slab with UV + visible material for house export."""
+        from PIL import Image
+        from trimesh.visual.material import SimpleMaterial
+        from trimesh.visual.texture import TextureVisuals
+
+        from src.generator.procedural.procedural_roof import (
+            _resolve_roof_textures,
+            build_flat_roof_mesh,
+        )
+        from src.generator.procedural.unfolding import faceted_triplanar_uv
+        from src.generator.procedural.texturing.color_tint import parse_texture_color_tint
+
+        mesh = build_flat_roof_mesh(roof_w, roof_d, roof_thickness)
+        mesh_uv, uv = faceted_triplanar_uv(mesh)
+
+        tex_img: Optional[Image.Image] = None
+        if self._export_dir is not None:
+            tex_dir = self._export_dir / "textures"
+            tex_dir.mkdir(parents=True, exist_ok=True)
+
+            roof_id = self.params.get("roof_module_id")
+            if roof_id:
+                mod_dir = self.loader.modules_dir / "roof" / str(roof_id)
+                for candidate in (
+                    mod_dir / "roof_diffuse.png",
+                    mod_dir / "_proc_roof_diffuse.png",
+                ):
+                    if candidate.exists():
+                        tex_img = Image.open(candidate).convert("RGB")
+                        break
+
+            if tex_img is None:
+                tint = None
+                raw_color = roof_params.get("color") or roof_params.get("roof_color")
+                if isinstance(raw_color, str) and raw_color.strip().startswith("#"):
+                    tint = parse_texture_color_tint(raw_color.strip())
+                _resolve_roof_textures(
+                    tex_dir,
+                    roof_texture=None,
+                    roof_normal_texture=None,
+                    roof_roughness_texture=None,
+                    roof_texture_color=tint,
+                    use_procedural_maps=True,
+                    roof_color_preset=str(
+                        roof_params.get("roof_color_preset", "roof_shingles")
+                    ),
+                    bump_strength=0.7,
+                )
+                for candidate in (
+                    tex_dir / "roof_diffuse.png",
+                    tex_dir / "_proc_roof_diffuse.png",
+                ):
+                    if candidate.exists():
+                        tex_img = Image.open(candidate).convert("RGB")
+                        break
+
+        if tex_img is not None:
+            mesh_uv.visual = TextureVisuals(
+                uv=uv,
+                material=SimpleMaterial(name="roof", image=tex_img),
+            )
+        else:
+            mesh_uv.visual = trimesh.visual.ColorVisuals(
+                mesh=mesh_uv,
+                face_colors=np.tile(
+                    np.array([122, 82, 61, 255], dtype=np.uint8),
+                    (len(mesh_uv.faces), 1),
+                ),
+            )
+
+        return mesh_uv
 
     def _plan_step3_balconies(self,
                               grid: FacadeGrid,
@@ -776,17 +864,18 @@ class GridFacadeAssembler:
         flat_kinds = ("flat", "plate", "slab", "плоская", "плоская крыша")
 
         if roof_type in flat_kinds:
-            from src.generator.procedural.procedural_roof import build_flat_roof_mesh
-
-            roof_thickness = float(roof_params.get("height", 0.28))
-            overhang = float(roof_params.get("overhang", 0.0))
+            roof_thickness = max(0.35, float(roof_params.get("height", 0.45)))
+            overhang = float(roof_params.get("overhang", 0.4))
             roof_w = self.building_width + 2 * overhang
             roof_d = self.building_depth + 2 * overhang
-            roof = build_flat_roof_mesh(roof_w, roof_d, roof_thickness)
+            roof = self._build_house_flat_roof(
+                roof_w, roof_d, roof_thickness, roof_params
+            )
+            # Lift slightly above the structural base top to avoid z-fighting.
             _position(
                 roof,
                 self.building_width / 2,
-                self.building_height,
+                self.building_height + 0.02,
                 self.building_depth / 2,
             )
             all_meshes.append(roof)
@@ -852,7 +941,7 @@ class GridFacadeAssembler:
 
         # Copy ALL PNG textures from all module types
         copied = set()
-        for module_type in ["wall", "window", "door", "balcony", "wall_window"]:
+        for module_type in ["wall", "window", "door", "balcony", "wall_window", "roof"]:
             type_dir = self.loader.modules_dir / module_type
             if type_dir.exists():
                 for png in type_dir.rglob("*.png"):
@@ -860,13 +949,20 @@ class GridFacadeAssembler:
                         shutil.copy2(png, texture_dir / png.name)
                         copied.add(png.name)
 
+        # Flat-roof procedural maps generated during assembly
+        for name in ("roof_diffuse.png", "roof_normal.png", "roof_roughness.png",
+                     "_proc_roof_diffuse.png", "_proc_roof_normal.png", "_proc_roof_roughness.png"):
+            src = texture_dir / name
+            if src.exists():
+                copied.add(name)
+
         logger.info(f"Copied {len(copied)} textures to {texture_dir}")
 
         # Create combined MTL with correct paths
         mtl_path = output_dir / "house.mtl"
         mtl_content = ""
 
-        for module_type in ["wall", "window", "door", "balcony", "wall_window"]:
+        for module_type in ["wall", "window", "door", "balcony", "wall_window", "roof"]:
             type_dir = self.loader.modules_dir / module_type
             if type_dir.exists():
                 for mtl_file in type_dir.rglob("*.mtl"):
@@ -876,11 +972,24 @@ class GridFacadeAssembler:
                     content = content.replace("map_Pr ", "map_Pr textures/")
                     mtl_content += content + "\n"
 
+        roof_diffuse = texture_dir / "roof_diffuse.png"
+        if not roof_diffuse.exists():
+            roof_diffuse = texture_dir / "_proc_roof_diffuse.png"
+        if roof_diffuse.exists():
+            mtl_content += (
+                "newmtl roof\n"
+                "Ka 1 1 1\n"
+                "Kd 0.48 0.32 0.24\n"
+                "Ks 0 0 0\n"
+                f"map_Kd textures/{roof_diffuse.name}\n\n"
+            )
+
         if mtl_content:
             mtl_path.write_text(mtl_content)
             logger.info(f"Created MTL: {mtl_path}")
 
     def export_to_obj(self, output_path: Path) -> bool:
+        self._export_dir = output_path.parent
         scene = self.assemble_building()
         if scene is None:
             logger.error("Assembly failed — nothing to export.")
@@ -888,11 +997,50 @@ class GridFacadeAssembler:
         try:
             self._prepare_for_export(output_path)
             scene.export(str(output_path))
+            self._ensure_roof_obj_material(output_path)
+            import shutil
+            roof_png = output_path.parent / "roof.png"
+            texture_dir = output_path.parent / "textures"
+            if roof_png.exists() and texture_dir.exists():
+                shutil.copy2(roof_png, texture_dir / "roof_diffuse.png")
             logger.info(f"Exported: {output_path}")
             return True
         except Exception as exc:
             logger.error(f"Export failed: {exc}", exc_info=True)
             return False
+
+    def _ensure_roof_obj_material(self, output_path: Path) -> None:
+        """Fallback: tag the last geometry block with roof material if export omitted it."""
+        obj_path = Path(output_path)
+        mtl_path = obj_path.parent / "material.mtl"
+        if not obj_path.exists():
+            return
+
+        text = obj_path.read_text(encoding="utf-8")
+        if "usemtl roof" in text:
+            return
+
+        lines = text.splitlines()
+        last_geo = max((i for i, line in enumerate(lines) if line.startswith("o ")), default=-1)
+        if last_geo < 0:
+            return
+
+        patched: List[str] = []
+        for idx, line in enumerate(lines):
+            patched.append(line)
+            if idx == last_geo:
+                patched.append("usemtl roof")
+        obj_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
+
+        if mtl_path.exists() and "newmtl roof" not in mtl_path.read_text(encoding="utf-8"):
+            roof_png = obj_path.parent / "roof.png"
+            map_line = f"map_Kd {roof_png.name}\n" if roof_png.exists() else ""
+            mtl_path.write_text(
+                mtl_path.read_text(encoding="utf-8")
+                + "\nnewmtl roof\nKa 1 1 1\nKd 0.48 0.32 0.24\nKs 0 0 0\n"
+                + map_line,
+                encoding="utf-8",
+            )
 
 
 # ========================= PUBLIC API =========================

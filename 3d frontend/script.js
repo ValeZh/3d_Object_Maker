@@ -6,7 +6,7 @@ const DEFAULTS = {
     wall: { width: 1, height: 1.2, depth: 0.2 },
     window: { width: 0.45, height: 0.45, depth: 0.05 },
     door: { width: 0.55, height: 0.9, depth: 0.05 },
-    roof: { width: 1, height: 0.28, depth: 0.28 },
+    roof: { width: 3, height: 0.45, depth: 3 },
     balcony: { width: 0.72, height: 0.18, depth: 0.5 }
   },
   normalize: {
@@ -38,8 +38,8 @@ const DEFAULTS = {
     entranceFrame: 0x4c4c4c
   },
   roof: {
-    flatOverhang: 0.3,
-    minThickness: 0.12
+    flatOverhang: 0.4,
+    minThickness: 0.35
   },
   facade: {
     textureScale: 3,
@@ -107,7 +107,7 @@ const DEFAULTS = {
     },
     roof: {
       width: 3.0,
-      height: 0.28,
+      height: 0.45,
       depth: 3.0,
       color: "#7A523E",
       phrase: "flat rectangular roof slab"
@@ -1797,9 +1797,24 @@ function renderModulePreview(data) {
   });
 
   const roofMaterial = new THREE.MeshStandardMaterial({
-    color: DEFAULTS.colors.roof,
+    color: colorValue instanceof THREE.Color ? colorValue : new THREE.Color(colorValue || DEFAULTS.colors.roof),
     roughness: 0.85
   });
+
+  if (data.type === "roof" || p.is_roof_piece) {
+    const roofW = Math.max(0.5, width);
+    const roofD = Math.max(0.5, depth);
+    const roofThick = Math.max(DEFAULTS.roof.minThickness, height);
+    const slab = createBox(roofW, roofThick, roofD, roofMaterial);
+    slab.castShadow = true;
+    slab.receiveShadow = true;
+    slab.position.y = roofThick / 2;
+    group.add(slab);
+    currentMesh = group;
+    scene.add(group);
+    frameObject(currentMesh);
+    return;
+  }
 
   const body = createBox(width, height, depth, bodyMaterial);
   body.castShadow = true;
@@ -1823,12 +1838,6 @@ function renderModulePreview(data) {
     const balcony = createBox(width * 0.7, 0.12, Math.max(0.22, depth * 1.5), balconyMaterial);
     balcony.position.set(0, height * 0.35, depth / 2 + Math.max(0.18, depth * 0.9));
     group.add(balcony);
-  }
-
-  if (p.is_roof_piece) {
-    const roof = createBox(width + 0.15, Math.max(0.08, height * 0.4), depth + 0.15, roofMaterial);
-    roof.position.set(0, height + Math.max(0.04, height * 0.2), 0);
-    group.add(roof);
   }
 
   currentMesh = group;
@@ -2917,6 +2926,10 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
     mtlUrls.push(`${objDirRaw}/entrance.mtl`);
   }
 
+  if (objUrl.includes("/houses/")) {
+    mtlUrls.unshift(`${objDirRaw}/material.mtl`, `${objDirRaw}/house.mtl`);
+  }
+
   mtlUrls.push(`${objDirRaw}/${moduleType}.mtl`, `${objDirRaw}/material.mtl`);
 
   const seen = new Set();
@@ -3001,6 +3014,11 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
     if (fallbackMat) child.material = fallbackMat;
   });
   if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
+
+  // Roof OBJ is exported Z-up (slab in XY); rotate to Y-up for horizontal preview.
+  if (moduleType === "roof") {
+    obj.rotation.x = Math.PI / 2;
+  }
 
  scene.add(obj);
  currentMesh = obj;

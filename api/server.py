@@ -223,7 +223,8 @@ _BEAUTY_MODULE_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "roof": {
         "length": 3.0,
         "width": 3.0,
-        "height": 0.28,
+        "height": 0.45,
+        "overhang": 0.4,
         "roof_type": "flat",
         "color": "#7A523E",
         "_roof_preset": "roof_shingles",
@@ -621,7 +622,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
 
         elif module_type == "roof":
             roof_type = str(params.get("roof_type") or params.get("type") or "flat").strip().lower()
-            default_height = 0.28 if roof_type == "flat" else 2.2
+            default_height = 0.45 if roof_type == "flat" else 2.2
             tex_block = {
                 "use_procedural_maps": True,
                 "roof_color_preset": "roof_shingles",
@@ -636,7 +637,8 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "out_dir": str(output_dir),
                 "length": float(params.get("length", params.get("width", 3.0))),
                 "width": float(params.get("width", params.get("depth", 3.0))),
-                "height": float(params.get("height", default_height)),
+                "height": max(0.35, float(params.get("height", default_height))),
+                "overhang": float(params.get("overhang", 0.4)),
                 "roof_type": roof_type,
                 "texture": tex_block,
                 "no_view": True,
@@ -1335,7 +1337,7 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
 def create_roof_module(roof_type: str) -> str:
     """Generate a 3×3m roof module, save to registry, return module_id."""
     module_id = str(uuid.uuid4())[:8]
-    height = 0.28 if roof_type == "flat" else 1.5
+    height = 0.45 if roof_type == "flat" else 1.5
     params = {"roof_type": roof_type, "length": 3.0, "width": 3.0, "height": height}
     obj_path = generate_module_obj("roof", params, module_id)
     if not obj_path or not obj_path.exists():
@@ -1408,7 +1410,8 @@ async def generate_house(request: Request):
         window_params = None
         roof_params = {
             "roof_type": str(payload.get("roof_type", "flat")).strip().lower() or "flat",
-            "height": 0.28,
+            "height": 0.45,
+            "overhang": 0.4,
         }
         modules_registry = load_modules_registry()
 
