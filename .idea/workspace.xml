@@ -5,10 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="61f933e6-0b5b-4218-9a91-3ea83b4169fe" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/3d frontend/script.js" beforeDir="false" afterPath="$PROJECT_DIR$/3d frontend/script.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/api/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/api/server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ai_parser/nlp_parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/ai_parser/nlp_parser.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/generator/assembler.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/generator/assembler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/generator/procedural/procedural_balcony.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/generator/procedural/procedural_balcony.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/output/houses_registry.json" beforeDir="false" afterPath="$PROJECT_DIR$/output/houses_registry.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/output/modules_registry.json" beforeDir="false" afterPath="$PROJECT_DIR$/output/modules_registry.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ai_parser/parser.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/ai_parser/parser.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

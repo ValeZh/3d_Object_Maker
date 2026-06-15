@@ -908,6 +908,42 @@ async def analyze_building_text(request: Request):
 
 
 # ======================= 3️⃣ HOUSE BUILDER ENDPOINTS =======================
+def _recreate_wall_with_color(wall_params: Dict[str, Any], new_color: str) -> tuple[str, Dict[str, Any]]:
+    """
+    Clone wall_params, override color, regenerate OBJ + ZIP, save to registry.
+    Returns (new_module_id, updated_params).
+    """
+    module_id = str(uuid.uuid4())[:8]
+    updated_params = {**wall_params, "color": new_color}
+
+    obj_path = generate_module_obj("wall", updated_params, module_id)
+    if not obj_path or not obj_path.exists():
+        raise Exception(f"Wall OBJ generation failed for color-synced module {module_id}")
+
+    zip_path = create_module_zip(module_id, "wall", updated_params, obj_path)
+    if not zip_path:
+        raise Exception(f"ZIP creation failed for color-synced wall module {module_id}")
+
+    module_record = {
+        "module_id": module_id,
+        "module_type": "wall",
+        "module_name": f"Wall (color {new_color})",
+        "params": updated_params,
+        "zip_file": zip_path.name,
+        "created_at": datetime.now().isoformat(),
+        "dimensions": {
+            "width": float(updated_params.get("width", 4.0)),
+            "height": float(updated_params.get("height", 3.0)),
+        },
+    }
+    modules = load_modules_registry()
+    modules.append(module_record)
+    save_modules_registry(modules)
+
+    logger.info(f"✓ Color-synced wall created: {module_id} (color={new_color})")
+    return module_id, updated_params
+
+
 def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[str, Any]) -> str:
     """
     Builds a wall_window module from wall + window params via procedural_batch_runner.
@@ -1055,6 +1091,22 @@ async def generate_house(request: Request):
             return JSONResponse({"error": "Wall module not found in registry"}, status_code=400)
         if not window_params:
             return JSONResponse({"error": "Window module not found in registry"}, status_code=400)
+
+        # === COLOR SYNC: if house_color overrides the wall module color, regenerate wall ===
+        logger.info(f"DEBUG: payload keys = {list(payload.keys())}")
+        logger.info(f"DEBUG: house_color raw = {payload.get('house_color')!r}")
+        house_color = _normalise_hex(payload.get("house_color"))
+        logger.info(f"DEBUG: house_color normalised = {house_color!r}")
+        if house_color:
+            current_wall_color = _normalise_hex(wall_params.get("color"))
+            if house_color != current_wall_color:
+                logger.info(
+                    f"🎨 house_color={house_color} differs from wall color={current_wall_color}; "
+                    "regenerating wall module"
+                )
+                wall_module_id, wall_params = _recreate_wall_with_color(wall_params, house_color)
+            else:
+                logger.info(f"🎨 house_color={house_color} matches wall module color, no regeneration needed")
 
         # === COMBINE WALL + WINDOW → WALL_WINDOW via procedural_batch_runner ===
         logger.info("🔗 Combining wall + window → wall_window via batch runner...")

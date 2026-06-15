@@ -1635,5 +1635,89 @@
       "width": 4.0,
       "height": 4.0
     }
+  },
+  {
+    "module_id": "f4f74569",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_f4f74569.zip",
+    "created_at": "2026-06-15T17:51:05.353434",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
+  },
+  {
+    "module_id": "fa3d9a7f",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_fa3d9a7f.zip",
+    "created_at": "2026-06-15T17:55:17.737652",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
+  },
+  {
+    "module_id": "6695f5e9",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_6695f5e9.zip",
+    "created_at": "2026-06-15T17:59:08.227828",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
+  },
+  {
+    "module_id": "19bcde0f",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_19bcde0f.zip",
+    "created_at": "2026-06-15T18:04:47.589552",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
   }
 ]

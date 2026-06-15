@@ -718,5 +718,85 @@
     },
     "obj_url": "/modules/houses/16787f44/house.obj",
     "created_at": "2026-06-15T17:39:39.870555"
+  },
+  {
+    "house_id": "43a81c74",
+    "house_name": "House_1781538664589",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "f4f74569",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/43a81c74/house.obj",
+    "created_at": "2026-06-15T17:51:09.339612"
+  },
+  {
+    "house_id": "b08c220b",
+    "house_name": "House_1781538916971",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "fa3d9a7f",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/b08c220b/house.obj",
+    "created_at": "2026-06-15T17:55:21.506618"
+  },
+  {
+    "house_id": "100648cc",
+    "house_name": "House_1781539147466",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "6695f5e9",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/100648cc/house.obj",
+    "created_at": "2026-06-15T17:59:11.988435"
+  },
+  {
+    "house_id": "54dc31a5",
+    "house_name": "House_1781539486821",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "19bcde0f",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/54dc31a5/house.obj",
+    "created_at": "2026-06-15T18:04:51.840022"
   }
 ]

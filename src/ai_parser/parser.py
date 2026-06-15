@@ -259,11 +259,14 @@ The JSON must have exactly these fields:
   "depth": <integer 1-6>,
   "has_balconies": <boolean>,
   "window_cols": <integer 2-width>,
-  "texture_scale": <integer 1-8>
+  "texture_scale": <integer 1-8>,
+  "color": "<#RRGGBB hex string if a color is mentioned, otherwise null>"
 }}
 
-Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, window_cols=8, texture_scale=3.
-Clamp all values. window_cols <= width. Return ONLY JSON.
+Defaults if not mentioned: floors=9, sections=3, width=18, depth=2, has_balconies=true, window_cols=8, texture_scale=3, color=null.
+Clamp all values. window_cols <= width.
+For "color": convert any mentioned color name (red, blue, синий, красный, etc.) to its #RRGGBB hex value. If no color is mentioned, use null.
+Return ONLY JSON.
 
 User description: "{text}"
 """
@@ -311,6 +314,14 @@ User description: "{text}"
         window_cols = max(2, min(width, int(parsed.get("window_cols", 8))))
         texture_scale = max(1, min(8, int(parsed.get("texture_scale", 3))))
 
+        # Validate color: accept only #RRGGBB, discard anything else
+        raw_color = parsed.get("color")
+        house_color = None
+        if isinstance(raw_color, str):
+            c = raw_color.strip().lstrip("#")
+            if len(c) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in c):
+                house_color = f"#{c.upper()}"
+
         result = {
             "house": {
                 "floors": floors,
@@ -319,6 +330,7 @@ User description: "{text}"
                 "depth": depth,
                 "has_balconies": has_balconies,
                 "window_cols": window_cols,
+                "house_color": house_color,
                 "facade": {"texture_url": "", "texture_scale": texture_scale},
             }
         }
