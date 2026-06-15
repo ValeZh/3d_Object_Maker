@@ -177,10 +177,56 @@ let savedHousesData = [];
 let interactiveObjects = [];
 let raycaster, mouse;
 let lastHovered = null;
+let currentHouseObjUrl = null;
+let currentHouseServerData = null;
 
 const textureCache = new Map();
 const geometryCache = new Map();
 const sharedMaterialCache = new Map();
+
+
+function addPersistent(obj) {
+  obj.userData.persistent = true;
+  scene.add(obj);
+}
+
+function removeNonPersistentSceneObjects() {
+  if (!scene) return;
+
+  clearHoverState();
+
+  const objectsToRemove = scene.children.filter(
+    child => !child.userData?.persistent
+  );
+
+  objectsToRemove.forEach(obj => {
+    scene.remove(obj);
+
+    obj.traverse?.(child => {
+      if (child.geometry) disposeGeometrySafe(child.geometry);
+
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(disposeMaterialSafe);
+        } else {
+          disposeMaterialSafe(child.material);
+        }
+      }
+    });
+  });
+
+  currentMesh = null;
+  interactiveObjects = [];
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 // ================= THREE =================
 async function waitForThree() {
@@ -224,10 +270,10 @@ async function initScene() {
   preview.appendChild(renderer.domElement);
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.05);
-  scene.add(hemi);
+  addPersistent(hemi);
 
   const ambient = new THREE.AmbientLight(0xffffff, 0.62);
-  scene.add(ambient);
+  addPersistent(ambient);
 
   const dir = new THREE.DirectionalLight(0xffffff, 1.15);
   dir.position.set(18, 28, 14);
@@ -240,14 +286,14 @@ async function initScene() {
   dir.shadow.camera.right = 50;
   dir.shadow.camera.top = 50;
   dir.shadow.camera.bottom = -50;
-  scene.add(dir);
+  addPersistent(dir);
 
   const fill = new THREE.DirectionalLight(0xaaccff, 0.42);
   fill.position.set(-22, 14, -18);
-  scene.add(fill);
+  addPersistent(fill);
 
   const grid = new THREE.GridHelper(120, 120, 0x333333, 0x222222);
-  scene.add(grid);
+  addPersistent(grid);
 
   const groundMat = new THREE.ShadowMaterial({ opacity: 0.18 });
   groundMat.userData.shared = true;
@@ -255,7 +301,7 @@ async function initScene() {
   groundPlane.rotation.x = -Math.PI / 2;
   groundPlane.position.y = 0.001;
   groundPlane.receiveShadow = true;
-  scene.add(groundPlane);
+ addPersistent(groundPlane);
 
   controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -476,20 +522,7 @@ function clearMesh(mesh) {
 }
 
 function clearSceneMeshes() {
-  clearHoverState();
-
-  if (currentMesh) clearMesh(currentMesh);
-
-  currentMesh = null;
-  interactiveObjects = [];
-
-  const objectsToRemove = [];
-  scene.children.forEach((child) => {
-    if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
-      objectsToRemove.push(child);
-    }
-  });
-  objectsToRemove.forEach(obj => scene.remove(obj));
+  removeNonPersistentSceneObjects();
 }
 
 function frameObject(mesh, padding = DEFAULTS.camera.padding) {
@@ -1331,7 +1364,9 @@ function getCurrentHouseProject() {
     id: `house_${Date.now()}`,
     name: houseName?.value?.trim() || `House ${savedHousesData.length + 1}`,
     created_at: new Date().toISOString(),
-    data: getHouseFormData()
+    data: getHouseFormData(),
+    obj_url: currentHouseObjUrl,
+    server_data: currentHouseServerData
   };
 }
 
@@ -1420,10 +1455,12 @@ function renderSavedModules() {
         </div>
       </div>
       <div class="module-actions">
-        <button data-id="${mod.id}" class="small-btn use-module-btn">Edit</button>
-        <button data-id="${mod.id}" class="small-btn rename-module-btn">Rename</button>
-        <button data-id="${mod.id}" class="small-btn use-in-builder-btn">Use in Builder</button>
-        <button data-id="${mod.id}" class="small-btn delete-module-btn">Delete</button>
+  <button data-id="${mod.id}" class="small-btn use-module-btn">Edit</button>
+  <button data-id="${mod.id}" class="small-btn rename-module-btn">Rename</button>
+  <button data-id="${mod.id}" class="small-btn use-in-builder-btn">Use in Builder</button>
+  <button data-id="${mod.id}" class="small-btn export-single-module-btn">Export ZIP</button>
+  <button data-id="${mod.id}" class="small-btn delete-module-btn">Delete</button>
+</div>
       </div>
       <div class="rename-row hidden" id="rename_module_${mod.id}">
         <input class="text-input rename-input" type="text" value="${String(mod.name).replace(/"/g, "&quot;")}" />
@@ -1500,7 +1537,11 @@ function renderSavedModules() {
       showToast(`Module "${mod.name}" assigned to builder.`, "success");
     };
   });
-
+savedModules.querySelectorAll(".export-single-module-btn").forEach(btn => {
+  btn.onclick = async () => {
+    await exportSingleModuleZip(btn.dataset.id);
+  };
+});
   savedModules.querySelectorAll(".delete-module-btn").forEach(btn => {
     btn.onclick = async () => {
       const id = btn.dataset.id;
@@ -1547,9 +1588,11 @@ function renderSavedHouses() {
         </div>
       </div>
       <div class="module-actions">
-        <button class="small-btn load-house-btn" data-id="${item.id}">Load</button>
-        <button class="small-btn rename-house-btn" data-id="${item.id}">Rename</button>
-        <button class="small-btn delete-house-btn" data-id="${item.id}">Delete</button>
+  <button class="small-btn load-house-btn" data-id="${item.id}">Load</button>
+  <button class="small-btn rename-house-btn" data-id="${item.id}">Rename</button>
+  <button class="small-btn export-single-house-btn" data-id="${item.id}">Export ZIP</button>
+  <button class="small-btn delete-house-btn" data-id="${item.id}">Delete</button>
+</div>
       </div>
       <div class="rename-row hidden" id="rename_house_${item.id}">
         <input class="text-input rename-house-input" type="text" value="${String(item.name || "").replace(/"/g, "&quot;")}" />
@@ -1577,7 +1620,11 @@ function renderSavedHouses() {
   savedHouses.querySelectorAll(".rename-house-btn").forEach(btn => {
     btn.onclick = () => $(`rename_house_${btn.dataset.id}`)?.classList.remove("hidden");
   });
-
+  savedHouses.querySelectorAll(".export-single-house-btn").forEach(btn => {
+  btn.onclick = async () => {
+    await exportSingleHouseZip(btn.dataset.id);
+  };
+});
   savedHouses.querySelectorAll(".cancel-rename-house-btn").forEach(btn => {
     btn.onclick = () => $(`rename_house_${btn.dataset.id}`)?.classList.add("hidden");
   });
@@ -2168,46 +2215,268 @@ function randomizeFacade() {
 }
 
 // ================= IMPORT / EXPORT =================
-async function exportLibraryZip() {
-  const zip = new JSZip();
+async function addFileToZipFromUrl(zip, zipPath, url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Cannot fetch ${url}`);
 
-  if (!savedModulesData.length) throw new Error("Library is empty");
+    const blob = await response.blob();
+    zip.file(zipPath, blob);
+  } catch (err) {
+    console.warn(`Skipped file: ${url}`, err);
+  }
+}
 
-  const payload = {
-    type: "module_library",
-    version: 2,
-    exported_at: new Date().toISOString(),
-    modules: [...savedModulesData]
-  };
+async function fetchTextIfExists(url) {
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  return await response.text();
+}
 
-  zip.file("library.json", JSON.stringify(payload, null, 2));
+async function fetchBlobIfExists(url) {
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  return await response.blob();
+}
 
-  const originalPreviewJson = previewJson?.textContent || "{}";
-  const currentModuleData = getModuleFormData();
+function getDirFromUrl(url) {
+  return url.substring(0, url.lastIndexOf("/") + 1);
+}
 
-  renderModulePreview(savedModulesData[0]);
-  await nextFrame();
-  zip.file("library-preview.png", getRendererPreviewBase64(), { base64: true });
+function getObjMtlFiles(objText) {
+  return [...objText.matchAll(/^\s*mtllib\s+(.+)$/gim)]
+    .map(m => m[1].trim())
+    .filter(Boolean);
+}
 
-  for (let i = 0; i < savedModulesData.length; i++) {
-    const mod = savedModulesData[i];
-    renderModulePreview(mod);
-    await nextFrame();
 
-    const fileName = `modules/${String(i + 1).padStart(3, "0")}_${sanitizeFilename(mod.name || mod.id || "module")}.png`;
-    zip.file(fileName, getRendererPreviewBase64(), { base64: true });
+function getMtlTextureFiles(mtlText) {
+  return [...mtlText.matchAll(/^\s*map_\w+\s+(.+)$/gim)]
+    .map(m => {
+      let line = m[1].trim();
+
+      // убираем параметры MTL типа: -bm 0.700
+      const parts = line.split(/\s+/);
+
+      // берём последний элемент как имя файла
+      return parts[parts.length - 1];
+    })
+    .filter(Boolean);
+}
+async function addObjPackageToZip(zip, folderPath, objUrl) {
+  if (!objUrl) return;
+
+  const absoluteObjUrl = getTextureAbsoluteUrl(objUrl);
+  const objText = await fetchTextIfExists(absoluteObjUrl);
+
+  if (!objText) {
+    console.warn(`OBJ not found: ${absoluteObjUrl}`);
+    return;
   }
 
-  applyModuleParams(currentModuleData);
-  renderModulePreview(currentModuleData);
-  if (previewJson) previewJson.textContent = originalPreviewJson;
+  zip.file(`${folderPath}/model.obj`, objText);
+
+  const objDir = getDirFromUrl(absoluteObjUrl);
+  const mtlFiles = getObjMtlFiles(objText);
+
+  for (const mtlFile of mtlFiles) {
+    const mtlUrl = objDir + mtlFile;
+    const mtlText = await fetchTextIfExists(mtlUrl);
+
+    if (!mtlText) {
+      console.warn(`MTL not found: ${mtlUrl}`);
+      continue;
+    }
+
+    zip.file(`${folderPath}/${mtlFile}`, mtlText);
+
+    const textureFiles = getMtlTextureFiles(mtlText);
+
+    for (const textureFile of textureFiles) {
+      const textureUrl = objDir + textureFile;
+      const textureBlob = await fetchBlobIfExists(textureUrl);
+
+      if (textureBlob) {
+        zip.file(`${folderPath}/${textureFile}`, textureBlob);
+      } else {
+        console.warn(`Texture not found: ${textureUrl}`);
+      }
+    }
+  }
+}
+async function exportSingleModuleZip(moduleId) {
+  const mod = savedModulesData.find(m => m.id === moduleId);
+  if (!mod) {
+    showToast("Module not found.", "error");
+    return;
+  }
+
+  const zip = new JSZip();
+
+  const safeName = sanitizeFilename(mod.name || mod.id || "module");
+  const moduleFolder = safeName;
+  const serverFolder = `${SERVER_URL}/modules/${mod.type}/${mod.id}/`;
+
+  zip.file("module.json", JSON.stringify(mod, null, 2));
+
+  renderModulePreview(mod);
+  await nextFrame();
+  zip.file(`${moduleFolder}/preview.png`, getRendererPreviewBase64(), { base64: true });
+
+  const objFileName = `${mod.type}.obj`;
+  const objUrl = `${serverFolder}${objFileName}`;
+  const objText = await fetchTextIfExists(objUrl);
+
+  if (objText) {
+    zip.file(`${moduleFolder}/${objFileName}`, objText);
+
+    const mtlFiles = getObjMtlFiles(objText);
+
+    for (const mtlFile of mtlFiles) {
+      const mtlUrl = `${serverFolder}${mtlFile}`;
+      const mtlText = await fetchTextIfExists(mtlUrl);
+
+      if (!mtlText) continue;
+
+      zip.file(`${moduleFolder}/${mtlFile}`, mtlText);
+
+      const textureFiles = getMtlTextureFiles(mtlText);
+
+      for (const textureFile of textureFiles) {
+        const textureUrl = `${serverFolder}${textureFile}`;
+        const textureBlob = await fetchBlobIfExists(textureUrl);
+
+        if (textureBlob) {
+          zip.file(`${moduleFolder}/${textureFile}`, textureBlob);
+        }
+      }
+    }
+  } else {
+    console.warn(`OBJ not found: ${objUrl}`);
+  }
 
   const blob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = "module-library.zip";
+  a.download = `${safeName}.zip`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+
+  showToast(`Module exported: ${mod.name}`, "success");
+}
+async function exportSingleHouseZip(houseId) {
+  const houseItem = savedHousesData.find(h => h.id === houseId);
+  if (!houseItem) {
+    showToast("House not found.", "error");
+    return;
+  }
+
+  const zip = new JSZip();
+
+  const safeName = sanitizeFilename(houseItem.name || houseItem.id || "house");
+
+  zip.file("house.json", JSON.stringify(houseItem, null, 2));
+
+  if (houseName) houseName.value = houseItem.name || "";
+  applyHouseParams(houseItem.data);
+  generateHousePreview();
+  await nextFrame();
+
+  zip.file("preview.png", getRendererPreviewBase64(), { base64: true });
+
+  if (houseItem.obj_url) {
+    await addObjPackageToZip(zip, "model", houseItem.obj_url);
+  } else {
+    console.warn("House OBJ URL not found. Generate house before saving it.");
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safeName}.zip`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+
+  showToast(`House exported: ${houseItem.name}`, "success");
+}
+async function exportLibraryZip() {
+  const zip = new JSZip();
+
+  if (!savedModulesData.length) throw new Error("Library is empty");
+
+  zip.file("library.json", JSON.stringify({
+    type: "module_library",
+    version: 3,
+    exported_at: new Date().toISOString(),
+    modules: savedModulesData
+  }, null, 2));
+
+  for (let i = 0; i < savedModulesData.length; i++) {
+    const mod = savedModulesData[i];
+
+    const safeName = `${String(i + 1).padStart(3, "0")}_${sanitizeFilename(mod.name || mod.id || "module")}`;
+    const moduleFolder = `modules/${safeName}`;
+    const serverFolder = `${SERVER_URL}/modules/${mod.type}/${mod.id}/`;
+
+    // preview image
+    renderModulePreview(mod);
+    await nextFrame();
+    zip.file(`${moduleFolder}/preview.png`, getRendererPreviewBase64(), { base64: true });
+
+    // OBJ
+    const objFileName = `${mod.type}.obj`;
+    const objUrl = `${serverFolder}${objFileName}`;
+    const objText = await fetchTextIfExists(objUrl);
+
+    if (!objText) {
+      console.warn(`OBJ not found: ${objUrl}`);
+      continue;
+    }
+
+    zip.file(`${moduleFolder}/${objFileName}`, objText);
+
+    // MTL files mentioned inside OBJ
+    const mtlFiles = getObjMtlFiles(objText);
+
+    for (const mtlFile of mtlFiles) {
+      const mtlUrl = `${serverFolder}${mtlFile}`;
+      const mtlText = await fetchTextIfExists(mtlUrl);
+
+      if (!mtlText) {
+        console.warn(`MTL not found: ${mtlUrl}`);
+        continue;
+      }
+
+      zip.file(`${moduleFolder}/${mtlFile}`, mtlText);
+
+      // textures mentioned inside MTL
+      const textureFiles = getMtlTextureFiles(mtlText);
+
+      for (const textureFile of textureFiles) {
+        const textureUrl = `${serverFolder}${textureFile}`;
+        const textureBlob = await fetchBlobIfExists(textureUrl);
+
+        if (textureBlob) {
+          zip.file(`${moduleFolder}/${textureFile}`, textureBlob);
+        } else {
+          console.warn(`Texture not found: ${textureUrl}`);
+        }
+      }
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "module-library-blender.zip";
   a.click();
 
   URL.revokeObjectURL(url);
@@ -2248,7 +2517,9 @@ async function exportProjectZip() {
     modules: savedModulesData,
     houses: savedHousesData,
     current_house: getHouseFormData(),
-    current_house_name: houseName?.value?.trim() || ""
+    current_house_name: houseName?.value?.trim() || "",
+    current_house_obj_url: currentHouseObjUrl,
+    current_house_server_data: currentHouseServerData,
   };
 
   zip.file("project.json", JSON.stringify(payload, null, 2));
@@ -2260,6 +2531,9 @@ async function exportProjectZip() {
   generateHousePreview();
   await nextFrame();
   zip.file("house-preview.png", getRendererPreviewBase64(), { base64: true });
+  if (currentHouseObjUrl) {
+  await addObjPackageToZip(zip, "current-house-obj", currentHouseObjUrl);
+}
 
   for (let i = 0; i < savedHousesData.length; i++) {
     const houseItem = savedHousesData[i];
@@ -2270,16 +2544,62 @@ async function exportProjectZip() {
 
     const fileName = `houses/${sanitizeFilename(houseItem.name || houseItem.id || `house_${i + 1}`)}.png`;
     zip.file(fileName, getRendererPreviewBase64(), { base64: true });
+    if (houseItem.obj_url) {
+  const folder = `houses_obj/${sanitizeFilename(houseItem.name || houseItem.id || `house_${i + 1}`)}`;
+  await addObjPackageToZip(zip, folder, houseItem.obj_url);
+}
   }
 
-  for (let i = 0; i < savedModulesData.length; i++) {
-    const mod = savedModulesData[i];
-    renderModulePreview(mod);
-    await nextFrame();
+ for (let i = 0; i < savedModulesData.length; i++) {
+  const mod = savedModulesData[i];
 
-    const fileName = `modules/${sanitizeFilename(mod.name || mod.id || `module_${i + 1}`)}.png`;
-    zip.file(fileName, getRendererPreviewBase64(), { base64: true });
+  const safeName = sanitizeFilename(mod.name || mod.id || `module_${i + 1}`);
+  const moduleFolder = `modules/${safeName}`;
+  const serverFolder = `${SERVER_URL}/modules/${mod.type}/${mod.id}/`;
+
+  renderModulePreview(mod);
+  await nextFrame();
+
+  zip.file(`${moduleFolder}/preview.png`, getRendererPreviewBase64(), { base64: true });
+
+  const objFileName = `${mod.type}.obj`;
+  const objUrl = `${serverFolder}${objFileName}`;
+  const objText = await fetchTextIfExists(objUrl);
+
+  if (!objText) {
+    console.warn(`OBJ not found: ${objUrl}`);
+    continue;
   }
+
+  zip.file(`${moduleFolder}/${objFileName}`, objText);
+
+  const mtlFiles = getObjMtlFiles(objText);
+
+  for (const mtlFile of mtlFiles) {
+    const mtlUrl = `${serverFolder}${mtlFile}`;
+    const mtlText = await fetchTextIfExists(mtlUrl);
+
+    if (!mtlText) {
+      console.warn(`MTL not found: ${mtlUrl}`);
+      continue;
+    }
+
+    zip.file(`${moduleFolder}/${mtlFile}`, mtlText);
+
+    const textureFiles = getMtlTextureFiles(mtlText);
+
+    for (const textureFile of textureFiles) {
+      const textureUrl = `${serverFolder}${textureFile}`;
+      const textureBlob = await fetchBlobIfExists(textureUrl);
+
+      if (textureBlob) {
+        zip.file(`${moduleFolder}/${textureFile}`, textureBlob);
+      } else {
+        console.warn(`Texture not found: ${textureUrl}`);
+      }
+    }
+  }
+}
 
   if (houseName) houseName.value = payload.current_house_name || originalHouseName;
   applyHouseParams(originalCurrentHouse);
@@ -2380,10 +2700,9 @@ houseDescription?.addEventListener("input", () => {
 
 analyzeModuleBtn?.addEventListener("click", async () => {
   const text = moduleDescription.value.trim();
-  if (!text) {
-    showToast("Enter module description first.", "error");
-    return;
-  }
+  const finalText =
+  text ||
+  `${moduleType} width ${moduleWidth.value}m height ${moduleHeight.value}m depth ${moduleDepth.value}m color ${moduleColor.value}`;
 
   await withLoading(analyzeModuleBtn, "Analyzing...", async () => {
     try {
@@ -2391,11 +2710,11 @@ analyzeModuleBtn?.addEventListener("click", async () => {
       const response = await fetch(`${SERVER_URL}/api/parse-module`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text,
-          module_type: $("moduleType").value
-        })
-      });
+       body: JSON.stringify({
+  text: finalText,
+  module_type: $("moduleType").value
+  })
+});
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
@@ -2405,10 +2724,10 @@ analyzeModuleBtn?.addEventListener("click", async () => {
         applyModuleTypeDefaults(data.module_type);
 
         // Apply parameters
-        if (data.params.width) $("moduleWidth").value = data.params.width;
-        if (data.params.height) $("moduleHeight").value = data.params.height;
-        if (data.params.depth) $("moduleDepth").value = data.params.depth;
-        if (data.params.color) $("moduleColor").value = data.params.color;
+       if (data.params?.width != null) $("moduleWidth").value = data.params.width;
+       if (data.params?.height != null) $("moduleHeight").value = data.params.height;
+       if (data.params?.depth != null) $("moduleDepth").value = data.params.depth;
+       if (data.params?.color != null) $("moduleColor").value = data.params.color;
 
       renderModulePreview(getModuleFormData());
       showToast("Module analysis completed.", "success");
@@ -2434,10 +2753,7 @@ generateModuleBtn?.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: finalText,
-        module_type: moduleType,
-        // Include color-picker value so it overrides any NLP-parsed color.
-        // <input type="color"> always yields #rrggbb; server normalises to #RRGGBB.
-        color: moduleColor.value || undefined
+        module_type: moduleType
       })
     });
 
@@ -2495,13 +2811,17 @@ function _toPreviewLitMaterial(phongMat, tintHex) {
   const transparent = !!phongMat.transparent;
   const opacity = phongMat.opacity !== undefined ? phongMat.opacity : 1;
   const diffuse = phongMat.map;
-  if (diffuse) {
+  if (diffuse && diffuse.image) {
+    const mapTex = diffuse;
     if (T.SRGBColorSpace !== undefined) {
-      diffuse.colorSpace = T.SRGBColorSpace;
+      mapTex.colorSpace = T.SRGBColorSpace;
     }
     return new T.MeshBasicMaterial({
-      map: diffuse,
-      color: tint?.clone?.() ?? new T.Color(0xffffff),
+      map: mapTex,
+      color:
+        tint?.clone?.() ??
+        phongMat.color?.clone?.() ??
+        new T.Color(0xffffff),
       side: T.DoubleSide,
       toneMapped: false,
       transparent,
@@ -2545,13 +2865,7 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
     typeof paramsOrColor === "string" ? { color: paramsOrColor } : paramsOrColor;
   const tintHex = _previewTintHex(params);
 
-  const objectsToRemove = [];
-  scene.children.forEach((child) => {
-    if (child !== groundPlane && !(child instanceof THREE.GridHelper)) {
-      objectsToRemove.push(child);
-    }
-  });
-  objectsToRemove.forEach((o) => scene.remove(o));
+  removeNonPersistentSceneObjects();
 
   const objDirRaw = objUrl.substring(0, objUrl.lastIndexOf("/"));
   const objDir = objDirRaw.endsWith("/") ? objDirRaw : `${objDirRaw}/`;
@@ -2658,7 +2972,8 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
   });
   if (!fallbackMat) _applyPreviewMaterials(obj, tintHex);
 
-  scene.add(obj);
+ scene.add(obj);
+ currentMesh = obj;
 
   const box = new THREE.Box3().setFromObject(obj);
   const center = box.getCenter(new THREE.Vector3());
@@ -2682,11 +2997,9 @@ saveModuleBtn?.addEventListener("click", async () => {
   const text = moduleDescription.value.trim();
   const moduleType = $("moduleType").value;
   const moduleName = $("moduleName").value.trim();
-
-  if (!text) {
-    showToast("Enter module description first.", "error");
-    return;
-  }
+const finalText =
+  text ||
+  `${moduleType} width ${moduleWidth.value}m height ${moduleHeight.value}m depth ${moduleDepth.value}m color ${moduleColor.value}`;
 
   await withLoading(saveModuleBtn, "Saving...", async () => {
     try {
@@ -2694,7 +3007,7 @@ saveModuleBtn?.addEventListener("click", async () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: text,
+          text: finalText,
           module_type: moduleType,
           module_name: moduleName
         })
@@ -2785,9 +3098,12 @@ generateHouseBtn?.addEventListener("click", async () => {
 
     showToast(`House built: ${data.house_name}`, "success");
 
-    if (data.obj_url) {
-      await loadObjInPreview(data.obj_url, null, 'wall');
-    }
+    currentHouseServerData = data;
+currentHouseObjUrl = data.obj_url || null;
+
+if (data.obj_url) {
+  await loadObjInPreview(data.obj_url, null, "wall");
+}
 
   } catch (err) {
     showToast(`Build failed: ${err.message}`, "error");
