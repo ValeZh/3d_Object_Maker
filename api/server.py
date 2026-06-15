@@ -310,8 +310,32 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 tpl["depth"] = float(params["depth"])
             if params.get("height") is not None:
                 tpl["height"] = float(params["height"])
+                logger.info(f"[balcony] height from params: {tpl['height']}")
+            else:
+                logger.info(f"[balcony] height NOT in params → generator will use USER_BALCONY default (2.15m); params keys: {list(params.keys())}")
             if params.get("has_roof") is not None:
                 tpl["has_roof"] = bool(params["has_roof"])
+
+            # Scale inner windows/doors z-coords proportionally to the actual height.
+            # Template was authored at 2.15 m (USER_BALCONY default).
+            _DEFAULT_BALCONY_H = 2.15
+            _actual_h = float(tpl.get("height", _DEFAULT_BALCONY_H))
+            _ratio = _actual_h / _DEFAULT_BALCONY_H
+            if abs(_ratio - 1.0) > 0.001:
+                for item in tpl.get("inner_wall_windows", []):
+                    if "z_bottom" in item:
+                        item["z_bottom"] = round(item["z_bottom"] * _ratio, 4)
+                    if "z_top" in item:
+                        item["z_top"] = round(item["z_top"] * _ratio, 4)
+                for item in tpl.get("inner_wall_doors", []):
+                    if "z_bottom" in item:
+                        item["z_bottom"] = round(item["z_bottom"] * _ratio, 4)
+                    if "z_top" in item:
+                        item["z_top"] = round(item["z_top"] * _ratio, 4)
+                logger.info(
+                    f"[balcony] scaled inner windows/doors by ratio {_ratio:.3f} "
+                    f"(height {_DEFAULT_BALCONY_H}→{_actual_h})"
+                )
 
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):

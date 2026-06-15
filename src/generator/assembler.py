@@ -423,7 +423,7 @@ class GridFacadeAssembler:
             return placements
 
         bw, _, bh = self.loader.bbox("balcony")
-        h_span    = max(1, math.ceil(bw / self.cell_width))
+        h_span    = 1  # always one cell; mesh is scaled to fit by _scale_fit
         v_span    = 2 if bh > self.cell_height else 1
 
         blocked   = set(entrance_cols)
@@ -600,12 +600,22 @@ class GridFacadeAssembler:
                     meshes.append(wall_behind)
 
         # Door mesh offset slightly forward so it protrudes from the wall face.
-        _door_y_offset = 1.03  # metres
+        # OBJ is Y-up: index 1 = height, index 2 = depth.
+        # After 90°X + 180°Z rotations: OBJ-Y→Z, OBJ-Z→Y, so we read depth from index 2.
+        _, _, door_depth = self.loader.bbox("door")  # OBJ Z span = depth (lands in Y after rotations)
+        _door_y_offset = door_depth / 2 + 0.18
         door_y = y_center - _door_y_offset if is_front else y_center + _door_y_offset
         if door_orig is not None:
-            _, _, dh = self.loader.bbox("door")
+            _, dh, _ = self.loader.bbox("door")  # OBJ Y span = height (lands in Z after 90°X rotation)
             for start_col, h_span in door_placements:
                 door = door_orig.copy()
+
+                c = _bbox_center(door)
+                door.apply_translation(-c)
+                door.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
+                door.apply_transform(trimesh.transformations.rotation_matrix(np.pi, [0, 0, 1]))
+                door.apply_translation(c)
+
                 _scale_exact(door, h_span * self.cell_width, min(dh, self.cell_height))
                 if is_front:
                     _flip_facing(door)
@@ -619,7 +629,7 @@ class GridFacadeAssembler:
             # Outward direction: front facade → -Y; back facade → +Y
             outward = -1.0 if is_front else 1.0
             # Place balcony so its back face meets the wall's outer face
-            bal_y = y_center + outward * (self.wall_depth / 2.0 + max(bd, 0.01) / 2.0 - 0.5)
+            bal_y = y_center + outward * ( bd / 4)
 
             for start_col, floor, h_span, v_span in bal_placements:
                 bal      = bal_orig.copy()

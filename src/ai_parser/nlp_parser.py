@@ -136,6 +136,7 @@ class ModuleTextParser:
             "frame_color": "#8B4513",
         },
         ModuleType.BALCONY: {
+            "height": 2.15,
             "depth": 1.15,
             "width": 2.0,
             "style": "open",
@@ -394,10 +395,15 @@ class ModuleTextParser:
                 params["material"] = material
 
         elif module_type == ModuleType.BALCONY:
-            # Для балкона: depth, width, style, color, has_roof
+            # Для балкона: height, depth, width, style, color, has_roof
+            height = self._extract_value(text, "height")
             depth = self._extract_value(text, "depth")
             width = self._extract_value(text, "width")
 
+            logger.info(f"[nlp_parser] balcony extract: height={height} depth={depth} width={width} (text='{text}')")
+
+            if height is not None:
+                params["height"] = height
             if depth is not None:
                 params["depth"] = depth
             if width is not None:

@@ -89,6 +89,7 @@ USER_BALCONY: dict[str, Any] = {
     "depth": 1.15,
     "height": 2.15,
     "simple_box": False,
+    "has_roof": False,
     # Углы основания z=0 (x, y), если все None — из width_back/width_front/depth:
     # левый у стены, правый у стены, передний левый, передний правый (к улице).
     "floor_corner_left_wall": None,
@@ -1714,6 +1715,32 @@ def _balcony_floor_textured_parts(
     return [("wall_lower", fp) for fp in (f_top, f_bot)]
 
 
+def _balcony_ceiling_textured_parts(
+    BL: np.ndarray,
+    FL: np.ndarray,
+    FR: np.ndarray,
+    BR: np.ndarray,
+    T: float,
+) -> List[Tuple[str, trimesh.Trimesh]]:
+    """Потолок балкона: нижняя грань (visible from inside) + верхняя (exterior).
+    Входные точки BL/FL/FR/BR — верхнее кольцо (z=H), т.е. TBL/TFL/TFR/TBR.
+    T — толщина плиты потолка (как floor_thickness для пола).
+    """
+    d_safe = _floor_y_span(BL, FL, FR, BR)
+    # Входные точки уже на z=H — нижняя грань потолка лежит прямо на них.
+    xs = np.array([BL[0], FL[0], FR[0], BR[0]], dtype=np.float64)
+    xmin_c, xmax_c = float(xs.min()), float(xs.max())
+    xspan = max(xmax_c - xmin_c, 1e-6)
+
+    def _uv_ceil(p: np.ndarray) -> np.ndarray:
+        return np.array([(float(p[0]) - xmin_c) / xspan, float(p[1]) / d_safe], dtype=np.float64)
+
+    # Нижняя грань потолка (видна снизу изнутри балкона) — нормаль вниз → flip=True
+    uv_bot = np.stack([_uv_ceil(BL), _uv_ceil(BR), _uv_ceil(FR), _uv_ceil(FL)])
+    c_bot = _textured_quad([BL, BR, FR, FL], BALCONY_TILE_WALL_LOWER, uv_bot, flip=True)
+    return [("wall_lower", c_bot)]
+
+
 def _simple_box_back_and_sides(
     BL: np.ndarray,
     BR: np.ndarray,
@@ -1979,6 +2006,7 @@ def build_balcony_meshes(
     sill_thickness: float = 0.06,
     sill_depth: float = 0.1,
     simple_box: bool = False,
+    has_roof: bool = False,
     floor_corner_left_wall: Optional[Tuple[float, float]] = None,
     floor_corner_right_wall: Optional[Tuple[float, float]] = None,
     floor_corner_front_left: Optional[Tuple[float, float]] = None,
@@ -2280,6 +2308,8 @@ def build_balcony_meshes(
             )
             parts.append(("wall_upper", lo_u))
             parts.append(("wall_upper", hi_u))
+        if has_roof:
+            parts.extend(_balcony_ceiling_textured_parts(TBL, TFL, TFR, TBR, T))
         return parts, window_parts
 
     ol = bool(open_left_above_parapet)
@@ -2575,6 +2605,9 @@ def build_balcony_meshes(
         wall_parts.append(("wall_upper", lo_u))
         wall_parts.append(("wall_upper", hi_u))
 
+    if has_roof:
+        wall_parts.extend(_balcony_ceiling_textured_parts(TBL, TFL, TFR, TBR, T))
+
     return wall_parts, window_parts
 
 
@@ -2658,6 +2691,7 @@ def export_balcony(
         sill_thickness=float(p.get("sill_thickness", 0.06)),
         sill_depth=float(p.get("sill_depth", 0.1)),
         simple_box=bool(p.get("simple_box", False)),
+        has_roof=bool(p.get("has_roof", False)),
         floor_corner_left_wall=p.get("floor_corner_left_wall"),
         floor_corner_right_wall=p.get("floor_corner_right_wall"),
         floor_corner_front_left=p.get("floor_corner_front_left"),
