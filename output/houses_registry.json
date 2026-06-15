@@ -818,5 +818,45 @@
     },
     "obj_url": "/modules/houses/9b996c38/house.obj",
     "created_at": "2026-06-15T18:52:31.042544"
+  },
+  {
+    "house_id": "cc8f5a8f",
+    "house_name": "House_1781542985122",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "1d5aeeda",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/cc8f5a8f/house.obj",
+    "created_at": "2026-06-15T19:03:10.019091"
+  },
+  {
+    "house_id": "36d249cd",
+    "house_name": "House_1781543035136",
+    "params": {
+      "floors": 9,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 4.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "aceb4755",
+      "wall_window_module_id": "14ef4bd2",
+      "entrance_module_id": "48550720",
+      "balcony_module_id": "ac28f6a5"
+    },
+    "obj_url": "/modules/houses/36d249cd/house.obj",
+    "created_at": "2026-06-15T19:04:00.705135"
   }
 ]

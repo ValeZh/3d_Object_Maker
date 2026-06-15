@@ -1769,5 +1769,135 @@
       "width": 4.0,
       "height": 4.0
     }
+  },
+  {
+    "module_id": "cc4c62cf",
+    "module_type": "roof",
+    "module_name": "roof_24",
+    "params": {
+      "roof_type": "pyramid",
+      "color": "#C74A4A"
+    },
+    "zip_file": "roof_cc4c62cf.zip",
+    "created_at": "2026-06-15T18:57:19.057588",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "ab1e424c",
+    "module_type": "roof",
+    "module_name": "roof_22",
+    "params": {
+      "roof_type": "gable",
+      "color": "#C74A4A"
+    },
+    "zip_file": "roof_ab1e424c.zip",
+    "created_at": "2026-06-15T18:57:30.956497",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "1d5aeeda",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_1d5aeeda.zip",
+    "created_at": "2026-06-15T19:03:05.896206",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
+  },
+  {
+    "module_id": "0c2503d8",
+    "module_type": "roof",
+    "module_name": "roof_22",
+    "params": {
+      "roof_type": "gable",
+      "color": "#C74A4A"
+    },
+    "zip_file": "roof_0c2503d8.zip",
+    "created_at": "2026-06-15T19:03:40.303092",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "2ef19730",
+    "module_type": "roof",
+    "module_name": "roof_22",
+    "params": {
+      "roof_type": "gable"
+    },
+    "zip_file": "roof_2ef19730.zip",
+    "created_at": "2026-06-15T19:03:42.961053",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "af9fdd50",
+    "module_type": "roof",
+    "module_name": "roof_22",
+    "params": {
+      "roof_type": "gable",
+      "color": "#C74A4A"
+    },
+    "zip_file": "roof_af9fdd50.zip",
+    "created_at": "2026-06-15T19:03:48.981282",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "799fb5ad",
+    "module_type": "roof",
+    "module_name": "roof_22",
+    "params": {
+      "roof_type": "gable"
+    },
+    "zip_file": "roof_799fb5ad.zip",
+    "created_at": "2026-06-15T19:03:50.789986",
+    "dimensions": {
+      "width": 4.0,
+      "height": 3.0
+    }
+  },
+  {
+    "module_id": "14ef4bd2",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 3.0×2.5",
+    "params": {
+      "wall_length": 4.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.75,
+      "width": 3.0,
+      "height": 2.5,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_14ef4bd2.zip",
+    "created_at": "2026-06-15T19:03:55.906432",
+    "dimensions": {
+      "width": 4.0,
+      "height": 4.0
+    }
   }
 ]
