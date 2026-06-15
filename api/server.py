@@ -7,6 +7,7 @@ import base64
 import copy
 import logging
 import json
+import re
 import subprocess
 import threading
 import zipfile
@@ -29,7 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ai_parser.parser import extract_module_parameters, parse_building_text, parse_roof_text
 from src.generator.procedural.procedural_roof import export_roof
-from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser
+from src.ai_parser.nlp_parser import ModuleTextParser, BuildingTextParser, ModuleType, ModuleParams
 from src.generator.assembler import assemble_building
 from src.generator.procedural.procedural_batch_runner import run_all_generators
 from src.generator.procedural.procedural_batch_json_parser import parse_and_run
@@ -174,6 +175,211 @@ def save_houses_registry(houses: List[Dict[str, Any]]):
 
 # ======================= ФУНКЦИИ ГЕНЕРАЦИИ МОДУЛЕЙ =======================
 
+_BEAUTY_DESC_RE = re.compile(
+    r"color|цвет|material|материал|wood|дерев|plaster|штукатур|ceramic|плит|tile|"
+    r"double|двойн|glass|стекл|style|стиль|shingle|черепиц|mullion|расклад|"
+    r"railing|перил|niche|ниш",
+    re.IGNORECASE,
+)
+
+_BEAUTY_MODULE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "wall": {
+        "width": 2.0,
+        "height": 3.0,
+        "thickness": 0.3,
+        "color": "#C9B28F",
+        "material": "plaster",
+        "_tex_preset": "plaster",
+    },
+    "window": {
+        "width": 1.5,
+        "height": 1.2,
+        "depth": 0.12,
+        "style": "double",
+        "frame_color": "#5C4A3A",
+        "glass_color": "#87CEEB",
+        "color": "#5C4A3A",
+        "_frame_preset": "wood",
+        "_mullions_v": 1,
+        "_mullions_h": 1,
+    },
+    "door": {
+        "width": 0.9,
+        "height": 2.1,
+        "depth": 1.75,
+        "style": "standard",
+        "material": "wood",
+        "color": "#6B4A33",
+        "_door_preset": "wood",
+    },
+    "balcony": {
+        "width": 2.0,
+        "height": 2.15,
+        "depth": 1.15,
+        "style": "open",
+        "color": "#B8B0A8",
+        "has_roof": True,
+    },
+    "roof": {
+        "length": 3.0,
+        "width": 3.0,
+        "height": 0.28,
+        "roof_type": "flat",
+        "color": "#7A523E",
+        "_roof_preset": "roof_shingles",
+    },
+}
+
+
+def _is_sparse_module_description(text: str) -> bool:
+    """True when the user only gave dimensions (or nothing meaningful for materials)."""
+    return _BEAUTY_DESC_RE.search(text or "") is None
+
+
+def _enrich_sparse_module_params(module_type: str, params: Dict[str, Any], text: str) -> Dict[str, Any]:
+    """Apply visual-quality defaults when description has no material/color/style hints."""
+    if not _is_sparse_module_description(text):
+        return params
+
+    preset = _BEAUTY_MODULE_DEFAULTS.get(module_type, {})
+    if not preset:
+        return params
+
+    out = dict(params)
+    for key, value in preset.items():
+        if key.startswith("_"):
+            continue
+        out.setdefault(key, value)
+
+    logger.info(f"✨ Enriched sparse {module_type} params: {out}")
+    return out
+
+
+MODULE_SCRIPT_EXAMPLES: Dict[str, str] = {
+    "wall": "batch_wall_only.json",
+    "window": "batch_window_only.json",
+    "door": "batch_entrance_textured_niche.json",
+    "balcony": "beautiful_balcony_loggia.json",
+}
+
+
+def _example_dims_from_config(module_type: str, config: Dict[str, Any]) -> Dict[str, float]:
+    if module_type == "wall":
+        w = config.get("wall", {})
+        return {
+            "width": float(w.get("wall_length", 2.0)),
+            "height": float(w.get("wall_height", 3.0)),
+            "depth": float(w.get("wall_thickness", 0.3)),
+        }
+    if module_type == "window":
+        w = config.get("window", {})
+        return {
+            "width": float(w.get("width", 1.4)),
+            "height": float(w.get("height", 1.6)),
+            "depth": float(w.get("depth", 0.12)),
+        }
+    if module_type == "door":
+        e = config.get("entrance_textured", {})
+        z0 = float(e.get("niche_door_z_bottom", 0.12))
+        z1 = float(e.get("niche_door_z_top", z0 + 2.0))
+        return {
+            "width": float(e.get("width", 3.2)),
+            "height": float(e.get("niche_clear_height", z1 - z0)),
+            "depth": float(e.get("depth", 1.5)),
+        }
+    if module_type == "balcony":
+        b = config.get("balcony", {})
+        return {
+            "width": float(b.get("width_front", b.get("width_back", 2.0))),
+            "height": float(b.get("height", 2.48)),
+            "depth": float(b.get("depth", 1.4)),
+        }
+    return {}
+
+
+def _finalize_module_obj_path(module_type: str, path: Path, params: Dict[str, Any]) -> Path:
+    if module_type == "door" and path.name == "entrance.obj":
+        new_path = path.parent / "door.obj"
+        path.rename(new_path)
+        logger.info("✓ Переименовано: entrance.obj → door.obj")
+        if not (new_path.parent / "material.mtl").exists():
+            _inject_door_material(new_path, params.get("color"))
+        return new_path
+    if module_type == "entrance" and path.name == "entrance_textured.obj":
+        new_path = path.parent / "entrance.obj"
+        path.rename(new_path)
+        logger.info("✓ Переименовано: entrance_textured.obj → entrance.obj")
+        return new_path
+    return path
+
+
+def _apply_script_example_color_tint(
+    module_type: str, config: Dict[str, Any], hex_col: Optional[str]
+) -> None:
+    if not hex_col:
+        return
+    rgb = hex_to_rgb(hex_col.lstrip("#"))
+    if module_type == "balcony":
+        bal = config.get("balcony")
+        if isinstance(bal, dict):
+            bal["wall_lower_tex_color"] = rgb
+    elif module_type == "wall":
+        wall = config.get("wall")
+        if isinstance(wall, dict):
+            tex = wall.setdefault("texture", {})
+            tex["wall_tex_color"] = rgb
+    elif module_type == "window":
+        win = config.get("window")
+        if isinstance(win, dict):
+            tex = win.setdefault("texture", {})
+            tex["frame_tex_color"] = rgb
+    elif module_type == "door":
+        ent = config.get("entrance_textured")
+        if isinstance(ent, dict):
+            ent["door_tex_color"] = rgb
+
+
+def _generate_from_script_example(
+    module_type: str,
+    params: Dict[str, Any],
+    output_dir: Path,
+) -> Optional[Path]:
+    example_name = MODULE_SCRIPT_EXAMPLES.get(module_type)
+    if not example_name:
+        return None
+
+    example_path = PROJECT_ROOT / "scripts" / "balcony_examples" / example_name
+    if not example_path.exists():
+        logger.warning("Script example not found: %s", example_path)
+        return None
+
+    with open(example_path, "r", encoding="utf-8") as f:
+        config = copy.deepcopy(json.load(f))
+
+    for _section_key, section in config.items():
+        if not isinstance(section, dict):
+            continue
+        if section.get("enabled"):
+            section["out_dir"] = str(output_dir)
+            section["no_view"] = True
+        elif "enabled" in section:
+            section["enabled"] = False
+
+    _apply_script_example_color_tint(module_type, config, _normalise_hex(params.get("color")))
+    params.update(_example_dims_from_config(module_type, config))
+
+    logger.info("📜 Script example %s → %s", example_name, module_type)
+    results = run_all_generators(config, default_out_root=output_dir)
+    if not results:
+        return None
+
+    for _key, path in results.items():
+        if path and path.exists():
+            logger.info("✓ Модуль сгенерирован (example): %s", path)
+            return _finalize_module_obj_path(module_type, path, params)
+    return None
+
+
 def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str) -> Optional[Path]:
     """Генерирует модуль с процедурными текстурами через procedural_batch_runner"""
     try:
@@ -181,6 +387,12 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
         output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"🔨 Генерация {module_type}_{module_id}...")
+
+        if params.get("_use_script_example"):
+            result = _generate_from_script_example(module_type, params, output_dir)
+            if result:
+                return result
+            logger.warning("Script example failed for %s, using procedural path", module_type)
 
         # Загружаем JSON конфиг
         config_file = PROJECT_ROOT / "scripts" / "balcony_examples" / "batch_generators_config.json"
@@ -191,13 +403,23 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
             config = json.load(f)
 
         # Обновляем конфиг в зависимости от типа модуля
+        source_text = str(params.get("_source_text", ""))
+        sparse = _is_sparse_module_description(source_text)
+
         if module_type == "wall":
             tex_block: Dict[str, Any] = {
                 "use_procedural_maps": True,
                 "wall_color_preset": "plaster",
                 "generate_normal": True,
                 "generate_roughness": True,
+                "bump_strength": 0.75,
             }
+            mat = str(params.get("material", "")).lower()
+            if "ceramic" in mat or "tile" in mat or "плит" in source_text.lower():
+                tex_block["wall_color_preset"] = "ceramic_tile"
+                tex_block["wall_normal_preset"] = "ceramic_tile"
+                tex_block["tiles_per_side"] = 9
+                tex_block["grout_width"] = 0.055
             hex_col = params.get("color")
             if isinstance(hex_col, str) and hex_col.strip().startswith("#"):
                 tex_block["wall_tex_color"] = hex_to_rgb(hex_col.strip())
@@ -217,9 +439,10 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "window":
+            win_preset = _BEAUTY_MODULE_DEFAULTS.get("window", {})
             tex_block = {
                 "use_procedural_maps": True,
-                "frame_color_preset": "plaster",
+                "frame_color_preset": win_preset.get("_frame_preset", "wood") if sparse else "plaster",
                 "glass_color_preset": "uniform_noise",
                 "frame_normal_preset": "fine_noise",
                 "generate_normal": True,
@@ -239,8 +462,8 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 "depth": params.get("depth", 0.12),
                 "profile": "rect",
                 "kind": "fixed",
-                "mullions_vertical": 1,
-                "mullions_horizontal": 0,
+                "mullions_vertical": int(win_preset.get("_mullions_v", 1)) if sparse else 1,
+                "mullions_horizontal": int(win_preset.get("_mullions_h", 0)) if sparse else 0,
                 "atlas_half_size": 256,
                 "texture": tex_block,
                 "no_view": True,
@@ -397,7 +620,8 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                     config[key]["enabled"] = False
 
         elif module_type == "roof":
-            roof_type = str(params.get("roof_type") or params.get("type") or "gable").strip().lower()
+            roof_type = str(params.get("roof_type") or params.get("type") or "flat").strip().lower()
+            default_height = 0.28 if roof_type == "flat" else 2.2
             tex_block = {
                 "use_procedural_maps": True,
                 "roof_color_preset": "roof_shingles",
@@ -410,9 +634,9 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
             config["roof"] = {
                 "enabled": True,
                 "out_dir": str(output_dir),
-                "length": float(params.get("length", params.get("width", 10.0))),
-                "width": float(params.get("width", params.get("depth", 8.0))),
-                "height": float(params.get("height", 2.2)),
+                "length": float(params.get("length", params.get("width", 3.0))),
+                "width": float(params.get("width", params.get("depth", 3.0))),
+                "height": float(params.get("height", default_height)),
                 "roof_type": roof_type,
                 "texture": tex_block,
                 "no_view": True,
@@ -436,23 +660,7 @@ def generate_module_obj(module_type: str, params: Dict[str, Any], module_id: str
                 if path and path.exists():
                     logger.info(f"✓ Модуль сгенерирован: {path}")
 
-                    if module_type == "door" and path.name == "entrance.obj":
-                        new_path = path.parent / "door.obj"
-                        path.rename(new_path)
-                        logger.info(f"✓ Переименовано: entrance.obj → door.obj")
-                        # entrance_textured already writes material.mtl with atlas texture;
-                        # only inject fallback diffuse material if no MTL was produced.
-                        if not (new_path.parent / "material.mtl").exists():
-                            _inject_door_material(new_path, params.get("color"))
-                        return new_path
-
-                    elif module_type == "entrance" and path.name == "entrance_textured.obj":
-                        new_path = path.parent / "entrance.obj"
-                        path.rename(new_path)
-                        logger.info(f"✓ Переименовано: entrance_textured.obj → entrance.obj")
-                        return new_path
-
-                    return path
+                    return _finalize_module_obj_path(module_type, path, params)
 
         logger.warning(f"⚠️ Генератор не вернул файлы для {module_type}")
         return None
@@ -638,23 +846,47 @@ async def generate_module(request: Request):
     """
     try:
         payload = await request.json()
+        use_script_example = bool(payload.get("use_script_example"))
         text = payload.get("text", "").strip()
-        module_type = payload.get("module_type")
+        module_type_hint = str(payload.get("module_type", "") or "").strip().lower()
 
-        if not text:
-            return JSONResponse(
-                {"error": "Пустой текст"},
-                status_code=400
+        if use_script_example:
+            try:
+                mt = ModuleType(module_type_hint or text or "wall")
+            except ValueError:
+                mt = ModuleType.WALL
+            module_type = mt.value
+            params: Dict[str, Any] = {"_source_text": ""}
+            if module_type in MODULE_SCRIPT_EXAMPLES:
+                params["_use_script_example"] = True
+            params = _enrich_sparse_module_params(module_type, params, "")
+            parse_result = ModuleParams(
+                module_type=mt,
+                module_name=f"{module_type} (preset)",
+                params=params,
+                confidence=1.0,
             )
+            logger.info("🔨 Генерация модуля (preset example): %s", module_type)
+        else:
+            if not text:
+                return JSONResponse(
+                    {"error": "Пустой текст"},
+                    status_code=400
+                )
 
-        logger.info(f"🔨 Генерация модуля: '{text}'")
+            logger.info(f"🔨 Генерация модуля: '{text}'")
 
-        # === 1️⃣ Парсинг ===
-        parser = ModuleTextParser()
-        parse_result = parser.parse(text)
+            # === 1️⃣ Парсинг ===
+            parser = ModuleTextParser()
+            parse_result = parser.parse(text)
 
-        module_type = parse_result.module_type.value
-        params = parse_result.params
+            module_type = parse_result.module_type.value
+            params = _enrich_sparse_module_params(
+                parse_result.module_type.value,
+                parse_result.params,
+                text,
+            )
+            params["_source_text"] = text
 
         # Color from the UI color-picker overrides any color the NLP parser extracted
         # from the text description.  Normalise both paths to #RRGGBB before storing.
@@ -666,10 +898,11 @@ async def generate_module(request: Request):
 
         # === 2️⃣ Генерация OBJ ===
         module_id = str(uuid.uuid4())[:8]
+        params_for_store = {k: v for k, v in params.items() if not str(k).startswith("_")}
         obj_path = generate_module_obj(module_type, params, module_id)
 
         # === 3️⃣ Упаковка в ZIP ===
-        zip_path = create_module_zip(module_id, module_type, params, obj_path)
+        zip_path = create_module_zip(module_id, module_type, params_for_store, obj_path)
 
         if not zip_path:
             return JSONResponse(
@@ -678,15 +911,15 @@ async def generate_module(request: Request):
             )
 
         # === 4️⃣ СОХРАНЯЕМ РАЗМЕРЫ МОДУЛЯ ===
-        module_width = params.get("width", 4.0)
-        module_height = params.get("height", 3.0)
+        module_width = params_for_store.get("width", 4.0)
+        module_height = params_for_store.get("height", 3.0)
 
         # === 5️⃣ Сохранение в реестр ===
         module_record = {
             "module_id": module_id,
             "module_type": module_type,
             "module_name": parse_result.module_name,
-            "params": params,
+            "params": params_for_store,
             "zip_file": zip_path.name,
             "created_at": datetime.now().isoformat(),
             "dimensions": {  # ← ДОБАВЛЕНО
@@ -707,7 +940,7 @@ async def generate_module(request: Request):
             "module_id": module_id,
             "module_type": module_type,
             "module_name": parse_result.module_name,
-            "params": params,
+            "params": params_for_store,
             "dimensions": {  # ← ВОЗВРАЩАЕМ
                 "width": module_width,
                 "height": module_height
@@ -1102,7 +1335,8 @@ def create_wall_window_module(wall_params: Dict[str, Any], window_params: Dict[s
 def create_roof_module(roof_type: str) -> str:
     """Generate a 3×3m roof module, save to registry, return module_id."""
     module_id = str(uuid.uuid4())[:8]
-    params = {"roof_type": roof_type, "length": 3.0, "width": 3.0, "height": 1.5}
+    height = 0.28 if roof_type == "flat" else 1.5
+    params = {"roof_type": roof_type, "length": 3.0, "width": 3.0, "height": height}
     obj_path = generate_module_obj("roof", params, module_id)
     if not obj_path or not obj_path.exists():
         raise Exception(f"Roof OBJ generation failed for module {module_id}")
@@ -1138,10 +1372,10 @@ async def generate_roof_module_endpoint(request: Request):
 
         if text and not roof_type:
             parsed = parse_roof_text(text)
-            roof_type = parsed.get("roof_type", "gable")
+            roof_type = parsed.get("roof_type", "flat")
 
         if roof_type not in ("flat", "gable", "pyramid"):
-            roof_type = "gable"
+            roof_type = "flat"
 
         module_id = create_roof_module(roof_type)
         return JSONResponse({
@@ -1167,10 +1401,15 @@ async def generate_house(request: Request):
         window_module_id = payload.get("window_module_id")
         door_module_id = payload.get("door_module_id")
         balcony_module_id = payload.get("balcony_module_id") or None
+        roof_module_id = payload.get("roof_module_id") or None
         wall_dimensions = {"width": 4.0, "height": 3.0}
 
         wall_params = None
         window_params = None
+        roof_params = {
+            "roof_type": str(payload.get("roof_type", "flat")).strip().lower() or "flat",
+            "height": 0.28,
+        }
         modules_registry = load_modules_registry()
 
         # Ищем wall, window и balcony в реестре
@@ -1189,6 +1428,13 @@ async def generate_house(request: Request):
 
             if module_id == balcony_module_id:
                 logger.info(f"✓ Balcony module найден в реестре: {module_id}")
+
+            if module_id == roof_module_id:
+                mod_params = module.get("params", {})
+                house_roof_type = str(payload.get("roof_type", "flat")).strip().lower() or "flat"
+                roof_params.update(mod_params)
+                roof_params["roof_type"] = house_roof_type
+                logger.info(f"✓ Roof параметры: {roof_params}")
 
         # === REQUIRE BOTH WALL AND WINDOW ===
         if not wall_params:
@@ -1246,7 +1492,10 @@ async def generate_house(request: Request):
             "wall_module_id":         wall_module_id,
             "wall_window_module_id":  wall_window_module_id,
             "entrance_module_id":     door_module_id,
+            "door_module_id":         door_module_id,
             "balcony_module_id":      balcony_module_id,
+            "roof_module_id":         roof_module_id,
+            "roof_params":            roof_params,
         }
 
         logger.info(f"🏗️ Параметры здания: {building_params}")

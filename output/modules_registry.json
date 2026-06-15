@@ -1899,5 +1899,439 @@
       "width": 4.0,
       "height": 4.0
     }
+  },
+  {
+    "module_id": "901c525b",
+    "module_type": "wall",
+    "module_name": "wall_91",
+    "params": {
+      "height": 1.0,
+      "width": 2.0,
+      "color": "#888888",
+      "material": "concrete",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_901c525b.zip",
+    "created_at": "2026-06-15T20:33:53.637697",
+    "dimensions": {
+      "width": 2.0,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "4d14ffac",
+    "module_type": "wall",
+    "module_name": "wall_91",
+    "params": {
+      "height": 1.0,
+      "width": 2.0,
+      "color": "#8F8F8F",
+      "material": "concrete",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_4d14ffac.zip",
+    "created_at": "2026-06-15T20:34:03.349024",
+    "dimensions": {
+      "width": 2.0,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "1543125d",
+    "module_type": "wall",
+    "module_name": "wall_91",
+    "params": {
+      "height": 1.0,
+      "width": 2.0,
+      "color": "#888888",
+      "material": "concrete",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_1543125d.zip",
+    "created_at": "2026-06-15T20:34:25.703033",
+    "dimensions": {
+      "width": 2.0,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "dddd0741",
+    "module_type": "wall",
+    "module_name": "wall_91",
+    "params": {
+      "height": 1.0,
+      "width": 2.0,
+      "color": "#8F8F8F",
+      "material": "concrete",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_dddd0741.zip",
+    "created_at": "2026-06-15T20:34:27.689363",
+    "dimensions": {
+      "width": 2.0,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "7b2d00d0",
+    "module_type": "window",
+    "module_name": "window_116",
+    "params": {
+      "width": 1.5,
+      "height": 0.45,
+      "style": "double",
+      "frame_color": "#444444",
+      "glass_color": "#87CEEB",
+      "depth": 0.45
+    },
+    "zip_file": "window_7b2d00d0.zip",
+    "created_at": "2026-06-15T20:34:35.209201",
+    "dimensions": {
+      "width": 1.5,
+      "height": 0.45
+    }
+  },
+  {
+    "module_id": "36f2673c",
+    "module_type": "roof",
+    "module_name": "roof_88",
+    "params": {
+      "length": 10.0,
+      "width": 0.28,
+      "height": 1.0,
+      "roof_type": "gable",
+      "color": "#7A523E"
+    },
+    "zip_file": "roof_36f2673c.zip",
+    "created_at": "2026-06-15T20:34:47.209113",
+    "dimensions": {
+      "width": 0.28,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "9e78cfd0",
+    "module_type": "roof",
+    "module_name": "roof_88",
+    "params": {
+      "length": 10.0,
+      "width": 0.28,
+      "height": 1.0,
+      "roof_type": "gable",
+      "color": "#8F8F8F"
+    },
+    "zip_file": "roof_9e78cfd0.zip",
+    "created_at": "2026-06-15T20:34:49.464381",
+    "dimensions": {
+      "width": 0.28,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "e6c3665f",
+    "module_type": "roof",
+    "module_name": "roof_88",
+    "params": {
+      "length": 10.0,
+      "width": 0.28,
+      "height": 1.0,
+      "roof_type": "gable",
+      "color": "#7A523E"
+    },
+    "zip_file": "roof_e6c3665f.zip",
+    "created_at": "2026-06-15T20:34:58.733405",
+    "dimensions": {
+      "width": 0.28,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "5f8867c4",
+    "module_type": "door",
+    "module_name": "door_97",
+    "params": {
+      "height": 0.55,
+      "width": 0.9,
+      "style": "standard",
+      "material": "wood",
+      "frame_color": "#8B4513"
+    },
+    "zip_file": "door_5f8867c4.zip",
+    "created_at": "2026-06-15T20:35:03.934910",
+    "dimensions": {
+      "width": 0.9,
+      "height": 0.55
+    }
+  },
+  {
+    "module_id": "96e0d5c6",
+    "module_type": "door",
+    "module_name": "door_97",
+    "params": {
+      "height": 0.55,
+      "width": 0.9,
+      "style": "standard",
+      "material": "wood",
+      "frame_color": "#8B4513"
+    },
+    "zip_file": "door_96e0d5c6.zip",
+    "created_at": "2026-06-15T20:35:09.080337",
+    "dimensions": {
+      "width": 0.9,
+      "height": 0.55
+    }
+  },
+  {
+    "module_id": "17570e5d",
+    "module_type": "balcony",
+    "module_name": "balcony_123",
+    "params": {
+      "height": 0.72,
+      "depth": 0.18,
+      "width": 2.0,
+      "style": "open",
+      "parapat_height": 1.1,
+      "color": "#AAAAAA",
+      "has_roof": true
+    },
+    "zip_file": "balcony_17570e5d.zip",
+    "created_at": "2026-06-15T20:35:19.147003",
+    "dimensions": {
+      "width": 2.0,
+      "height": 0.72
+    }
+  },
+  {
+    "module_id": "3c151cb1",
+    "module_type": "balcony",
+    "module_name": "balcony_123",
+    "params": {
+      "height": 0.72,
+      "depth": 0.18,
+      "width": 2.0,
+      "style": "open",
+      "parapat_height": 1.1,
+      "color": "#8F8F8F",
+      "has_roof": true
+    },
+    "zip_file": "balcony_3c151cb1.zip",
+    "created_at": "2026-06-15T20:35:20.045361",
+    "dimensions": {
+      "width": 2.0,
+      "height": 0.72
+    }
+  },
+  {
+    "module_id": "1a6cf27c",
+    "module_type": "wall_window",
+    "module_name": "Wall+Window 1.5×3.0",
+    "params": {
+      "wall_length": 3.0,
+      "wall_height": 4.0,
+      "wall_thickness": 0.3,
+      "window_center_x": 0.0,
+      "window_sill_z": 0.5,
+      "width": 1.5,
+      "height": 3.0,
+      "mullions_vertical": 1
+    },
+    "zip_file": "wall_window_1a6cf27c.zip",
+    "created_at": "2026-06-15T20:36:09.879217",
+    "dimensions": {
+      "width": 3.0,
+      "height": 4.0
+    }
+  },
+  {
+    "module_id": "2bcac86a",
+    "module_type": "roof",
+    "module_name": "roof_88",
+    "params": {
+      "length": 10.0,
+      "width": 0.28,
+      "height": 1.0,
+      "roof_type": "gable",
+      "color": "#7A523E"
+    },
+    "zip_file": "roof_2bcac86a.zip",
+    "created_at": "2026-06-15T20:36:29.278465",
+    "dimensions": {
+      "width": 0.28,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "3568df4a",
+    "module_type": "wall",
+    "module_name": "wall_91",
+    "params": {
+      "height": 1.0,
+      "width": 2.0,
+      "color": "#888888",
+      "material": "concrete",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_3568df4a.zip",
+    "created_at": "2026-06-15T20:36:34.361507",
+    "dimensions": {
+      "width": 2.0,
+      "height": 1.0
+    }
+  },
+  {
+    "module_id": "b06139b7",
+    "module_type": "window",
+    "module_name": "window_116",
+    "params": {
+      "width": 1.5,
+      "height": 0.45,
+      "style": "double",
+      "frame_color": "#444444",
+      "glass_color": "#87CEEB",
+      "depth": 0.45
+    },
+    "zip_file": "window_b06139b7.zip",
+    "created_at": "2026-06-15T20:36:37.472181",
+    "dimensions": {
+      "width": 1.5,
+      "height": 0.45
+    }
+  },
+  {
+    "module_id": "42ec6c25",
+    "module_type": "window",
+    "module_name": "window_120",
+    "params": {
+      "width": 1.5,
+      "height": 1.2,
+      "style": "double",
+      "frame_color": "#444444",
+      "glass_color": "#87CEEB",
+      "color": "#C74A4A"
+    },
+    "zip_file": "window_42ec6c25.zip",
+    "created_at": "2026-06-15T20:39:50.870549",
+    "dimensions": {
+      "width": 1.5,
+      "height": 1.2
+    }
+  },
+  {
+    "module_id": "4df8ca33",
+    "module_type": "wall",
+    "module_name": "wall_90",
+    "params": {
+      "height": 2.0,
+      "width": 2.0,
+      "color": "#C9B28F",
+      "material": "plaster",
+      "thickness": 0.3
+    },
+    "zip_file": "wall_4df8ca33.zip",
+    "created_at": "2026-06-15T20:42:21.329372",
+    "dimensions": {
+      "width": 2.0,
+      "height": 2.0
+    }
+  },
+  {
+    "module_id": "bdbe5739",
+    "module_type": "window",
+    "module_name": "window_135",
+    "params": {
+      "width": 1.5,
+      "height": 2.0,
+      "depth": 2.15,
+      "style": "double",
+      "frame_color": "#b8b0a8",
+      "glass_color": "#87CEEB",
+      "color": "#B8B0A8"
+    },
+    "zip_file": "window_bdbe5739.zip",
+    "created_at": "2026-06-15T20:42:28.165855",
+    "dimensions": {
+      "width": 1.5,
+      "height": 2.0
+    }
+  },
+  {
+    "module_id": "5f1074ad",
+    "module_type": "window",
+    "module_name": "window_134",
+    "params": {
+      "width": 1.5,
+      "height": 1.5,
+      "depth": 1.2,
+      "style": "double",
+      "frame_color": "#5c4a3a",
+      "glass_color": "#87CEEB",
+      "color": "#5C4A3A"
+    },
+    "zip_file": "window_5f1074ad.zip",
+    "created_at": "2026-06-15T20:42:39.839231",
+    "dimensions": {
+      "width": 1.5,
+      "height": 1.5
+    }
+  },
+  {
+    "module_id": "5d9db62a",
+    "module_type": "balcony",
+    "module_name": "balcony_123",
+    "params": {
+      "height": 2.15,
+      "depth": 1.15,
+      "width": 2.0,
+      "style": "open",
+      "parapat_height": 1.1,
+      "color": "#C74A4A",
+      "has_roof": true
+    },
+    "zip_file": "balcony_5d9db62a.zip",
+    "created_at": "2026-06-15T20:42:54.735361",
+    "dimensions": {
+      "width": 2.0,
+      "height": 2.15
+    }
+  },
+  {
+    "module_id": "648ac85e",
+    "module_type": "balcony",
+    "module_name": "balcony_123",
+    "params": {
+      "height": 2.15,
+      "depth": 1.15,
+      "width": 2.0,
+      "style": "open",
+      "parapat_height": 1.1,
+      "color": "#C74A4A",
+      "has_roof": true
+    },
+    "zip_file": "balcony_648ac85e.zip",
+    "created_at": "2026-06-15T20:43:02.664765",
+    "dimensions": {
+      "width": 2.0,
+      "height": 2.15
+    }
+  },
+  {
+    "module_id": "141ec99e",
+    "module_type": "window",
+    "module_name": "window_135",
+    "params": {
+      "width": 1.5,
+      "height": 2.0,
+      "depth": 2.15,
+      "style": "double",
+      "frame_color": "#c74a4a",
+      "glass_color": "#87CEEB",
+      "color": "#C74A4A"
+    },
+    "zip_file": "window_141ec99e.zip",
+    "created_at": "2026-06-15T20:43:07.805648",
+    "dimensions": {
+      "width": 1.5,
+      "height": 2.0
+    }
   }
 ]

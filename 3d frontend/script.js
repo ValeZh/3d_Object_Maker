@@ -74,6 +74,44 @@ const DEFAULTS = {
       beige: "#c9b28f",
       brown: "#8b6a4e"
     }
+  },
+  /** Пресеты для генерации без текстового описания — реалистичные размеры, материалы, цвета */
+  moduleGeneration: {
+    wall: {
+      width: 2.0,
+      height: 3.0,
+      depth: 0.3,
+      color: "#C9B28F",
+      phrase: "beige plaster wall ceramic texture"
+    },
+    window: {
+      width: 1.5,
+      height: 1.2,
+      depth: 0.12,
+      color: "#5C4A3A",
+      phrase: "double window wooden frame light blue glass mullions"
+    },
+    door: {
+      width: 0.9,
+      height: 2.1,
+      depth: 0.08,
+      color: "#6B4A33",
+      phrase: "wooden entrance door brown plaster niche"
+    },
+    balcony: {
+      width: 2.0,
+      height: 2.15,
+      depth: 1.15,
+      color: "#B8B0A8",
+      phrase: "open balcony with roof ceramic tile glass railing"
+    },
+    roof: {
+      width: 3.0,
+      height: 0.28,
+      depth: 3.0,
+      color: "#7A523E",
+      phrase: "flat rectangular roof slab"
+    }
   }
 };
 
@@ -764,10 +802,40 @@ function getModuleFlagsByType(type) {
 }
 
 function applyModuleTypeDefaults(type) {
-  const defaults = DEFAULTS.module[type] || DEFAULTS.module.wall;
-  moduleWidth.value = defaults.width;
-  moduleHeight.value = defaults.height;
-  moduleDepth.value = defaults.depth;
+  const preset = DEFAULTS.moduleGeneration[type] || {};
+  const fallback = DEFAULTS.module[type] || DEFAULTS.module.wall;
+  moduleWidth.value = preset.width ?? fallback.width;
+  moduleHeight.value = preset.height ?? fallback.height;
+  moduleDepth.value = preset.depth ?? fallback.depth;
+  if (moduleColor && preset.color) {
+    moduleColor.value = preset.color;
+  }
+}
+
+function buildModuleGenerationText() {
+  const type = moduleType?.value || "wall";
+  const userText = moduleDescription?.value?.trim() || "";
+  if (userText) return userText;
+
+  const preset = DEFAULTS.moduleGeneration[type] || {};
+  const width = parseFloat(moduleWidth?.value) || preset.width || 1;
+  const height = parseFloat(moduleHeight?.value) || preset.height || 1;
+  const depth = parseFloat(moduleDepth?.value) || preset.depth || 0.1;
+  const color = moduleColor?.value || preset.color || DEFAULTS.colors.wall;
+  const phrase = preset.phrase || "";
+
+  return `${type} width ${width}m height ${height}m depth ${depth}m color ${color} ${phrase}`.trim();
+}
+
+function getModuleGenerationPayload() {
+  const userText = moduleDescription?.value?.trim() || "";
+  const type = moduleType?.value || "wall";
+  return {
+    text: userText || type,
+    module_type: type,
+    color: moduleColor?.value || null,
+    use_script_example: !userText
+  };
 }
 
 function getModuleFormData() {
@@ -2061,15 +2129,6 @@ function renderHousePreview(payload, offsetX = 0) {
   roof.position.set(offsetX, buildingHeight + roofThickness / 2, 0);
   group.add(roof);
 
-  const parapet = createBox(
-    width + roofOverhang * 0.9,
-    roofThickness * 0.35,
-    depth + roofProjection * 0.9,
-    roofMaterial
-  );
-  parapet.position.set(offsetX, buildingHeight + roofThickness + roofThickness * 0.18, 0);
-  group.add(parapet);
-
   return group;
 }
 
@@ -2687,35 +2746,25 @@ houseDescription?.addEventListener("input", () => {
 });
 
 analyzeModuleBtn?.addEventListener("click", async () => {
-  const text = moduleDescription.value.trim();
-  const finalText =
-  text ||
-  `${moduleType} width ${moduleWidth.value}m height ${moduleHeight.value}m depth ${moduleDepth.value}m color ${moduleColor.value}`;
+  const payload = getModuleGenerationPayload();
 
   await withLoading(analyzeModuleBtn, "Analyzing...", async () => {
     try {
-      // Call new API
       const response = await fetch(`${SERVER_URL}/api/parse-module`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({
-  text: finalText,
-  module_type: $("moduleType").value
-  })
-});
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
 
-        // AUTO-SELECT MODULE TYPE from API
-        $("moduleType").value = data.module_type;
-        applyModuleTypeDefaults(data.module_type);
+      $("moduleType").value = data.module_type;
 
-        // Apply parameters
-       if (data.params?.width != null) $("moduleWidth").value = data.params.width;
-       if (data.params?.height != null) $("moduleHeight").value = data.params.height;
-       if (data.params?.depth != null) $("moduleDepth").value = data.params.depth;
-       if (data.params?.color != null) $("moduleColor").value = data.params.color;
+      if (data.params?.width != null) $("moduleWidth").value = data.params.width;
+      if (data.params?.height != null) $("moduleHeight").value = data.params.height;
+      if (data.params?.depth != null) $("moduleDepth").value = data.params.depth;
+      if (data.params?.color != null) $("moduleColor").value = data.params.color;
 
       renderModulePreview(getModuleFormData());
       showToast("Module analysis completed.", "success");
@@ -2726,11 +2775,7 @@ analyzeModuleBtn?.addEventListener("click", async () => {
 });
 
 generateModuleBtn?.addEventListener("click", async () => {
-  const text = moduleDescription.value.trim();
-  const moduleType = $("moduleType").value;
-
-  // Если нет текста - генерируем из слайдеров
-  let finalText = text || `${moduleType} width ${$("moduleWidth").value}m height ${$("moduleHeight").value}m depth ${$("moduleDepth").value}m`;
+  const payload = getModuleGenerationPayload();
 
   generateModuleBtn.disabled = true;
   generateModuleBtn.textContent = "⏳ Generating...";
@@ -2739,10 +2784,7 @@ generateModuleBtn?.addEventListener("click", async () => {
     const response = await fetch(`${SERVER_URL}/api/generate-module`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: finalText,
-        module_type: moduleType
-      })
+      body: JSON.stringify(payload)
     });
 
     const data = await response.json();
@@ -2982,12 +3024,8 @@ async function loadObjInPreview(objUrl, paramsOrColor = null, moduleType = "wall
 }
 
 saveModuleBtn?.addEventListener("click", async () => {
-  const text = moduleDescription.value.trim();
-  const moduleType = $("moduleType").value;
-  const moduleName = $("moduleName").value.trim();
-const finalText =
-  text ||
-  `${moduleType} width ${moduleWidth.value}m height ${moduleHeight.value}m depth ${moduleDepth.value}m color ${moduleColor.value}`;
+  const moduleNameValue = moduleName.value.trim();
+  const payload = getModuleGenerationPayload();
 
   await withLoading(saveModuleBtn, "Saving...", async () => {
     try {
@@ -2995,9 +3033,8 @@ const finalText =
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: finalText,
-          module_type: moduleType,
-          module_name: moduleName
+          ...payload,
+          module_name: moduleNameValue
         })
       });
 
@@ -3007,7 +3044,7 @@ const finalText =
       // === ДОБАВЛЯЕМ МОДУЛЬ В ЛОКАЛЬНЫЙ МАССИВ ===
       savedModulesData.push({
         id: data.module_id,
-        name: moduleName || data.module_name,  // ← ИСПОЛЬЗУЙ moduleName ЕСЛ ЕСТЬ
+        name: moduleNameValue || data.module_name,
         type: data.module_type,
         created_at: new Date().toISOString(),
         params: data.params,
@@ -3078,7 +3115,9 @@ generateHouseBtn?.addEventListener("click", async () => {
         wall_module_id: formData.modules.wall,
         window_module_id: formData.modules.window,
         door_module_id: formData.modules.door,
-        balcony_module_id: formData.modules.balcony
+        balcony_module_id: formData.modules.balcony,
+        roof_module_id: formData.modules.roof,
+        roof_type: formData.house.roof_type || "flat"
       })
     });
 

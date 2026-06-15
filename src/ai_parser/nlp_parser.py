@@ -131,23 +131,26 @@ class ModuleTextParser:
         ModuleType.WALL: {
             "height": 3.0,
             "width": 2.0,
-            "color": "#888888",
-            "material": "concrete",
+            "color": "#C9B28F",
+            "material": "plaster",
             "thickness": 0.3,
         },
         ModuleType.WINDOW: {
             "width": 1.5,
             "height": 1.2,
+            "depth": 0.12,
             "style": "double",
-            "frame_color": "#444444",
+            "frame_color": "#5C4A3A",
             "glass_color": "#87CEEB",
         },
         ModuleType.DOOR: {
             "height": 2.1,
             "width": 0.9,
+            "depth": 0.08,
             "style": "standard",
             "material": "wood",
-            "frame_color": "#8B4513",
+            "color": "#6B4A33",
+            "frame_color": "#6B4A33",
         },
         ModuleType.BALCONY: {
             "height": 2.15,
@@ -155,7 +158,7 @@ class ModuleTextParser:
             "width": 2.0,
             "style": "open",
             "parapat_height": 1.1,
-            "color": "#AAAAAA",
+            "color": "#B8B0A8",
             "has_roof": True,
         },
         ModuleType.ENTRANCE: {
@@ -166,10 +169,10 @@ class ModuleTextParser:
             "color": "#CCCCCC",
         },
         ModuleType.ROOF: {
-            "length": 10.0,
-            "width": 8.0,
-            "height": 2.2,
-            "roof_type": "gable",
+            "length": 3.0,
+            "width": 3.0,
+            "height": 0.28,
+            "roof_type": "flat",
             "color": "#7A523E",
         },
     }
@@ -397,7 +400,11 @@ class ModuleTextParser:
             if color_raw:
                 hx = self._get_color_hex(color_raw)
                 if hx:
+                    params["frame_color"] = hx
                     params["color"] = hx
+
+            if re.search(r"blue\s+glass|glass\s+blue|голуб", text, re.IGNORECASE):
+                params["glass_color"] = "#87CEEB"
 
         elif module_type == ModuleType.DOOR:
             # Для двери: height, width, style, material

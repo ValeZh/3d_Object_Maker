@@ -771,49 +771,64 @@ class GridFacadeAssembler:
         all_meshes.extend(self._build_side_facade(self.building_width, is_left=False))
 
         # ── Roof ──────────────────────────────────────────────────────
-        # procedural_roof.py is also Z-up (X=length, Y=width, Z=height),
-        # so the roof OBJ is axis-compatible with the assembler's internal
-        # space — no rotation is needed before placement.
-        roof_orig = self.loader.load("roof")
-        if roof_orig is not None:
-            roof = roof_orig.copy()
+        roof_params = self.params.get("roof_params") or {}
+        roof_type = str(roof_params.get("roof_type", "flat")).strip().lower()
+        flat_kinds = ("flat", "plate", "slab", "плоская", "плоская крыша")
 
-            # Target footprint matches the building.
-            roof_x = self.building_width
-            roof_y = self.building_depth
+        if roof_type in flat_kinds:
+            from src.generator.procedural.procedural_roof import build_flat_roof_mesh
 
-            # Roof height: prefer explicit param; default by roof type.
-            roof_params = self.params.get("roof_params") or {}
-            roof_type   = str(roof_params.get("roof_type", "gable")).lower()
-            roof_z      = float(roof_params.get("height",
-                                                1.0 if roof_type == "flat" else 3.0))
-
-            # 3-axis scale (X, Y, Z) around bbox centre.
-            bw, bd, bh = self.loader.bbox("roof")
-            if bw > 1e-6 and bd > 1e-6 and bh > 1e-6:
-                c = _bbox_center(roof)
-                roof.apply_translation(-c)
-                roof.apply_transform(np.diag([
-                    roof_x / bw,
-                    roof_y / bd,
-                    roof_z / bh,
-                    1.0,
-                ]))
-                roof.apply_translation(c)
-
-            # Place roof: centred in X and Y, sitting on top of the walls.
-            _position(roof,
-                      self.building_width  / 2,  # X centre
-                      self.building_height,       # Z bottom = top of walls
-                      self.building_depth  / 2)  # Y centre = mid-depth
-
+            roof_thickness = float(roof_params.get("height", 0.28))
+            overhang = float(roof_params.get("overhang", 0.0))
+            roof_w = self.building_width + 2 * overhang
+            roof_d = self.building_depth + 2 * overhang
+            roof = build_flat_roof_mesh(roof_w, roof_d, roof_thickness)
+            _position(
+                roof,
+                self.building_width / 2,
+                self.building_height,
+                self.building_depth / 2,
+            )
             all_meshes.append(roof)
             logger.info(
-                f"Roof added — type={roof_type!r}, "
-                f"target {roof_x:.1f}×{roof_y:.1f}×{roof_z:.1f}m"
+                f"Flat roof added — {roof_w:.1f}×{roof_d:.1f}×{roof_thickness:.2f}m"
             )
         else:
-            logger.warning("Roof module not found — building exported without roof")
+            # Gable / pyramid — load roof module OBJ and scale to footprint.
+            roof_orig = self.loader.load("roof")
+            if roof_orig is not None:
+                roof = roof_orig.copy()
+
+                roof_x = self.building_width
+                roof_y = self.building_depth
+                roof_z = float(roof_params.get("height", 3.0))
+
+                bw, bd, bh = self.loader.bbox("roof")
+                if bw > 1e-6 and bd > 1e-6 and bh > 1e-6:
+                    c = _bbox_center(roof)
+                    roof.apply_translation(-c)
+                    roof.apply_transform(np.diag([
+                        roof_x / bw,
+                        roof_y / bd,
+                        roof_z / bh,
+                        1.0,
+                    ]))
+                    roof.apply_translation(c)
+
+                _position(
+                    roof,
+                    self.building_width / 2,
+                    self.building_height,
+                    self.building_depth / 2,
+                )
+
+                all_meshes.append(roof)
+                logger.info(
+                    f"Roof added — type={roof_type!r}, "
+                    f"target {roof_x:.1f}×{roof_y:.1f}×{roof_z:.1f}m"
+                )
+            else:
+                logger.warning("Roof module not found — building exported without roof")
 
         # Convert from internal Z-up to Three.js Y-up by rotating -90° around X.
         rot_yup = trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0])
@@ -871,7 +886,7 @@ class GridFacadeAssembler:
             logger.error("Assembly failed — nothing to export.")
             return False
         try:
-            self._prepare_for_export(output_path)  # ← ДОБАВИТЬ
+            self._prepare_for_export(output_path)
             scene.export(str(output_path))
             logger.info(f"Exported: {output_path}")
             return True

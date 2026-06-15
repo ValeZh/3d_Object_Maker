@@ -858,5 +858,25 @@
     },
     "obj_url": "/modules/houses/36d249cd/house.obj",
     "created_at": "2026-06-15T19:04:00.705135"
+  },
+  {
+    "house_id": "2db0612a",
+    "house_name": "House_1781544968963",
+    "params": {
+      "floors": 8,
+      "columns": 18,
+      "sections": 3,
+      "module_width": 3.0,
+      "module_height": 4.0,
+      "depth": 2,
+      "texture_scale": 3,
+      "has_balcony": true,
+      "wall_module_id": "599ea528",
+      "wall_window_module_id": "1a6cf27c",
+      "entrance_module_id": "ab35d62e",
+      "balcony_module_id": "b2eebd89"
+    },
+    "obj_url": "/modules/houses/2db0612a/house.obj",
+    "created_at": "2026-06-15T20:36:15.285534"
   }
 ]
